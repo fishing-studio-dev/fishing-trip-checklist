@@ -1,0 +1,160 @@
+<!doctype html>
+<html lang="ja">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+  <meta name="theme-color" content="#09233a">
+  <meta name="description" content="釣行前の忘れ物を防ぐ、無料・登録不要の釣行準備チェックリスト。ティップラン、ジギング、落とし込み、エギングに対応。">
+  <title>釣行まえチェック｜忘れ物を防ぐ釣行準備リスト</title>
+  <style>
+    :root{color-scheme:light;--navy:#09233a;--navy2:#163d52;--teal:#117c79;--sky:#eaf7f7;--bg:#f3f6f7;--ink:#193447;--sub:#627782;--line:#dce5e7;--white:#fff;--shadow:0 10px 30px rgba(9,35,58,.06)}
+    *{box-sizing:border-box}
+    html{-webkit-text-size-adjust:100%}
+    body{margin:0;background:var(--bg);color:var(--ink);font-family:-apple-system,BlinkMacSystemFont,"Hiragino Kaku Gothic ProN","Yu Gothic",Meiryo,sans-serif;line-height:1.65}
+    button,input,select{font:inherit}
+    button{cursor:pointer}
+    button:focus-visible,input:focus-visible,select:focus-visible{outline:3px solid #37bdab;outline-offset:3px}
+    header{background:linear-gradient(120deg,#082239,#144c58);color:white;padding:31px 18px 55px}
+    .wrap{max-width:760px;margin:auto}
+    .eyebrow{font-size:12px;letter-spacing:.16em;font-weight:700;color:#9ee4d7;margin:0 0 7px}
+    h1{margin:0;font-size:clamp(25px,5vw,36px);letter-spacing:.02em;line-height:1.35}
+    .lead{margin:11px 0 0;color:#d2e6eb;font-size:14px}
+    main{padding:0 16px 34px;margin-top:-29px}
+    .panel{background:var(--white);border:1px solid var(--line);border-radius:16px;box-shadow:var(--shadow);padding:20px;margin-bottom:15px}
+    .field-label{display:block;font-size:13px;font-weight:800;margin-bottom:7px;color:#385464}
+    select{width:100%;border:1px solid #b4cbd0;background:#fff;color:var(--ink);border-radius:10px;padding:13px 14px;min-height:48px}
+    .progress-top{display:flex;justify-content:space-between;align-items:baseline;gap:12px;margin:17px 0 9px}
+    .progress-top strong{font-size:17px}
+    .progress-top span{font-weight:800;color:var(--teal);font-variant-numeric:tabular-nums}
+    progress{appearance:none;-webkit-appearance:none;border:none;height:10px;width:100%;border-radius:50px;overflow:hidden;background:#e2eeee;display:block}
+    progress::-webkit-progress-bar{background:#e2eeee;border-radius:50px} progress::-webkit-progress-value{background:#0c8d84;border-radius:50px}progress::-moz-progress-bar{background:#0c8d84}
+    .hint{color:var(--sub);font-size:12px;margin:10px 0 0}
+    .actions{display:flex;flex-wrap:wrap;gap:8px;margin-top:16px}
+    .btn{min-height:43px;border-radius:10px;border:1px solid #c7d6da;background:#fff;color:var(--navy2);padding:10px 14px;font-size:13px;font-weight:800}
+    .btn.primary{background:var(--teal);border-color:var(--teal);color:#fff}
+    .btn.warn{color:#935147}
+    .btn:hover{filter:brightness(.96)}
+    .section-title{font-size:13px;font-weight:800;letter-spacing:.05em;margin:23px 3px 8px;color:#345566;display:flex;align-items:center;gap:9px}
+    .section-title::before{content:"";display:block;background:#19a499;width:4px;height:17px;border-radius:5px}
+    .checklist{background:#fff;border:1px solid var(--line);border-radius:15px;overflow:hidden;box-shadow:var(--shadow)}
+    .check-row{display:flex;align-items:center;gap:12px;padding:13px 15px;min-height:54px;border-bottom:1px solid #e9eeee;transition:background .12s}
+    .check-row:last-child{border-bottom:none}
+    .check-row:has(input:checked){background:#f1f9f7}
+    .check-row input[type="checkbox"]{height:22px;width:22px;accent-color:var(--teal);flex:0 0 auto;margin:0;cursor:pointer}
+    .item-label{flex:1;cursor:pointer;line-height:1.48;font-size:15px;overflow-wrap:anywhere}
+    .check-row:has(input:checked) .item-label{color:#71888a;text-decoration:line-through;text-decoration-color:#a1b7b8}
+    .delete{border:0;background:transparent;color:#9b5a53;padding:6px 8px;border-radius:8px;font-size:13px;min-width:44px;min-height:36px;font-weight:700}
+    .delete:hover{background:#fff0ee}
+    .add-label{font-size:16px;font-weight:800;margin:0 0 9px}
+    .add-form{display:flex;gap:8px}
+    .add-form input{min-width:0;flex:1;border:1px solid #b4cbd0;border-radius:10px;padding:11px 12px;min-height:46px}
+    .status{margin:10px 0 0;font-size:13px;color:var(--teal);min-height:21px}
+    .complete{color:var(--teal)}
+    footer{text-align:center;color:#687d87;font-size:12px;max-width:760px;margin:auto;padding:2px 18px 24px}
+    .foot-note{border-top:1px solid var(--line);padding-top:20px}
+    @media(min-width:740px){header{padding:42px 30px 67px}main{padding:0 20px 35px}.panel{padding:25px}}
+    @media(max-width:380px){.panel{padding:16px}.btn{flex:1 1 auto}.add-form{flex-direction:column}}
+    @media print{header{background:#fff;color:#000;padding:0}header .eyebrow,.hint,.actions,.add-form,.delete,footer{display:none!important}main{margin-top:0;padding:0}.panel{box-shadow:none;border:0}.checklist{box-shadow:none;border-color:#bbb}.check-row:has(input:checked){background:white}.check-row:has(input:checked) .item-label{color:#000;text-decoration:none}}
+  </style>
+</head>
+<body>
+<header><div class="wrap">
+  <p class="eyebrow">FISHING TRIP CHECKLIST</p>
+  <h1>釣行まえチェック</h1>
+  <p class="lead">出発前の忘れ物を、ひとつずつ確認。<br>登録不要・無料・スマホ対応</p>
+</div></header>
+<main class="wrap">
+  <section class="panel" aria-label="釣り方と進捗">
+    <label class="field-label" for="styleSelect">釣り方を選択</label>
+    <select id="styleSelect">
+      <option value="tiprun">ティップラン</option>
+      <option value="jigging">ジギング</option>
+      <option value="otoshikomi">船落とし込み</option>
+      <option value="eging">陸っぱりエギング</option>
+      <option value="free">共通・自由リスト</option>
+    </select>
+    <div class="progress-top"><strong id="progressTitle">準備の進み具合</strong><span id="progressText" aria-live="polite">0 / 0 完了</span></div>
+    <progress id="progressBar" value="0" max="1" aria-label="準備の達成率"></progress>
+    <p class="hint">チェック状態や追加項目は、この端末のブラウザ内に保存されます。端末間では同期されません。</p>
+    <div class="actions">
+      <button type="button" class="btn primary" id="copyBtn">リストをコピー</button>
+      <button type="button" class="btn" id="printBtn">印刷</button>
+      <button type="button" class="btn warn" id="resetBtn">チェックをリセット</button>
+    </div>
+  </section>
+  <div id="checklist" aria-label="準備項目"></div>
+  <section class="panel" style="margin-top:16px">
+    <h2 class="add-label">自分の項目を追加</h2>
+    <form id="addForm" class="add-form">
+      <input id="newItem" maxlength="70" autocomplete="off" placeholder="例：予備のリーダー" aria-label="追加する準備項目" required>
+      <button type="submit" class="btn primary">追加する</button>
+    </form>
+    <p id="status" class="status" role="status" aria-live="polite"></p>
+  </section>
+</main>
+<footer><p class="foot-note">安全装備や必要な仕掛けは、天候・海域・釣行先・船長の案内に応じて確認してください。<br>入力内容を外部サーバーへ送信する機能はありません。</p></footer>
+<script>
+(()=>{'use strict';
+  const base={
+    '安全・身の回り':['ライフジャケット（適切な規格・着用方法を確認）','帽子・偏光グラス','滑りにくい靴','飲み物・食べ物','雨具・防寒具','酔い止め（必要に応じて）','スマートフォン・連絡手段'],
+    '釣行共通':['ロッド','リール','ライン・予備ライン','リーダー・接続具','ハサミ・プライヤー','タオル・手袋','クーラーボックス・保冷材','釣り場のルール・天候を確認'],
+  };
+  const styles={
+    tiprun:{name:'ティップラン',special:['ティップラン用エギ','追加シンカー（重さ違い）','スナップ・予備パーツ','エギケース','タモ・ギャフ（必要に応じて）']},
+    jigging:{name:'ジギング',special:['メタルジグ（重さ・種類違い）','アシストフック・予備フック','スプリットリング・ソリッドリング','リングオープナー','フィッシュグリップ']},
+    otoshikomi:{name:'船落とし込み',special:['落とし込み仕掛け（号数違い）','オモリ（指定号数・予備）','予備のハリス・サルカン','仕掛け収納ケース','船長指定の仕掛けを確認']},
+    eging:{name:'陸っぱりエギング',special:['エギ（サイズ・カラー違い）','エギケース・スナップ','ランディングネット・ギャフ','ヘッドライト（必要に応じて）','立入禁止・釣り場のルールを確認']},
+    free:{name:'共通・自由リスト',special:[]},
+  };
+  const KEY='fishing-checklist-v1';
+  let data={};let style='tiprun';
+  const $=id=>document.getElementById(id);
+  try{const saved=JSON.parse(localStorage.getItem(KEY)||'{}');if(saved && typeof saved==='object' && !Array.isArray(saved))data=saved;}catch(e){/* restricted storage; in-memory state still works */}
+  const toId=(section,label)=>section+'::'+label;
+  function state(){
+    if(!data[style]||typeof data[style]!=='object')data[style]={checks:{},custom:[]};
+    if(!data[style].checks||typeof data[style].checks!=='object')data[style].checks={};
+    if(!Array.isArray(data[style].custom))data[style].custom=[];
+    data[style].custom=data[style].custom.filter(x=>x && typeof x.id==='string'&&typeof x.label==='string').slice(0,100);
+    return data[style];
+  }
+  function save(){try{localStorage.setItem(KEY,JSON.stringify(data));return true;}catch(e){$('status').textContent='このブラウザでは保存できません。ページを閉じるとチェックが消える場合があります。';return false;}}
+  function groups(){return {...base,...(styles[style].special.length?{'釣り方別':styles[style].special}:{}),'自分で追加した項目':state().custom};}
+  function render(){
+    const root=$('checklist');root.replaceChildren();
+    const entries=Object.entries(groups());let done=0,total=0;
+    for(const [group,items] of entries){
+      if(group==='自分で追加した項目' && !items.length)continue;
+      const title=document.createElement('h2');title.className='section-title';title.textContent=group;root.appendChild(title);
+      const box=document.createElement('div');box.className='checklist';
+      items.forEach((item,index)=>{
+        const custom=typeof item==='object';const label=custom?item.label:item;
+        const id=custom?item.id:toId(group,label);const checked=!!state().checks[id];total++;if(checked)done++;
+        const row=document.createElement('div');row.className='check-row';
+        const checkbox=document.createElement('input');checkbox.type='checkbox';checkbox.checked=checked;checkbox.id='item-'+style+'-'+total;checkbox.setAttribute('aria-label',label);
+        checkbox.addEventListener('change',()=>{state().checks[id]=checkbox.checked;save();render();});
+        const text=document.createElement('label');text.className='item-label';text.htmlFor=checkbox.id;text.textContent=label;
+        row.append(checkbox,text);
+        if(custom){const del=document.createElement('button');del.type='button';del.className='delete';del.textContent='削除';del.setAttribute('aria-label',label+'を削除');del.addEventListener('click',()=>{state().custom=state().custom.filter(x=>x.id!==id);delete state().checks[id];save();render();});row.appendChild(del);}
+        box.appendChild(row);
+      });root.appendChild(box);
+    }
+    $('progressText').textContent=`${done} / ${total} 完了`;
+    $('progressTitle').textContent= total>0&&done===total?'準備完了！':'準備の進み具合';
+    $('progressTitle').classList.toggle('complete',total>0&&done===total);
+    $('progressBar').max=total||1;$('progressBar').value=done;
+  }
+  function textExport(){let lines=['釣行まえチェック｜'+styles[style].name];for(const [group,items]of Object.entries(groups())){if(!items.length)continue;lines.push('',`【${group}】`);for(const item of items){const label=typeof item==='object'?item.label:item;const id=typeof item==='object'?item.id:toId(group,label);lines.push(`${state().checks[id]?'☑':'☐'} ${label}`);}}return lines.join('\n');}
+  $('styleSelect').addEventListener('change',ev=>{style=ev.target.value;$('status').textContent='';render();});
+  $('addForm').addEventListener('submit',ev=>{ev.preventDefault();const input=$('newItem'),val=input.value.trim();if(!val)return;if(state().custom.length>=100){$('status').textContent='追加できる項目は釣り方ごとに100件までです。';return;}
+    const custom=state().custom;const id='custom-'+Date.now().toString(36)+'-'+Math.random().toString(36).slice(2,7);
+    custom.push({id,label:val});save();input.value='';$('status').textContent='「'+val+'」を追加しました。';render();input.focus();
+  });
+  $('resetBtn').addEventListener('click',()=>{if(!confirm('この釣り方のチェックだけをすべて外します。追加した項目は残します。よろしいですか？'))return;state().checks={};save();$('status').textContent='チェックをリセットしました。';render();});
+  $('copyBtn').addEventListener('click',async()=>{const out=textExport();let success=false;try{if(navigator.clipboard&&window.isSecureContext){await navigator.clipboard.writeText(out);success=true;}else{const temp=document.createElement('textarea');temp.value=out;temp.style.position='fixed';temp.style.opacity='0';document.body.appendChild(temp);temp.focus();temp.select();success=document.execCommand('copy');temp.remove();}}catch(e){}$('status').textContent=success?'チェックリストをコピーしました。メッセージで共有できます。':'コピーできませんでした。ブラウザの権限設定をご確認ください。';});
+  $('printBtn').addEventListener('click',()=>window.print());
+  render();
+})();
+</script>
+</body>
+</html>
