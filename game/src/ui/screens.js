@@ -151,6 +151,8 @@ function skillCard(profile) {
   const lineM = 99 * 6;
   const nx = xpProgress((profile.methods.negyo || { xp: 0 }).xp);
   const ns = skillForLevel(nx.level);
+  const ox = xpProgress((profile.methods.oyogase || { xp: 0 }).xp);
+  const os = skillForLevel(ox.level);
   const bar = (x) => `<div class="bar"><i style="width:${x.max ? 100 : Math.round((x.into / x.need) * 100)}%"></i></div><p class="note" style="margin:0 0 8px">${x.max ? '最大レベル' : `次のレベルまで ${x.need - x.into} 経験`}</p>`;
   return `<div class="card"><h2>漁師の腕前</h2>
     <dl class="kv"><dt>${esc(METHODS.handline.name)}</dt><dd><b>Lv ${hx.level}</b></dd></dl>${bar(hx)}
@@ -161,6 +163,8 @@ function skillCard(profile) {
     <dl class="kv"><dt>投縄（約${lineM}m）</dt><dd>${sec(lineM / ls.setSpeed)}</dd><dt>揚げ縄（魚なし）</dt><dd>${sec(lineM / ls.haul)}</dd><dt>取り込み</dt><dd>${ls.unhook.toFixed(0)}秒/枚</dd></dl>
     <dl class="kv" style="margin-top:10px"><dt>${esc(METHODS.negyo.name)}</dt><dd><b>Lv ${nx.level}</b></dd></dl>${bar(nx)}
     <dl class="kv"><dt>根掛かり（Lv1を100として）</dt><dd>${Math.round(ns.snagMul * 100)}</dd><dt>仕掛けの付け直し</dt><dd>${ns.rerig.toFixed(0)}秒</dd><dt>餌付け・準備</dt><dd>${ns.rebait.toFixed(1)}秒</dd></dl>
+    <dl class="kv" style="margin-top:10px"><dt>${esc(METHODS.oyogase.name)}</dt><dd><b>Lv ${ox.level}</b></dd></dl>${bar(ox)}
+    <dl class="kv"><dt>やり取り（6kgの青物）</dt><dd>${os.fight.toFixed(0)}秒</dd><dt>活きアジを付ける</dt><dd>${os.rebait.toFixed(1)}秒</dd></dl>
     <p class="note">手返し目安：一本釣りは水深30mで3本針すべてに掛かったとき、曳縄は1本掛かってから仕掛けを出し直すまで。延縄は張る・揚げるのが速いほど、同じ時間に多く浸けられます。魚が少ない場所では腕前の差は小さくなります。</p></div>`;
 }
 
@@ -221,6 +225,12 @@ export function portScreen(app) {
 </div>`;
 }
 
+/** Fish used from the hold as live bait (泳がせ): not sold. */
+function baitNote(used) {
+  const parts = Object.entries(used || {}).map(([sp, c]) => [sp, c.s + c.m + c.l]).filter(([, n]) => n > 0);
+  return parts.length ? `<p class="note">活きエサに使った魚：${parts.map(([sp, n]) => `${esc(SPECIES[sp].name)}${n}${SPECIES[sp].unit}`).join('・')}（売上には入りません）</p>` : '';
+}
+
 export function receiptScreen(app) {
   const r = app.receipt;
   const rows = r.lines.map((l) => `<tr><td>${esc(SPECIES[l.species].name)}／${esc(l.label)}</td><td class="num">${l.count}${SPECIES[l.species].unit}</td><td class="num">${l.kg.toFixed(2)}kg</td><td class="num">${l.unitPrice}${ECONOMY.currency}/kg</td><td class="num">${money(l.amount)}</td></tr>`).join('') || '<tr><td colspan="5" class="note">水揚げなし</td></tr>';
@@ -272,7 +282,7 @@ export function receiptScreen(app) {
   <div class="grid">
     ${planHtml}
     <div class="card full"><h2>売上</h2><div class="table-wrap"><table class="data"><tr><th>区分</th><th class="num">数</th><th class="num">重量</th><th class="num">単価</th><th class="num">金額</th></tr>${rows}
-      <tr><th colspan="4">売上合計</th><th class="num">${money(r.sales)}</th></tr></table></div>
+      <tr><th colspan="4">売上合計</th><th class="num">${money(r.sales)}</th></tr></table></div>${baitNote(r.baitUsed)}
       <dl class="kv" style="margin-top:8px"><dt>氷・餌（定額）</dt><dd>−${money(r.costs.base)}</dd><dt>燃料（${(r.distanceM / 1000).toFixed(1)}km）</dt><dd>−${money(r.costs.fuel)}</dd>${r.costs.crew ? `<dt>${esc(CREW.label)}の日当</dt><dd>−${money(r.costs.crew)}</dd>` : ''}
       ${r.costs.waived ? `<dt>経費の免除</dt><dd>+${money(r.costs.waived)}</dd>` : ''}
       <dt>差引</dt><dd><b>${r.net >= 0 ? '+' : '−'}${money(Math.abs(r.net))}</b></dd><dt>資金</dt><dd>${money(r.fundsBefore)} → <b>${money(r.fundsAfter)}</b></dd></dl>
@@ -492,7 +502,7 @@ export function logScreen(app) {
       if (gearSig(thenBoat, thenItems) !== nowSig(m)) marks.push('船・装備が今と違う');
       if (Math.abs(lvNow - l.level) >= 2) marks.push(`当時Lv${l.level}`);
       return `<tr><td>${l.day}日目</td><td>${fmtClock(l.startT)}–${fmtClock(l.endT)}<div class="note">${esc(timeBandLabel(g.timeBand))}</div></td><td>${esc(METHODS[m].name)}</td><td>${esc(l.area)}</td><td class="num">${Math.round(l.durationS / 60)}分</td>
-      <td class="num">${l.count === 0 ? '<span class="tag">この時間に漁獲なし</span>' : `${l.count}${unitOf(m)}`}${l.bySpecies ? `<div class="note">${esc(Object.entries(l.bySpecies).map(([sp, c]) => `${SPECIES[sp].name}${c.s + c.m + c.l}`).join('・'))}${l.snags ? `・根掛かり${l.snags}` : ''}</div>` : ''}</td><td class="num">${l.kg.toFixed(1)}kg</td><td class="num">${opRate(l).toFixed(0)}${unitOf(m)}/時</td>
+      <td class="num">${l.count === 0 ? '<span class="tag">この時間に漁獲なし</span>' : `${l.count}${unitOf(m)}`}${l.bySpecies ? `<div class="note">${esc(Object.entries(l.bySpecies).map(([sp, c]) => `${SPECIES[sp].name}${c.s + c.m + c.l}`).join('・'))}${l.snags ? `・根掛かり${l.snags}` : ''}${l.baits ? `・活きエサ${l.baits}尾` : ''}</div>` : ''}</td><td class="num">${l.kg.toFixed(1)}kg</td><td class="num">${opRate(l).toFixed(0)}${unitOf(m)}/時</td>
       <td class="num">${l.tana.min != null ? `${l.tana.min.toFixed(0)}–${l.tana.max.toFixed(0)}m` : '—'}${l.longline ? `<div class="note">浸け${l.longline.soakMin}分</div>` : ''}</td><td class="num">${Math.round(l.sounder.echoRatio * 100)}%</td><td>${esc(l.conditions.tideName)}・風${esc(g.windBand)}・潮${l.conditions.current.speed.toFixed(2)}m/s</td>
       <td>Lv${l.level}・${esc(BOATS[thenBoat] ? BOATS[thenBoat].name : thenBoat)}・${esc(thenItems.map((id) => (EQUIPMENT[id] ? EQUIPMENT[id].name : id)).join('＋') || '—')}${l.crew ? `＋${esc(CREW.label)}` : ''}${marks.map((x) => `<span class="tag warn">${esc(x)}</span>`).join('')}</td><td>${l.plan ? esc(l.plan.label) : '—'}</td><td>${esc(END_TEXT[l.endReason] || l.endReason)}</td></tr>`;
     })
@@ -530,7 +540,7 @@ export function saveScreen(app) {
     : '<button type="button" class="btn" data-act="export">セーブを書き出す（JSON）</button><button type="button" class="btn" data-act="copySave">文字列としてコピー</button>';
   return `<div class="sheet"><h1>セーブ管理</h1>
   <div class="grid"><div class="card"><h2>現在のセーブ</h2>
-    ${p ? `<dl class="kv"><dt>日数</dt><dd>${p.day}日目まで</dd><dt>資金</dt><dd>${money(p.funds)}</dd><dt>一本釣り</dt><dd>Lv ${levelFromXp(p.methods.handline.xp)}</dd><dt>曳縄</dt><dd>Lv ${levelFromXp(p.methods.troll.xp)}</dd><dt>延縄</dt><dd>Lv ${levelFromXp(p.methods.longline.xp)}</dd><dt>根魚釣り</dt><dd>Lv ${levelFromXp((p.methods.negyo || { xp: 0 }).xp)}</dd><dt>操業記録</dt><dd>${p.logs.length}件</dd><dt>聞いた話</dt><dd>${p.knowledge.reports.length}件</dd><dt>保存回数</dt><dd>${app.revision}</dd></dl>` : '<p class="note">プロフィールがありません。</p>'}
+    ${p ? `<dl class="kv"><dt>日数</dt><dd>${p.day}日目まで</dd><dt>資金</dt><dd>${money(p.funds)}</dd><dt>一本釣り</dt><dd>Lv ${levelFromXp(p.methods.handline.xp)}</dd><dt>曳縄</dt><dd>Lv ${levelFromXp(p.methods.troll.xp)}</dd><dt>延縄</dt><dd>Lv ${levelFromXp(p.methods.longline.xp)}</dd><dt>根魚釣り</dt><dd>Lv ${levelFromXp((p.methods.negyo || { xp: 0 }).xp)}</dd><dt>泳がせ釣り</dt><dd>Lv ${levelFromXp((p.methods.oyogase || { xp: 0 }).xp)}</dd><dt>操業記録</dt><dd>${p.logs.length}件</dd><dt>聞いた話</dt><dd>${p.knowledge.reports.length}件</dd><dt>保存回数</dt><dd>${app.revision}</dd></dl>` : '<p class="note">プロフィールがありません。</p>'}
     <p class="note">${saveLine(app.saveStatus)}</p>
     <p class="note">このブラウザの保存領域（localStorage）に保存しています。直前のセーブを1つバックアップとして残します。以前の版（M0）のセーブを読み込んだときは、元のデータも別に残しています。ブラウザのデータ消去で消えるため、大事な進行は書き出して保管してください。</p>
     ${app.hosted ? '<p class="note">この公開ページではファイルのダウンロードができないため、セーブは文字列としてコピーして保管してください（メモアプリなどに貼り付け）。</p>' : ''}
@@ -549,7 +559,7 @@ export function helpModal() {
   return `<div class="card"><h2>操作説明</h2><ul>
   <li><b>W / ↑</b> 増速、<b>S / ↓</b> 減速（後進・停止・極微速・微速・半速・全速）</li>
   <li><b>A / ←</b>・<b>D / →</b> 押している間だけ舵を切る</li>
-  <li><b>T</b> 漁法の切替（一本釣り／根魚釣り／曳縄／延縄。曳縄・延縄は装備を積んでいるとき）。<b>根魚釣り</b>は根・漁礁の真上か少し潮上で停船して Space。底を切って自動で釣り、外れたら R で流し直し。</li>
+  <li><b>T</b> 漁法の切替（一本釣り／根魚釣り／曳縄／延縄。曳縄・延縄は装備を積んでいるとき）。<b>根魚釣り</b>は根・漁礁の真上か少し潮上で停船して Space。底を切って自動で釣り、外れたら R で流し直し。<b>泳がせ釣り</b>は先に一本釣りで釣ったアジを活きエサにして、根・瀬の周りやベイトの反応の下で青物（ブリ・ヒラマサ）を狙う。</li>
   <li><b>Space</b> 操業開始／回収して終了（一本釣りは停船してから。曳縄は走りながら開始）</li>
   <li><b>R</b> 流し直し（一本釣り：回収→流し始めの地点へ自動で戻って再開）</li>
   <li><b>C</b> 海図の拡大。拡大した海図をクリックすると航路の経由点を追加（曳縄は曳く航路、延縄は縄を張る向き、ほかは移動の行き先）、<b>X</b> で航路を消去</li>

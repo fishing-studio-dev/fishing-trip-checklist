@@ -29,10 +29,16 @@ export function priceLines(holdCounts) {
 export function settleVoyage(profile, summary) {
   if (profile.settledVoyages.includes(summary.id)) return { ok: false, reason: 'この航海はすでに精算済みです。' };
   if (!profile.activeVoyage || profile.activeVoyage.id !== summary.id) return { ok: false, reason: '精算対象の航海が見つかりません。' };
-  // the hold must match the operation logs (every landed fish came from an operation)
+  // the hold must match the operation logs (every landed fish came from an operation),
+  // less the fish taken from the hold as live bait (泳がせ)
   for (const spId of Object.keys(SPECIES)) {
     const fromLogs = { s: 0, m: 0, l: 0 };
-    for (const l of summary.logs) if ((l.species || 'aji') === spId) for (const k of Object.keys(fromLogs)) fromLogs[k] += l.catches[k] || 0;
+    for (const l of summary.logs) {
+      const c = l.bySpecies ? l.bySpecies[spId] : (l.species || 'aji') === spId ? l.catches : null;
+      if (c) for (const k of Object.keys(fromLogs)) fromLogs[k] += c[k] || 0;
+    }
+    const bait = (summary.baitUsed || {})[spId];
+    if (bait) for (const k of Object.keys(fromLogs)) fromLogs[k] -= bait[k] || 0;
     const held = summary.hold.counts[spId] || {};
     for (const k of Object.keys(fromLogs)) {
       if (fromLogs[k] !== (held[k] || 0)) return { ok: false, reason: '魚倉と操業記録が一致しません（精算を中止しました）。' };
@@ -95,6 +101,7 @@ export function settleVoyage(profile, summary) {
     distanceM: summary.distanceM,
     plan: summary.plan || null,
     heardCount: summary.heard ? summary.heard.length : 0,
+    baitUsed: summary.baitUsed || {}, // fish taken from the hold as live bait (not sold)
   };
   return { ok: true, profile: p, receipt };
 }

@@ -6,7 +6,7 @@ import { loadSave, writeSave, exportSave, checkImport, memoryStorage, KEYS } fro
 import {
   createVoyage, advanceVoyage, isOperating, isTrolling, setHelm, setMethod, startOperation, stopOperation, redrift, returnToPort,
   nearPort, addManualMark, summarizeVoyage, canStartOperation, addRoutePoint, clearRoute, trollRouteFrom,
-  isLonglining, lineInWater, haulLongline, lineRouteFrom, runRoute, addMarkAt, cycleSonarRange, editVoyageMark, removeVoyageMark, routeTo,
+  isLonglining, lineInWater, haulLongline, lineRouteFrom, runRoute, addMarkAt, cycleSonarRange, baitInHold, editVoyageMark, removeVoyageMark, routeTo,
 } from '../core/voyage.js';
 import { sonarToWorld } from '../core/sonar.js';
 import { longlineLabel, baitLeft, nearestBuoy, buoys } from '../core/longline.js';
@@ -530,7 +530,7 @@ function cmd(name) {
       const avail = availableMethods(v);
       const next = avail[(avail.indexOf(v.method) + 1) % avail.length];
       r = setMethod(v, next);
-      const tip = { negyo: '（根・漁礁の真上か少し潮上で停船してSpace。外れたら R で流し直し）', troll: '（海図 C をクリックして航路、Spaceで開始）', longline: lineInWater(v) ? '（Spaceで揚げ縄）' : '（今の向きか海図 C で張る向きを決めて、Spaceで投縄）' };
+      const tip = { oyogase: `（魚倉の活きアジ${baitInHold(v, 'aji')}尾。根・瀬の周りやベイトの反応の下で停船してSpace）`, negyo: '（根・漁礁の真上か少し潮上で停船してSpace。外れたら R で流し直し）', troll: '（海図 C をクリックして航路、Spaceで開始）', longline: lineInWater(v) ? '（Spaceで揚げ縄）' : '（今の向きか海図 C で張る向きを決めて、Spaceで投縄）' };
       if (r.ok) toast(`漁法：${METHODS[v.method].name}${tip[v.method] || ''}`);
       break;
     }
@@ -654,7 +654,7 @@ function haulConfirm(then) {
 
 /** Methods whose gear is on board, in the order T cycles through them. */
 function availableMethods(v) {
-  return ['handline', 'negyo', ...(v.equip.troll ? ['troll'] : []), ...(v.equip.longline ? ['longline'] : [])];
+  return ['handline', 'negyo', 'oyogase', ...(v.equip.troll ? ['troll'] : []), ...(v.equip.longline ? ['longline'] : [])];
 }
 
 /** Click on the big chart while trolling / longline is selected: add a route point there. */
@@ -1256,6 +1256,7 @@ function layoutHud() {
 const STEPS = {
   handline: [['prep', '準備'], ['drop', '投入'], ['fish', '誘い'], ['retrieve', '回収'], ['unhook', '取込']],
   negyo: [['prep', '準備'], ['drop', '投入'], ['fish', '底を切る'], ['retrieve', '巻上げ'], ['unhook', '取込']],
+  oyogase: [['prep', 'エサ付け'], ['drop', '投入'], ['fish', '泳がせ'], ['fight', 'やり取り'], ['retrieve', '巻上げ'], ['unhook', '取込']],
   troll: [['deploy', '出す'], ['tow', '曳く'], ['fight', '掛かり'], ['haul', '手繰り'], ['unhook', '取込']],
   longline: [['set', '投縄'], ['soak', '浸け'], ['haul', '揚げ'], ['unhook', '取込']],
 };
@@ -1340,14 +1341,17 @@ function updateHud(now) {
     const line = op.lines[0];
     panel.hidden = false;
     const neg = op.methodId === 'negyo';
+    const oyo = op.methodId === 'oyogase';
     const drifting = sog > 0.03 ? `${compass8(b.vx, b.vy)}へ${(sog * 1.944).toFixed(1)}ktで流れている` : 'ほぼ流れていない';
     const bySp = Object.entries(op.landedBy || {}).map(([sp, c]) => `${SPECIES[sp].name}${c.s + c.m + c.l}`).join('・');
-    const note = neg
+    const note = oyo
+      ? `タナ ${line.tana != null ? `${line.tana.toFixed(0)}m（${line.tanaSource === 'echo' ? '魚探の反応に合わせる' : '反応がないので中層'}）` : '—'}・活きアジ残り${baitInHold(v, 'aji')}尾・エサ交換${op.stats.baitSwaps}回${bySp ? `・${bySp}` : ''}・${drifting}`
+      : neg
       ? `底から${METHODS.negyo.bottomLift}m（底を切る）・水深${line.tana != null ? line.tana.toFixed(0) : '—'}m${op.stats.snags ? `・根掛かり${op.stats.snags}回` : ''}${bySp ? `・${bySp}` : ''}・${drifting}`
       : `タナ ${line.tana != null ? `${line.tana.toFixed(0)}m（${line.tanaSource === 'echo' ? '魚探の反応に合わせる' : '底から少し上'}）` : '—'}・${drifting}`;
     panel.innerHTML = `<div class="op-head"><span>${METHODS[op.methodId].name} <b>Lv${op.level}</b></span><span class="op-clock">${clock(v.world.time - op.startT)}</span></div>
-      ${op.lines.map((l, i) => stepRow(neg ? 'negyo' : 'handline', l, l.label || (i === 0 ? '右舷' : '左舷'), linePhaseLabel(l))).join('')}
-      ${bigNums([['この流し', op.landedCount, '尾', `${op.landedKg.toFixed(1)}kg`], ['直近10分', pace.perMin.toFixed(1), '尾/分', `${pace.n}尾`], holdNum])}
+      ${op.lines.map((l, i) => stepRow(oyo ? 'oyogase' : neg ? 'negyo' : 'handline', l, l.label || (i === 0 ? '右舷' : '左舷'), linePhaseLabel(l))).join('')}
+      ${bigNums([['この流し', op.landedCount, SPECIES[op.species].unit, `${op.landedKg.toFixed(1)}kg`], ['直近10分', pace.perMin.toFixed(1), `${SPECIES[op.species].unit}/分`, `${pace.n}${SPECIES[op.species].unit}`], holdNum])}
       <div class="op-note">${note}</div>${lineNote}
       <div class="feed">${S.esc(app.lastFeed)}</div>`;
   } else if (v.method === 'longline' && !lineInWater(v)) {
@@ -1368,7 +1372,7 @@ function updateHud(now) {
       <div class="row"><span>${fmtClock(l.startT)}〜 ${S.esc(l.area)}</span><span>${Math.round(l.durationS / 60)}分</span></div>
       <div class="row"><span>漁獲</span><span>${l.count}${u}・${l.kg.toFixed(1)}kg</span></div>
       <div class="row"><span>この航海の合計</span><span>${v.hold.count}匹・${v.hold.kg.toFixed(1)}kg</span></div>${lineNote}
-      <div class="feed">${canStartOperation(v).ok ? ({ troll: 'Spaceで曳縄を開始できます', longline: lineInWater(v) ? 'Spaceで揚げ縄' : 'Spaceで投縄できます', negyo: '停船中：Spaceで根魚釣り（根・漁礁の真上で）' }[v.method] || '停船中：Spaceで操業開始できます') : ''}</div>`;
+      <div class="feed">${canStartOperation(v).ok ? ({ troll: 'Spaceで曳縄を開始できます', longline: lineInWater(v) ? 'Spaceで揚げ縄' : 'Spaceで投縄できます', negyo: '停船中：Spaceで根魚釣り（根・漁礁の真上で）', oyogase: `停船中：Spaceで泳がせ釣り（活きアジ${baitInHold(v, 'aji')}尾）` }[v.method] || '停船中：Spaceで操業開始できます') : ''}</div>`;
   } else if (v.method === 'troll') {
     const rt = trollRouteFrom(v);
     panel.hidden = false;
@@ -1676,7 +1680,7 @@ function devApi() {
     schoolCenters() {
       const v = app.voyage;
       if (!v) return [];
-      return v.world.schools.map((s) => ({ id: s.id, ...schoolCenter(s, v.world.time), total: s.counts.s + s.counts.m + s.counts.l }));
+      return v.world.schools.map((s) => ({ id: s.id, species: s.species, ...schoolCenter(s, v.world.time), total: s.counts.s + s.counts.m + s.counts.l }));
     },
     speed(i) {
       app.speedIdx = i;

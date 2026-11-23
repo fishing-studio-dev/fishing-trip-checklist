@@ -59,7 +59,7 @@ const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
       await sleep(100);
     }
   }
-  const schools = async (species) => (await page.evaluate(() => window.__ryoshi.schoolCenters())).filter((s) => !species || s.id.includes('sawara') === (species === 'sawara'));
+  const schools = async (species) => (await page.evaluate(() => window.__ryoshi.schoolCenters())).filter((s) => !species || s.species === species);
 
   /** Steer with A/D, set speed with W/S, stop at the target (keyboard only). */
   async function driveTo(target, label, { stop = true } = {}) {
@@ -389,7 +389,7 @@ const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
     await pg.waitForFunction(() => window.__ryoshi.state().screen === 'sea');
     s3 = await st3();
     check('the next voyage uses the new boat', s3.voyage.boatModel === 'cruiser_2');
-    const sc = (await pg.evaluate(() => window.__ryoshi.schoolCenters())).filter((x) => !x.id.includes('sawara')).sort((a, b) => b.total - a.total)[0];
+    const sc = (await pg.evaluate(() => window.__ryoshi.schoolCenters())).filter((x) => x.species === 'aji').sort((a, b) => b.total - a.total)[0];
     const cur = await pg.evaluate(() => window.__ryoshi.current());
     const csp = Math.hypot(cur.x, cur.y) || 1;
     await driveTo({ x: sc.x - (cur.x / csp) * 60, y: sc.y - (cur.y / csp) * 60 }, 'M2 approach');
@@ -830,6 +830,54 @@ const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
   } catch (e) {
     check('根魚 playthrough', false, e.message);
     await shot('99-negyo-failure').catch(() => {});
+  }
+
+  // ---------------------------------------------------------------- 泳がせ釣り (item 7): アジ first, then live bait for 青物
+  try {
+    const pg = page;
+    await pg.goto(`http://localhost:${port}/?dev=1&seed=77`);
+    await pg.waitForSelector('#portChart');
+    await pg.click('[data-act=depart]');
+    await waitFor((x) => x.screen === 'sea', 'at sea (泳がせ)');
+    // the biggest アジ school within reach (dev: positions read only to drive there)
+    const aji = await pg.evaluate(() => window.__ryoshi.schoolCenters().filter((s) => s.species === 'aji' && s.y < 2900 && s.total > 50).sort((a, b) => b.total - a.total)[0]);
+    await press('c');
+    await sleep(200);
+    await clickChart(aji.x, aji.y);
+    await press('c');
+    await press('g');
+    for (let i = 0; i < 60 && (await st()).voyage.autopilot; i++) await ff(20);
+    for (let i = 0; i < 6 && (await st()).voyage.method !== 'oyogase'; i++) await press('t');
+    const noBait = await pg.evaluate(() => window.__ryoshi.app.voyage.method);
+    await press('Space');
+    await sleep(200);
+    const refused = !(await st()).voyage.operating && /活きエサ/.test(await pg.textContent('#toast'));
+    check('泳がせ: without アジ in the hold it does not start (live bait comes from the handline)', noBait === 'oyogase' && refused);
+    for (let i = 0; i < 6 && (await st()).voyage.method !== 'handline'; i++) await press('t');
+    await press('Space');
+    await waitFor((x) => x.voyage.operating, 'handline for bait');
+    await ff(420);
+    await press('Space');
+    await waitFor((x) => !x.voyage.operating, 'handline stopped', 60000);
+    const ajiN = await pg.evaluate(() => { const c = window.__ryoshi.app.voyage.hold.counts.aji; return c.s + c.m + c.l; });
+    for (let i = 0; i < 6 && (await st()).voyage.method !== 'oyogase'; i++) await press('t');
+    await press('Space');
+    await waitFor((x) => x.voyage.operating, '泳がせ started');
+    await ff(120);
+    const opO = await pg.textContent('#opPanel');
+    const ajiLeft = await pg.evaluate(() => { const c = window.__ryoshi.app.voyage.hold.counts.aji; return c.s + c.m + c.l; });
+    check('泳がせ: a live アジ from the hold goes on the hook (the hold count drops, shown in the panel)', ajiN > 0 && ajiLeft === ajiN - 1 && /泳がせ釣り/.test(opO) && /活きアジ残り/.test(opO), `アジ ${ajiN} → ${ajiLeft} | ${opO.slice(0, 70)}`);
+    await shot('31-oyogase');
+    await ff(600);
+    const swaps = await pg.evaluate(() => window.__ryoshi.app.voyage.op ? window.__ryoshi.app.voyage.op.stats.baits : 0);
+    check('泳がせ: a tired bait is changed for a fresh アジ after a while', swaps >= 2, `${swaps} baits`);
+    await returnAndLand('泳がせ');
+    const rcO = await pg.textContent('#screen');
+    check('泳がせ: at landing the アジ used as bait are listed and not sold', /活きエサに使った魚：マアジ\d+尾/.test(rcO), rcO.slice(0, 100));
+    await pg.click('[data-act=toPort]');
+  } catch (e) {
+    check('泳がせ playthrough', false, e.message);
+    await shot('99-oyogase-failure').catch(() => {});
   }
 
   check('no page errors or console errors', errors.length === 0, errors.slice(0, 5).join(' | '));

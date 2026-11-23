@@ -109,6 +109,51 @@ export const SPECIES = {
     unit: '尾',
     group: 'negyo',
   },
+  // ベイト（本作設定）: dense schools of small fish in the upper layer over open
+  // water. Nobody here fishes them; they show on the sounder and sonar, and the
+  // 青物 follow them.
+  iwashi: {
+    id: 'iwashi',
+    name: 'イワシ（ベイト）',
+    sizes: {
+      s: { label: 'イワシ', kg: 0.01, pricePerKg: 0 },
+      m: { label: 'イワシ', kg: 0.012, pricePerKg: 0 },
+      l: { label: 'イワシ', kg: 0.015, pricePerKg: 0 },
+    },
+    sizeOrder: ['s', 'm', 'l'],
+    habit: 'pelagic',
+    unit: '尾',
+    bait: true,
+  },
+  // 青物（本作設定）: big, fast fish that roam around reefs and pinnacles and
+  // under bait schools, in mid water. ブリ in the cooler water, ヒラマサ in the
+  // warmer. Taken with a live アジ (泳がせ釣り).
+  buri: {
+    id: 'buri',
+    name: 'ブリ',
+    sizes: {
+      s: { label: 'ハマチ', kg: 2.5, pricePerKg: 600 },
+      m: { label: 'メジロ', kg: 5.0, pricePerKg: 800 },
+      l: { label: 'ブリ', kg: 9.0, pricePerKg: 1000 },
+    },
+    sizeOrder: ['s', 'm', 'l'],
+    habit: 'roam',
+    unit: '本',
+    group: 'aomono',
+  },
+  hiramasa: {
+    id: 'hiramasa',
+    name: 'ヒラマサ',
+    sizes: {
+      s: { label: '小ヒラマサ', kg: 3.0, pricePerKg: 1100 },
+      m: { label: 'ヒラマサ', kg: 6.0, pricePerKg: 1500 },
+      l: { label: '大ヒラマサ', kg: 10.0, pricePerKg: 1900 },
+    },
+    sizeOrder: ['s', 'm', 'l'],
+    habit: 'roam',
+    unit: '本',
+    group: 'aomono',
+  },
   ara: {
     id: 'ara',
     name: 'アラ',
@@ -143,6 +188,34 @@ export const METHODS = {
     gearType: 'reel',
     drift: true, // fished from the drifting boat
     goodRate: 25, // fish per hour regarded as 好調 in the logbook (目安)
+  },
+  // 泳がせ釣り（本作設定）: a live アジ caught earlier on the handline is hooked
+  // and let swim at the bait layer (or a few metres off the bottom) around a
+  // reef or under bait. A tired bait is changed after a while. A hooked 青物 is
+  // fought (hands busy) before it is wound up. Each bait takes one アジ from the
+  // hold — without アジ there is nothing to fish with.
+  oyogase: {
+    id: 'oyogase',
+    name: '泳がせ釣り',
+    detail: '一本釣りで釣った活きアジを針に付けて泳がせ、根や瀬の周り・ベイトの下を回る青物（ブリ・ヒラマサ）を狙う。エサのアジは魚倉から使う',
+    target: 'buri',
+    targets: ['buri', 'hiramasa'],
+    hooks: 1,
+    hookSpacing: 0,
+    liveBait: 'aji', // one fish from the hold per bait
+    baitLife: 600, // s: a live bait that has not been taken is changed for a fresh one
+    biteRateMax: 0.015, // a live bait is found from far off: big fish, thin in the water
+    densityHalf: 0.00005,
+    oiWait: 0,
+    retuneAfter: 120,
+    defaultOffBottom: 6,
+    defaultFrac: 0.65, // with no echo the bait swims in mid water (65% of the depth), where 青物 roam
+    echoThreshold: 0.3,
+    fight: true, // a big fish is played before it can be wound up
+    maxStartSpeed: 0.6,
+    gearType: 'reel',
+    drift: true,
+    goodRate: 2,
   },
   // 根魚釣り（本作設定）: a short two-hook rig with the sinker kept just off the
   // bottom (底を切る) right over a structure. The rig follows the bottom by
@@ -220,6 +293,7 @@ export function skillForLevel(level) {
   return {
     rebait: lerp(15, 5), // s per cycle: bait & ready the rig
     rerig: lerp(45, 15), // s: cut a snagged line and tie a new rig (根掛かり)
+    fight: lerp(120, 40), // s: playing a 6 kg 青物 before winding it up (heavier fish take longer)
     snagMul: lerp(1, 0.4), // how often the rig snags on rock (keeping it just off the bottom)
     unhook: lerp(8, 2.5), // s per fish: unhook and stow
     dropSpeed: lerp(1.2, 1.7), // m/s: paying out line

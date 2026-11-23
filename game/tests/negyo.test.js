@@ -141,3 +141,20 @@ test('A12 (移行): a format-6 save gets 根魚釣り・泳がせ・イカ釣り
   assert.equal(p7.methods.handline.xp, 123);
   assert.deepEqual(validateProfile(p7), []);
 });
+
+test('a 根魚 log with several species settles: each species is matched against the hold and sold', () => {
+  const reef = (species) => ({ id: `R-${species}`, species, a: { x: g1.x, y: g1.y }, counts: { s: 4, m: 4, l: 2 }, sigmaH: 15, sigmaZ: 1, activityOverride: 1, orbitR: 0 });
+  const dep = markDeparture(profile(), NOW);
+  const v = createVoyage(dep, { scenario: { conditions: CALM, schools: [reef('kasago'), reef('kijihata')] }, start: { x: g1.x, y: g1.y, heading: 0 }, radio: [] });
+  v.world.time = 7 * 3600;
+  assert.ok(setMethod(v, 'negyo').ok);
+  advanceVoyage(v, 3);
+  const log = fish(v, 30 * 60);
+  assert.ok(Object.keys(log.bySpecies).length >= 2, JSON.stringify(log.bySpecies));
+  returnToPort(v);
+  for (let i = 0; i < 6000 && v.phase !== 'docked'; i++) advanceVoyage(v, 1);
+  const s = settleVoyage(dep, summarizeVoyage(v));
+  assert.ok(s.ok, s.reason);
+  const species = new Set(s.receipt.lines.map((l) => l.species));
+  assert.ok(species.has('kasago') && species.has('kijihata'), [...species].join(','));
+});

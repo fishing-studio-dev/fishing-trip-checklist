@@ -103,6 +103,13 @@ export function schoolPose(school, t) {
     const z = Math.min(pelagicDepthAt(school, t), Math.max(2, bottom - 3));
     return { x: c.x, y: c.y, z, bottom };
   }
+  if (SPECIES[school.species].habit === 'roam') {
+    // 青物（本作設定）: under the bait school they follow, or in mid water around a reef
+    let z;
+    if (school.baitDepth) z = pelagicDepthAt({ fixedDepth: null, ...school.baitDepth }, t) + (school.below || 4);
+    else z = bottom * ((school.depthFrac || 0.6) + 0.08 * noise1(school.noiseSeed, t / 1200));
+    return { x: c.x, y: c.y, z: Math.max(3, Math.min(bottom - 2, z)), bottom };
+  }
   const off = offBottomAt(school, t);
   const z = Math.max(school.reef ? 1 : 3, bottom - off);
   return { x: c.x, y: c.y, z, bottom, off };
@@ -122,6 +129,15 @@ export function activityAt(world, school, t) {
     const todS = 0.6 + 0.6 * Math.exp(-(((h - 6) / 1.5) ** 2)) + 0.35 * Math.exp(-(((h - 16.5) / 1.3) ** 2));
     const warm = Math.max(0.6, Math.min(1.2, 0.8 + (world.cond.waterTemp - 18.8) * 0.3));
     return Math.max(0.3, Math.min(1.4, todS * (0.8 + 0.25 * Math.min(1, sp / 0.22)) * warm * wobble));
+  }
+  if (SPECIES[school.species].habit === 'roam') {
+    // 青物（本作設定）: strongest at dawn and dusk and when the tide runs; ブリ like it
+    // cooler, ヒラマサ warmer
+    const todA = 0.55 + 0.6 * Math.exp(-(((h - 5.8) / 1.4) ** 2)) + 0.45 * Math.exp(-(((h - 16.8) / 1.4) ** 2));
+    const tideA = 0.6 + 0.55 * Math.min(1, sp / 0.22);
+    const dt = world.cond.waterTemp - 18.8;
+    const temp = Math.max(0.7, Math.min(1.2, 1 + 0.15 * (school.species === 'buri' ? -dt : dt)));
+    return Math.max(0.3, Math.min(1.4, todA * tideA * temp * wobble));
   }
   if (school.reef) {
     // 根魚（本作設定）: feed best in low light (dawn, dusk); a moderate tide helps.

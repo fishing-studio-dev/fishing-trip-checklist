@@ -83,6 +83,8 @@ export function createOperation({ id, voyageId, methodId, level, rigs, startT, x
       lastTanaSource: null,
       snags: 0,
       lostFish: 0,
+      baits: 0, // live baits put on (泳がせ: one アジ each)
+      baitSwaps: 0, // tired baits changed without a bite
     },
   };
   initHands(op, hands);
@@ -96,6 +98,7 @@ function newLine(method, skill, rig) {
     reelId: rig.reelId,
     handReel: hand,
     bottomMode: !!method.bottomMode,
+    liveBait: !!method.liveBait,
     snagAcc: 0,
     retrieveSpeed: hand ? skill.handRetrieve : rig.reel.retrieve,
     maxDepth: rig.reel.maxDepth,
@@ -114,7 +117,7 @@ function newLine(method, skill, rig) {
 
 /** Steps that need the fisher's hands (others run on their own). */
 export function handlineNeedsHands(line) {
-  return line.phase === 'prep' || line.phase === 'unhook' || line.phase === 'snag' || (line.phase === 'retrieve' && line.handReel);
+  return line.phase === 'prep' || line.phase === 'unhook' || line.phase === 'snag' || line.phase === 'fight' || (line.phase === 'retrieve' && line.handReel);
 }
 
 export function fishOnLine(line) {
@@ -168,6 +171,16 @@ export function stepOperation(op, ctx, dt) {
           break;
         }
         if (line.timer <= 0) {
+          if (method.liveBait) {
+            // 泳がせ: a live アジ from the hold goes on the hook; none left → nothing to fish with
+            if (!ctx.takeBait || !ctx.takeBait(method.liveBait)) {
+              line.phase = 'idle';
+              op.noBait = true;
+              break;
+            }
+            op.stats.baits += 1;
+            line.baitT = 0;
+          }
           if (method.bottomMode) {
             // 根魚釣り: down to the bottom, then the sinker is kept just off it
             setTana(op, line, { tana: bottomTana(method, bottom, line.maxDepth), source: 'bottom' });
@@ -176,9 +189,16 @@ export function stepOperation(op, ctx, dt) {
           }
           const r = readTana(ctx.obs, method, line.maxDepth);
           if (r.tana == null) break; // no sounder reading yet
+          if (r.source === 'bottom' && method.defaultFrac) r.tana = Math.min(line.maxDepth, bottom * method.defaultFrac + 1, bottom - 2);
           setTana(op, line, r);
           line.phase = 'drop';
         }
+        break;
+      }
+      case 'fight': {
+        // やり取り: a big fish is played (hands busy) before it can be wound up
+        line.timer -= dt;
+        if (line.timer <= 0) line.phase = 'retrieve';
         break;
       }
       case 'snag': {
@@ -297,9 +317,24 @@ export function stepOperation(op, ctx, dt) {
           line.phase = 'retrieve';
           break;
         }
+        if (anyFish && method.fight) {
+          const kg = fishOnLine(line).reduce((a, f) => a + f.kg, 0);
+          line.phase = 'fight';
+          line.timer = op.skill.fight * Math.sqrt(kg / 6);
+          break;
+        }
         if (anyFish && (allFull || t - line.firstBiteT >= method.oiWait)) {
           line.phase = 'retrieve';
           break;
+        }
+        if (method.liveBait && !anyFish) {
+          // a live bait tires: change it for a fresh one after a while
+          line.baitT = (line.baitT || 0) + dt;
+          if (line.baitT >= method.baitLife) {
+            op.stats.baitSwaps += 1;
+            line.phase = 'retrieve';
+            break;
+          }
         }
         if (!anyFish) {
           line.sinceRetune += dt;
@@ -366,6 +401,9 @@ export function stepOperation(op, ctx, dt) {
   if (op.state === 'running' && op.stats.holdBlocked > 0 && inFlightKg(op) === 0) {
     requestStop(op, 'hold_full');
   }
+  if (op.state === 'running' && op.noBait && op.lines.every((l) => l.phase === 'idle')) {
+    requestStop(op, 'no_bait');
+  }
   if (op.state === 'stopping' && op.lines.every((l) => l.phase === 'idle')) {
     op.state = 'ended';
     op.endT = t;
@@ -401,10 +439,10 @@ export function recentPace(op, t, window = 600) {
 
 /** Human label for the current state of a line (for the HUD). */
 export function linePhaseLabel(line) {
-  if (line.waiting) return `手が空くのを待っている（${{ prep: '餌付け', unhook: '取り込み', retrieve: '巻上げ', snag: '仕掛けの付け直し' }[line.phase] || line.phase}）`;
+  if (line.waiting) return `手が空くのを待っている（${{ prep: '餌付け', unhook: '取り込み', retrieve: '巻上げ', snag: '仕掛けの付け直し', fight: 'やり取り' }[line.phase] || line.phase}）`;
   switch (line.phase) {
     case 'prep':
-      return '餌付け・準備';
+      return line.liveBait ? '活きアジを針に付ける' : '餌付け・準備';
     case 'drop':
       return `投入中 ${line.depth.toFixed(0)}m / タナ${line.tana.toFixed(0)}m`;
     case 'adjust':
@@ -412,10 +450,13 @@ export function linePhaseLabel(line) {
     case 'fish': {
       const n = fishOnLine(line).length;
       if (line.bottomMode) return n ? `掛かった！根から引き離す（${n}尾）` : `底を切って待つ 水深${line.tana.toFixed(0)}m`;
+      if (line.liveBait) return `活きアジを泳がせて待つ タナ${line.tana.toFixed(0)}m（エサ${Math.floor((line.baitT || 0) / 60)}分）`;
       return n ? `アタリ！追い食い待ち（${n}尾）` : `誘い中 タナ${line.tana.toFixed(0)}m`;
     }
     case 'snag':
       return '根掛かり：糸を切って仕掛けを付け直し';
+    case 'fight':
+      return `掛かった！やり取り中（${fishOnLine(line).map((f) => f.kg.toFixed(0)).join('・')}kg級）`;
     case 'retrieve':
       return `回収中 ${line.depth.toFixed(0)}m（${fishOnLine(line).length}尾）`;
     case 'unhook':

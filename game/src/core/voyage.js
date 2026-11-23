@@ -115,7 +115,7 @@ function planMethod(plan, gear) {
   const m = plan && plan.methodId;
   if (m === 'troll' && gear.troll) return 'troll';
   if (m === 'longline' && gear.longline) return 'longline';
-  if (m === 'negyo') return 'negyo'; // the reels and a bottom rig are always on board
+  if (m === 'negyo' || m === 'oyogase') return m; // the reels are always on board (泳がせ needs アジ in the hold)
   return 'handline';
 }
 
@@ -241,7 +241,7 @@ export function stepVoyage(v) {
 
   if (v.op) {
     if (v.op.state !== 'ended') {
-      const ctx = { world: w, boat: v.boat, obs: v.obs, hold: v.hold, capacityKg: v.capacityKg, reservedKg: hookedKg(v.line), onLand: (fish) => landFish(v, fish) };
+      const ctx = { world: w, boat: v.boat, obs: v.obs, hold: v.hold, capacityKg: v.capacityKg, reservedKg: hookedKg(v.line), onLand: (fish) => landFish(v, fish), takeBait: (sp) => takeLiveBait(v, sp) };
       if (v.op.methodId === 'troll') stepTrollOperation(v.op, ctx, dt);
       else if (v.op.methodId === 'longline') stepLonglineOperation(v.op, v.line, ctx, dt);
       else stepOperation(v.op, ctx, dt);
@@ -286,6 +286,27 @@ export function stepVoyage(v) {
     say(v, '日暮れが近いので帰港します。', 'warn');
     returnToPort(v, true);
   }
+}
+
+/** How many fish of a species are in the hold (live bait for 泳がせ). */
+export function baitInHold(v, species) {
+  const c = v.hold.counts[species];
+  return c ? c.s + c.m + c.l : 0;
+}
+
+/** Take one fish from the hold as live bait (smallest first). Recorded so settlement stays consistent. */
+function takeLiveBait(v, species) {
+  const c = v.hold.counts[species];
+  if (!c) return false;
+  const size = SPECIES[species].sizeOrder.find((k) => c[k] > 0);
+  if (!size) return false;
+  c[size] -= 1;
+  v.hold.count -= 1;
+  v.hold.kg = Math.max(0, v.hold.kg - SPECIES[species].sizes[size].kg);
+  if (!v.baitUsed) v.baitUsed = {};
+  if (!v.baitUsed[species]) v.baitUsed[species] = { s: 0, m: 0, l: 0 };
+  v.baitUsed[species][size] += 1;
+  return true;
 }
 
 function landFish(v, fish) {
@@ -506,6 +527,7 @@ export function canStartOperation(v) {
   if (Math.abs(v.boat.speed) > m.maxStartSpeed) return { ok: false, reason: '船を止めてから操業を始めます（停止まで減速）。' };
   if (!v.obs.cols.length) return { ok: false, reason: '魚探の反応を待っています。' };
   if (depth < 6) return { ok: false, reason: `浅すぎて${m.name}の仕掛けを流せません。` };
+  if (m.liveBait && baitInHold(v, m.liveBait) < 1) return { ok: false, reason: '活きエサのアジがありません。先に一本釣りでアジを釣ってください（魚倉のアジを1尾ずつ使います）。' };
   return { ok: true };
 }
 
@@ -589,7 +611,8 @@ export function startOperation(v) {
   });
   v.op.startConditions = conditionsSnapshot(v);
   if (depth > v.equip.reel.maxDepth) say(v, `水深${depth.toFixed(0)}mはリールの対応水深${v.equip.reel.maxDepth}mを超えています。届く深さまでで操業します。`, 'warn');
-  if (hookMethod === 'negyo') say(v, `根魚釣り開始（${areaNameAt(v.boat.x, v.boat.y)}・水深${depth.toFixed(0)}m）。底を切って流します。根の真上を通るように流し直し（R）を使ってください。`);
+  if (hookMethod === 'oyogase') say(v, `泳がせ釣り開始（${areaNameAt(v.boat.x, v.boat.y)}・水深${depth.toFixed(0)}m）。魚倉の活きアジ（残り${baitInHold(v, 'aji')}尾）を1尾ずつ使います。`);
+  else if (hookMethod === 'negyo') say(v, `根魚釣り開始（${areaNameAt(v.boat.x, v.boat.y)}・水深${depth.toFixed(0)}m）。底を切って流します。根の真上を通るように流し直し（R）を使ってください。`);
   else say(v, `操業開始（${areaNameAt(v.boat.x, v.boat.y)}・水深${depth.toFixed(0)}m）。投入から回収まで自動で行います。`);
   return { ok: true };
 }
@@ -812,6 +835,7 @@ export function endReasonText(r) {
       hold_full: '魚倉が満杯になりました。',
       haul: '縄を揚げに向かいます。',
       move: '航路に沿って移動します。',
+      no_bait: '活きエサのアジがなくなりました。',
     }[r] || ''
   );
 }
@@ -877,6 +901,7 @@ function makeOperationLog(v, op) {
     log.bySpecies = Object.fromEntries(Object.entries(op.landedBy || {}).map(([sp, c]) => [sp, { ...c }]));
     log.snags = st.snags || 0;
     log.lostFish = st.lostFish || 0;
+    if (METHODS[op.methodId].liveBait) log.baits = st.baits || 0;
   }
   log.tags = logTags(log);
   return log;
@@ -952,6 +977,7 @@ export function summarizeVoyage(v) {
     fuelPerKm: boatModel(v).fuelPerKm,
     crew: v.crew,
     crewWage: v.crew ? CREW.wage : 0,
+    baitUsed: v.baitUsed ? JSON.parse(JSON.stringify(v.baitUsed)) : {},
     bathyCells: v.bathy ? v.bathy.cells : {},
     marks: v.obs.marks.filter((m) => m.kind !== 'auto').map((m) => ({ ...m })),
     opSeconds: Math.round(v.opSeconds),

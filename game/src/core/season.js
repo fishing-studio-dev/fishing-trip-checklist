@@ -97,6 +97,126 @@ export function reefSchools(seed, d) {
   return out;
 }
 
+// 青物（本作設定）: grounds they roam around (reefs, pinnacles, the far reef), and
+// open-water zones where bait (イワシ) schools pass. Away from the アジ grounds.
+export const BLUE_GROUNDS = [
+  { id: 'n1', x: 1500, y: 2200, spread: 120 },
+  { id: 'n2', x: 2700, y: 2300, spread: 120 },
+  { id: 'kita_kata', x: 2250, y: 2480, spread: 160 },
+  { id: 'okise', x: 1650, y: 4050, spread: 200, rich: 1.5 },
+  { id: 'n3', x: 1900, y: 3800, spread: 120 },
+];
+export const BAIT_ZONES = [
+  { id: 'oki', x: 1350, y: 1700, spread: 300 },
+  { id: 'kita_oki', x: 2050, y: 2800, spread: 250 },
+  { id: 'okise_oki', x: 1450, y: 3650, spread: 250 },
+  { id: 'higashi_oki', x: 2750, y: 2050, spread: 200 },
+];
+
+function baitSchool(seed, d, zone, k) {
+  const zi = BAIT_ZONES.indexOf(zone);
+  const r = (j) => hashFloat(seed, zi, d, k, j, 501);
+  const ang = r(1) * Math.PI * 2;
+  const run = 300 + r(2) * 200;
+  const ax = zone.x + (r(3) - 0.5) * zone.spread;
+  const ay = zone.y + (r(4) - 0.5) * zone.spread;
+  const n = Math.round(3000 + r(5) * 5000);
+  return {
+    id: `D${d}-bait-${zone.id}-${k}`,
+    species: 'iwashi',
+    habitat: zone.id,
+    area: areaNameAt(ax, ay),
+    a: { x: ax, y: ay },
+    b: { x: ax + Math.sin(ang) * run, y: ay + Math.cos(ang) * run },
+    moveStart: (5 + r(6) * 2) * 3600,
+    moveEnd: (12 + r(7) * 3) * 3600,
+    orbitR: 40 + r(8) * 60,
+    orbitPeriod: (30 + r(9) * 30) * 60,
+    orbitPhase: r(10) * Math.PI * 2,
+    sigmaH: 40 + r(11) * 30,
+    sigmaZ: 2 + r(12) * 1.5,
+    depthBias: 1.5 + r(13) * 3,
+    noiseSeed: Math.floor(r(14) * 1e9),
+    counts: splitCounts(n, 0.2, 0.4),
+  };
+}
+
+/** Which 青物 the water suits today (ブリ cooler, ヒラマサ warmer; both in between). */
+function blueSpecies(seed, d, k) {
+  const temp = makeDayConditions(seed, d).waterTemp;
+  const pBuri = Math.max(0.15, Math.min(0.85, 0.5 - (temp - 18.6) * 0.6));
+  return hashFloat(seed, d, k, 511) < pBuri ? 'buri' : 'hiramasa';
+}
+
+/** Bait schools and 青物 for day d (a pure function of seed and day). */
+export function blueSchools(seed, d) {
+  const out = [];
+  BAIT_ZONES.forEach((z, zi) => {
+    if (hashFloat(seed, zi, d, 502) > 0.7) return; // no bait in this zone today
+    const bait = baitSchool(seed, d, z, 0);
+    out.push(bait);
+    // some bait schools have 青物 underneath, following them
+    if (hashFloat(seed, zi, d, 503) < 0.45) {
+      const sp = blueSpecies(seed, d, zi + 10);
+      const n = Math.round(6 + hashFloat(seed, zi, d, 504) * 12);
+      out.push({
+        id: `D${d}-blue-${z.id}`,
+        species: sp,
+        habitat: z.id,
+        area: bait.area,
+        a: { ...bait.a },
+        b: { ...bait.b },
+        moveStart: bait.moveStart,
+        moveEnd: bait.moveEnd,
+        orbitR: bait.orbitR,
+        orbitPeriod: bait.orbitPeriod,
+        orbitPhase: bait.orbitPhase,
+        sigmaH: 45 + hashFloat(seed, zi, d, 505) * 20,
+        sigmaZ: 7,
+        baitDepth: { depthBias: bait.depthBias, noiseSeed: bait.noiseSeed },
+        below: 4 + hashFloat(seed, zi, d, 506) * 4,
+        noiseSeed: Math.floor(hashFloat(seed, zi, d, 507) * 1e9),
+        counts: splitCounts(n, 0.25, 0.4),
+      });
+    }
+  });
+  // 青物 roaming around the reefs: multi-day stays
+  BLUE_GROUNDS.forEach((g, gi) => {
+    let start = 0;
+    let ep = null;
+    for (let i = 0; i < 2000; i++) {
+      const len = 2 + Math.floor(hashFloat(seed, gi, i, 521) * 4);
+      if (d < start + len) {
+        ep = { i, present: hashFloat(seed, gi, i, 522) < 0.4 };
+        break;
+      }
+      start += len;
+    }
+    if (!ep || !ep.present) return;
+    const r = (j) => hashFloat(seed, gi, d, j, 531);
+    const n = Math.round((6 + hashFloat(seed, gi, ep.i, 523) * 14) * (g.rich || 1));
+    const cx = g.x + (r(1) - 0.5) * g.spread;
+    const cy = g.y + (r(2) - 0.5) * g.spread;
+    out.push({
+      id: `D${d}-blue-${g.id}`,
+      species: blueSpecies(seed, d, gi),
+      habitat: g.id,
+      area: areaNameAt(g.x, g.y),
+      a: { x: cx, y: cy },
+      b: { x: cx, y: cy },
+      orbitR: 80 + r(3) * 80,
+      orbitPeriod: (15 + r(4) * 15) * 60,
+      orbitPhase: r(5) * Math.PI * 2,
+      sigmaH: 45 + r(6) * 25,
+      sigmaZ: 8,
+      depthFrac: 0.5 + r(7) * 0.25,
+      noiseSeed: Math.floor(r(8) * 1e9),
+      counts: splitCounts(n, 0.25 + (g.rich ? 0.1 : 0), 0.35),
+    });
+  });
+  return out;
+}
+
 const habIndex = (id) => HABITATS.findIndex((h) => h.id === id);
 const zoneIndex = (id) => SAWARA_ZONES.findIndex((z) => z.id === id);
 
@@ -278,6 +398,7 @@ export function dayPlan(seed, d) {
     script.sawara.forEach(([zid, n], k) => schools.push(sawaraSchool(seed, d, zid, n, k)));
     schools.push(...madaiSchools(seed, d));
     schools.push(...reefSchools(seed, d));
+    schools.push(...blueSchools(seed, d));
     return { schools, scripted: true };
   }
   HABITATS.forEach((h, hi) => schools.push(...ajiFromEpisode(seed, d, h, hi)));
@@ -293,5 +414,6 @@ export function dayPlan(seed, d) {
   }
   schools.push(...madaiSchools(seed, d));
   schools.push(...reefSchools(seed, d));
+  schools.push(...blueSchools(seed, d));
   return { schools, scripted: false };
 }
