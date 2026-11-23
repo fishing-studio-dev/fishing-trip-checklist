@@ -1,5 +1,5 @@
 // Method progression: XP -> level -> handling skill.
-import { PROGRESSION, METHODS, skillForLevel, EQUIPMENT } from './data.js';
+import { PROGRESSION, METHODS, skillForLevel, trollSkillForLevel, EQUIPMENT } from './data.js';
 
 export function levelFromXp(xp) {
   const t = PROGRESSION.xpTable;
@@ -44,4 +44,11 @@ export function cycleEstimate(level, reelId, depth = 30, firstBite = 3) {
   };
   const total = parts.drop + parts.wait + parts.retrieve + parts.unhook + parts.rebait;
   return { parts, total, fishPerMin: (m.hooks / total) * 60, retrieveSpeed: retrieve };
+}
+
+/** Time one trolling line is out of action for one fish (fight → haul → unhook → re-set). */
+export function trollCycleEstimate(level, gear = { lineLength: 40 }) {
+  const sk = trollSkillForLevel(level);
+  const parts = { fight: sk.fight, haul: gear.lineLength / sk.haul, unhook: sk.unhook, deploy: sk.deploy };
+  return { parts, total: parts.fight + parts.haul + parts.unhook + parts.deploy, haulSpeed: sk.haul };
 }

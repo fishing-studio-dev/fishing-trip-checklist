@@ -1,19 +1,26 @@
 // Simple, transactional economy: one-shot settlement after landing, and
 // equipment purchase / swap. Each function returns a complete new profile
 // (or a refusal) so a transaction is never half-applied (A11).
-import { ECONOMY, EQUIPMENT, BOATS, SPECIES } from './data.js';
+import { ECONOMY, EQUIPMENT, BOATS, SPECIES, METHODS } from './data.js';
+import { addHeardReports } from './knowledge.js';
 import { clone } from './profile.js';
 import { xpForVoyage, levelFromXp } from './progress.js';
 
 const MAX_LOGS = 500;
 
+/** Sales lines per species and size (only sizes that were landed, plus totals). */
 export function priceLines(holdCounts) {
-  const sp = SPECIES.aji;
-  return sp.sizeOrder.map((k) => {
-    const count = holdCounts[k] || 0;
-    const kg = Math.round(count * sp.sizes[k].kg * 100) / 100;
-    return { size: k, label: sp.sizes[k].label, count, kg, unitPrice: sp.sizes[k].pricePerKg, amount: Math.round(kg * sp.sizes[k].pricePerKg) };
-  });
+  const lines = [];
+  for (const [spId, sp] of Object.entries(SPECIES)) {
+    const c = holdCounts[spId] || {};
+    for (const k of sp.sizeOrder) {
+      const count = c[k] || 0;
+      if (!count) continue;
+      const kg = Math.round(count * sp.sizes[k].kg * 100) / 100;
+      lines.push({ species: spId, size: k, label: sp.sizes[k].label, count, kg, unitPrice: sp.sizes[k].pricePerKg, amount: Math.round(kg * sp.sizes[k].pricePerKg) });
+    }
+  }
+  return lines;
 }
 
 /** Land and sell the whole catch, pay the trip cost, gain XP. Exactly once per voyage. */
@@ -21,10 +28,13 @@ export function settleVoyage(profile, summary) {
   if (profile.settledVoyages.includes(summary.id)) return { ok: false, reason: 'この航海はすでに精算済みです。' };
   if (!profile.activeVoyage || profile.activeVoyage.id !== summary.id) return { ok: false, reason: '精算対象の航海が見つかりません。' };
   // the hold must match the operation logs (every landed fish came from an operation)
-  const fromLogs = { s: 0, m: 0, l: 0 };
-  for (const l of summary.logs) for (const k of Object.keys(fromLogs)) fromLogs[k] += l.catches[k] || 0;
-  for (const k of Object.keys(fromLogs)) {
-    if (fromLogs[k] !== (summary.hold.counts[k] || 0)) return { ok: false, reason: '魚倉と操業記録が一致しません（精算を中止しました）。' };
+  for (const spId of Object.keys(SPECIES)) {
+    const fromLogs = { s: 0, m: 0, l: 0 };
+    for (const l of summary.logs) if ((l.species || 'aji') === spId) for (const k of Object.keys(fromLogs)) fromLogs[k] += l.catches[k] || 0;
+    const held = summary.hold.counts[spId] || {};
+    for (const k of Object.keys(fromLogs)) {
+      if (fromLogs[k] !== (held[k] || 0)) return { ok: false, reason: '魚倉と操業記録が一致しません（精算を中止しました）。' };
+    }
   }
 
   const p = clone(profile);
@@ -38,13 +48,23 @@ export function settleVoyage(profile, summary) {
   const fundsBefore = p.funds;
   p.funds = p.funds + sales - payable;
 
-  const xpBefore = p.methods.handline.xp;
-  const xp = xpForVoyage(summary.hold.count, summary.opSeconds);
-  p.methods.handline.xp = xpBefore + xp.total;
+  // experience per method: from what that method landed and the time it was worked
+  const xp = {};
+  for (const mId of Object.keys(METHODS)) {
+    const logs = summary.logs.filter((l) => (l.methodId || 'handline') === mId);
+    if (!logs.length) continue;
+    const fish = logs.reduce((a, l) => a + l.count, 0);
+    const secs = logs.reduce((a, l) => a + l.durationS, 0);
+    const before = p.methods[mId].xp;
+    const g = xpForVoyage(fish, secs);
+    p.methods[mId].xp = before + g.total;
+    xp[mId] = { ...g, fish, before, after: p.methods[mId].xp, levelBefore: levelFromXp(before), levelAfter: levelFromXp(p.methods[mId].xp) };
+  }
 
   const known = new Set(p.logs.map((l) => l.id));
   for (const l of summary.logs) if (!known.has(l.id)) p.logs.push(l);
   if (p.logs.length > MAX_LOGS) p.logs.splice(0, p.logs.length - MAX_LOGS);
+  if (summary.heard && summary.heard.length) addHeardReports(p, summary.heard);
 
   p.settledVoyages.push(summary.id);
   if (p.settledVoyages.length > 200) p.settledVoyages.shift();
@@ -63,10 +83,12 @@ export function settleVoyage(profile, summary) {
     net: sales - payable,
     fundsBefore,
     fundsAfter: p.funds,
-    xp: { ...xp, before: xpBefore, after: p.methods.handline.xp, levelBefore: levelFromXp(xpBefore), levelAfter: levelFromXp(p.methods.handline.xp) },
+    xp,
     opCount: summary.logs.length,
     opSeconds: summary.opSeconds,
     distanceM: summary.distanceM,
+    plan: summary.plan || null,
+    heardCount: summary.heard ? summary.heard.length : 0,
   };
   return { ok: true, profile: p, receipt };
 }

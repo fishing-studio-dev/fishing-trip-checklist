@@ -1,7 +1,8 @@
 // A12 save / restore, corruption handling, interrupted voyages.
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { createProfile, markDeparture, resolveInterruptedVoyage } from '../src/core/profile.js';
+import { createProfile, markDeparture, resolveInterruptedVoyage, validateProfile } from '../src/core/profile.js';
+import { hashString } from '../src/core/rng.js';
 import { settleVoyage, purchaseEquipment } from '../src/core/economy.js';
 import { summarizeVoyage } from '../src/core/voyage.js';
 import { loadSave, writeSave, memoryStorage, KEYS, exportSave, checkImport, SAVE_SCHEMA } from '../src/core/save.js';
@@ -129,4 +130,57 @@ test('export / import: valid files round-trip, broken files are rejected', () =>
 test('save keys never collide with the checklist app in the same origin', () => {
   for (const k of Object.values(KEYS)) assert.ok(k.startsWith('ryoshi-game:'));
   assert.ok(!Object.values(KEYS).includes('fishing-checklist-v1'));
+});
+
+/** A save exactly as M0 (schema 1) wrote it. */
+function m0Save() {
+  const p = createProfile({ worldSeed: 9, now: NOW });
+  const v1 = JSON.parse(JSON.stringify(p));
+  v1.schema = 1;
+  v1.methods = { handline: { xp: 95 } };
+  delete v1.boat.slots.stern_troll;
+  delete v1.knowledge;
+  v1.funds = 12345;
+  v1.day = 3;
+  v1.logs = [{ id: 'V3-op1', voyageId: 'V3', day: 3, methodId: 'handline', startT: 21600, endT: 23400, durationS: 1800, start: { x: 1, y: 2 }, end: { x: 3, y: 4 }, area: '北の瀬', bottom: { min: 20, max: 22 }, tana: { min: 17, max: 19 }, catches: { s: 1, m: 9, l: 2 }, count: 12, kg: 3.3, endReason: 'player', conditions: { t: 21600, tideName: '中潮', current: { x: 0.1, y: 0.1, speed: 0.14 }, wind: { x: 1, y: 1, speed: 1.4 }, waterTemp: 18.5 }, sounder: { pings: 3600, echoRatio: 0.7, maxEcho: 0.9, echoDepth: 17 }, gear: { boat: 'skiff_1', sounder: 'sounder_es1', reel: 'reel_hand' }, level: 2 }];
+  const data = JSON.stringify(v1);
+  return { v1, raw: JSON.stringify({ format: 'ryoshi-game-save', schemaVersion: 1, app: 'M0', revision: 7, savedAt: NOW, checksum: hashString(data), data: v1 }) };
+}
+
+test('M1 reads an M0 save: funds, XP, equipment and logbook are kept; the original is preserved', () => {
+  const st = memoryStorage();
+  const { v1, raw } = m0Save();
+  st.setItem(KEYS.main, raw);
+  const r = loadSave(st);
+  assert.equal(r.status, 'ok');
+  assert.equal(r.migratedFrom, 1);
+  const p = r.profile;
+  assert.equal(p.schema, 2);
+  assert.equal(p.funds, 12345);
+  assert.equal(p.methods.handline.xp, 95);
+  assert.equal(p.methods.troll.xp, 0);
+  assert.equal(p.boat.slots.stern_troll, null);
+  assert.equal(p.logs.length, 1);
+  assert.equal(p.logs[0].species, 'aji');
+  assert.deepEqual(p.logs[0].catches, v1.logs[0].catches);
+  assert.equal(p.knowledge.briefedDay, 3, 'past days are not briefed retroactively');
+  assert.deepEqual(validateProfile(p), []);
+  assert.equal(st.getItem(r.preMigrationKey), raw, 'the M0 original is kept under its own key');
+  // after the first save in the new format, loading is plain and the original stays
+  const w = writeSave(st, p, r.revision, NOW);
+  assert.ok(w.ok);
+  const r2 = loadSave(st);
+  assert.equal(r2.status, 'ok');
+  assert.equal(r2.migratedFrom, null);
+  assert.deepEqual(r2.profile, p);
+  assert.equal(st.getItem(r.preMigrationKey), raw);
+});
+
+test('a tampered M0 save is rejected before migration (checksum on the original data)', () => {
+  const st = memoryStorage();
+  const { raw } = m0Save();
+  st.setItem(KEYS.main, raw.replace('"funds":12345', '"funds":99999'));
+  const r = loadSave(st, 5);
+  assert.equal(r.status, 'unreadable');
+  assert.ok(st.getItem(KEYS.quarantinePrefix + 5));
 });

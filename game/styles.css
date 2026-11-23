@@ -50,6 +50,7 @@ kbd { font: 11px/1 ui-monospace, Menlo, Consolas, monospace; background: rgba(25
 .hud-msgs { position: absolute; left: 8px; bottom: 112px; width: min(460px, calc(100% - 16px)); display: flex; flex-direction: column; gap: 4px; pointer-events: none; }
 .msg { background: var(--panel); border-left: 3px solid var(--accent); padding: 5px 9px; border-radius: 6px; font-size: 13px; animation: fade 0.3s; }
 .msg.warn { border-left-color: var(--warn); }
+.msg.radio { border-left-color: #8fb8ff; }
 .msg .t { color: var(--sub); font-size: 11px; margin-right: 6px; font-variant-numeric: tabular-nums; }
 @keyframes fade { from { opacity: 0; transform: translateY(4px); } }
 .hud-controls { position: absolute; left: 0; right: 0; bottom: 8px; display: flex; justify-content: center; align-items: flex-end; gap: 10px; flex-wrap: wrap; padding: 0 8px; }
@@ -119,3 +120,27 @@ table.data td.num, table.data th.num { text-align: right; }
   .ctl { padding: 7px 8px; font-size: 13px; min-height: 40px; }
   kbd { display: none; }
 }
+
+/* ---------- M1: port briefing ---------- */
+.sheet.wide { max-width: 1180px; }
+.brief { margin-bottom: 12px; }
+.brief-grid { display: grid; grid-template-columns: minmax(260px, 380px) 1fr; gap: 14px; align-items: start; }
+.brief-chart canvas { width: 100%; max-width: 380px; aspect-ratio: 1; height: auto; display: block; border-radius: 8px; }
+.cands { display: grid; gap: 10px; }
+.cand { border: 1px solid var(--line); border-radius: 10px; padding: 10px 12px; background: rgba(255,255,255,.03); }
+.cand-head { font-size: 15px; margin-bottom: 4px; }
+.cand .letter { display: inline-grid; place-items: center; width: 22px; height: 22px; border-radius: 50%; background: var(--accent); color: var(--accent-ink); font-weight: 800; margin-right: 8px; font-size: 13px; }
+.labels { margin: 2px 0 6px; }
+.labels .tag { margin: 0 4px 4px 0; }
+ul.basis { margin: 4px 0; padding-left: 18px; font-size: 13px; line-height: 1.55; }
+ul.basis li.old { opacity: .6; }
+.warn-text { color: var(--warn); }
+.cand details summary { cursor: pointer; color: var(--sub); font-size: 12px; }
+.cand .actions { margin-top: 6px; }
+.peer h3 { margin: 8px 0 0; font-size: 14px; }
+ul.reports { padding-left: 0; list-style: none; margin: 6px 0 10px; }
+ul.reports li { font-size: 13px; line-height: 1.55; padding: 5px 0; border-bottom: 1px solid var(--line); }
+.opinion { color: #cfe0ff; font-size: 12px; }
+select { background: var(--panel-solid); color: var(--ink); border: 1px solid var(--line); border-radius: 6px; padding: 4px 6px; }
+#chart { cursor: pointer; }
+@media (max-width: 760px) { .brief-grid { grid-template-columns: 1fr; } }

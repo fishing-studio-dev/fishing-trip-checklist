@@ -1,6 +1,6 @@
 // Fixed geography of the fictional sea area and the day's sea conditions.
 // Coordinates: metres, x = east, y = north. Port is on the south coast.
-import { AREA, PORT, TIDE_CYCLE, TIDE_PERIOD } from './data.js';
+import { AREA, PORT, TIDE_CYCLE, TIDE_PERIOD, TIDE_OFFSET, SEASON_SCRIPT } from './data.js';
 import { hashFloat, noise1 } from './rng.js';
 
 export const FEATURES = {
@@ -84,12 +84,28 @@ export const CHART_LABELS = [
 // Sea conditions of one day. Closed-form functions of game time so that any
 // view, replay or fast-forward reads the same values.
 
+/** Water temperature trend: smooth over days so that warming is a multi-day signal. */
+export function seasonalTemp(worldSeed, day) {
+  // peak around day 7 so it continues from the warm early-season script
+  return 18.6 + 1.1 * Math.sin((2 * Math.PI * day) / 34 + 0.28) + 0.25 * noise1(worldSeed * 3 + 5, day / 2);
+}
+
+export function tideOfDay(day) {
+  return TIDE_CYCLE[(((day + TIDE_OFFSET) % 15) + 15) % 15];
+}
+
 export function makeDayConditions(worldSeed, day) {
-  const [tideName, tideAmp] = TIDE_CYCLE[((day % 15) + 15) % 15];
+  const [tideName, tideAmp] = tideOfDay(day);
   const highWater = (day * 50 * 60 + Math.floor(hashFloat(worldSeed, day, 11) * 3600)) % TIDE_PERIOD;
-  const windDir = hashFloat(worldSeed, day, 21) * Math.PI * 2; // direction wind blows TOWARD
-  const windSpeed = 1 + hashFloat(worldSeed, day, 22) * 6.5;
-  const waterTemp = 17 + hashFloat(worldSeed, day, 31) * 4;
+  let windDir = hashFloat(worldSeed, day, 21) * Math.PI * 2; // direction wind blows TOWARD
+  let windSpeed = 1 + hashFloat(worldSeed, day, 22) * 6.5;
+  let waterTemp = seasonalTemp(worldSeed, day);
+  const script = SEASON_SCRIPT[day];
+  if (script && script.cond) {
+    if (script.cond.windSpeed != null) windSpeed = script.cond.windSpeed;
+    if (script.cond.windDirDeg != null) windDir = (script.cond.windDirDeg * Math.PI) / 180;
+    if (script.cond.waterTemp != null) waterTemp = script.cond.waterTemp;
+  }
   const axis = (40 * Math.PI) / 180; // flood current flows toward NE
   return {
     day,
@@ -102,6 +118,34 @@ export function makeDayConditions(worldSeed, day) {
     axis,
     seed: worldSeed,
   };
+}
+
+/**
+ * The forecast the player reads in port: tides are exact (tables), wind and
+ * water temperature carry a small, deterministic forecast error. Forecast and
+ * the conditions met at sea are therefore not the same thing.
+ */
+export function forecastOf(cond) {
+  const e1 = (hashFloat(cond.seed, cond.day, 91) - 0.5) * 2.4;
+  const e2 = (hashFloat(cond.seed, cond.day, 92) - 0.5) * 0.6;
+  return {
+    ...cond,
+    forecast: true,
+    windSpeed: Math.max(0.5, Math.round((cond.windSpeed + e1) * 2) / 2),
+    waterTemp: Math.round((cond.waterTemp + e2) * 10) / 10,
+  };
+}
+
+export function tideClass(tideName) {
+  if (tideName === '大潮') return '大潮';
+  if (tideName === '中潮') return '中潮';
+  return '小潮系';
+}
+
+export function windBand(speed) {
+  if (speed < 4) return '弱';
+  if (speed < 6.5) return 'やや強';
+  return '強';
 }
 
 /** Tidal current vector (m/s) at time t (seconds since midnight). */
@@ -134,8 +178,7 @@ export function compass8(vx, vy) {
 export function forecastText(cond) {
   const lines = [];
   lines.push(`潮回り：${cond.tideName}`);
-  const w = windAt(cond, 8 * 3600);
-  const from = compass8(-w.x, -w.y);
+  const from = compass8(-Math.sin(cond.windDir), -Math.cos(cond.windDir));
   lines.push(`風：${from}の風 ${cond.windSpeed.toFixed(1)}m/s 前後`);
   lines.push(`水温：${cond.waterTemp.toFixed(1)}℃前後`);
   // describe the tide between 05:00 and 12:00 by sampling the closed form

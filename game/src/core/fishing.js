@@ -15,7 +15,10 @@ import { depthAt } from './sea.js';
 import { readTana } from './sounder.js';
 import { rngNext } from './rng.js';
 
-const MAX_FISH_KG = Math.max(...Object.values(SPECIES.aji.sizes).map((s) => s.kg));
+export function maxFishKg(species) {
+  return Math.max(...Object.values(SPECIES[species].sizes).map((s) => s.kg));
+}
+const MAX_FISH_KG = maxFishKg('aji');
 
 export function createOperation({ id, voyageId, methodId, level, reel, reelId, startT, x, y }) {
   const method = METHODS[methodId];
@@ -24,6 +27,7 @@ export function createOperation({ id, voyageId, methodId, level, reel, reelId, s
     id,
     voyageId,
     methodId,
+    species: method.target,
     level,
     reelId,
     retrieveSpeed: reel.retrieve != null ? reel.retrieve : skill.handRetrieve,
@@ -167,7 +171,7 @@ export function stepOperation(op, ctx, dt) {
           if (stopping) continue;
           const hookDepth = line.tana - 1.0 - k * method.hookSpacing;
           if (hookDepth < 0.5) continue;
-          const d = densityAt(world, boat.x, boat.y, hookDepth, poses);
+          const d = densityAt(world, boat.x, boat.y, hookDepth, poses, 'aji');
           if (d.total <= 0 || d.best == null) continue;
           const act = activityAt(world, world.schools[d.best], t);
           const lambda = method.biteRateMax * act * (d.total / (d.total + method.densityHalf));

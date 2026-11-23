@@ -58,7 +58,88 @@ export function buildStaticMap() {
 /**
  * Draw the chart. view: {big:boolean}. data: {voyage, dev}
  */
-export function drawChart(canvas, staticMap, v, { big = false, dev = false } = {}) {
+function viewOf(v, big, W) {
+  const span = big ? AREA.W : 1300;
+  return { cx: big ? AREA.W / 2 : v.boat.x, cy: big ? AREA.H / 2 : v.boat.y, scale: W / span };
+}
+
+/** World coordinates of a click on the chart canvas (CSS pixels). */
+export function chartToWorld(canvas, v, big, px, py) {
+  const W = canvas.clientWidth || canvas.width;
+  const H = canvas.clientHeight || canvas.height;
+  const { cx, cy, scale } = viewOf(v, big, W);
+  return { x: (px - W / 2) / scale + cx, y: cy - (py - H / 2) / scale };
+}
+
+const SPECIES_COLOR = { aji: '#ffd84d', sawara: '#ff8a5c' };
+
+/** Marker for an observation report: where and when it was seen (not where fish are now). */
+export function drawReportMarker(ctx, r, px, py, label, small = false) {
+  const col = r.species ? SPECIES_COLOR[r.species] : '#cfe3ea';
+  const s = small ? 4 : 5.5;
+  ctx.save();
+  ctx.strokeStyle = col;
+  ctx.fillStyle = col;
+  ctx.lineWidth = 2;
+  ctx.beginPath();
+  if (r.kind === 'catch') ctx.arc(px, py, s, 0, Math.PI * 2), ctx.fill();
+  else if (r.kind === 'echo') {
+    ctx.arc(px, py, s, 0, Math.PI * 2);
+    ctx.stroke();
+    ctx.beginPath();
+    ctx.arc(px, py, s * 0.4, 0, Math.PI * 2);
+    ctx.fill();
+  } else if (r.kind === 'sighting') {
+    ctx.moveTo(px, py - s - 1);
+    ctx.lineTo(px + s, py + s - 1);
+    ctx.lineTo(px - s, py + s - 1);
+    ctx.closePath();
+    ctx.stroke();
+  } else {
+    ctx.moveTo(px - s, py - s);
+    ctx.lineTo(px + s, py + s);
+    ctx.moveTo(px + s, py - s);
+    ctx.lineTo(px - s, py + s);
+    ctx.stroke();
+  }
+  if (label) {
+    ctx.font = `${small ? 9 : 10}px sans-serif`;
+    ctx.textAlign = 'left';
+    ctx.fillStyle = 'rgba(255,255,255,0.92)';
+    ctx.fillText(label, px + s + 3, py + 3);
+  }
+  ctx.restore();
+}
+
+function drawRoute(ctx, pts, toPx, style) {
+  if (!pts || pts.length < 2) return;
+  ctx.save();
+  ctx.strokeStyle = style.color;
+  ctx.lineWidth = style.width || 2;
+  if (style.dash) ctx.setLineDash(style.dash);
+  ctx.beginPath();
+  pts.forEach((p, i) => {
+    const [x, y] = toPx(p.x, p.y);
+    if (i === 0) ctx.moveTo(x, y);
+    else ctx.lineTo(x, y);
+  });
+  ctx.stroke();
+  ctx.setLineDash([]);
+  ctx.fillStyle = style.color;
+  pts.forEach((p, i) => {
+    if (i === 0) return;
+    const [x, y] = toPx(p.x, p.y);
+    ctx.beginPath();
+    ctx.arc(x, y, 3.5, 0, Math.PI * 2);
+    ctx.fill();
+  });
+  ctx.restore();
+}
+
+/**
+ * Draw the chart at sea. opts: { big, dev, reports: [{r, label}], route: {points, live}, hint }
+ */
+export function drawChart(canvas, staticMap, v, { big = false, dev = false, reports = [], route = null, hint = '' } = {}) {
   const dpr = Math.min(window.devicePixelRatio || 1, 2);
   const cssW = canvas.clientWidth || canvas.width;
   const cssH = canvas.clientHeight || canvas.height;
@@ -70,11 +151,7 @@ export function drawChart(canvas, staticMap, v, { big = false, dev = false } = {
   ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
   const W = cssW;
   const H = cssH;
-  // view window (metres)
-  const span = big ? AREA.W : 1300;
-  const cx = big ? AREA.W / 2 : v.boat.x;
-  const cy = big ? AREA.H / 2 : v.boat.y;
-  const scale = W / span;
+  const { cx, cy, scale } = viewOf(v, big, W);
   const toPx = (x, y) => [(x - cx) * scale + W / 2, H / 2 - (y - cy) * scale];
   ctx.fillStyle = '#0a244e';
   ctx.fillRect(0, 0, W, H);
@@ -149,6 +226,15 @@ export function drawChart(canvas, staticMap, v, { big = false, dev = false } = {
     ctx.fillStyle = 'rgba(255,230,190,0.95)';
     ctx.fillText(fmtClock(m.t), px + 5, py + 11);
   }
+  // peers' observations (where and when they were made)
+  for (const { r, label } of reports) {
+    if (!r.spot) continue;
+    const [px, py] = toPx(r.spot.x, r.spot.y);
+    if (px < -40 || py < -20 || px > W + 40 || py > H + 20) continue;
+    drawReportMarker(ctx, r, px, py, big ? label : '', !big);
+  }
+  // trolling route (planned or being run)
+  if (route) drawRoute(ctx, route.points, toPx, route.live ? { color: '#7cf2d6', width: 2.5 } : { color: 'rgba(124,242,214,0.85)', dash: [6, 4] });
   // dev overlay
   if (dev) {
     ctx.setLineDash([4, 3]);
@@ -190,4 +276,69 @@ export function drawChart(canvas, staticMap, v, { big = false, dev = false } = {
   ctx.fillText(`${bar}m`, 8, H - 16);
   ctx.textAlign = 'right';
   ctx.fillText('N↑', W - 6, 14);
+  if (hint) {
+    ctx.textAlign = 'left';
+    ctx.font = `${big ? 13 : 10}px sans-serif`;
+    ctx.fillStyle = 'rgba(0,0,0,0.55)';
+    const w = ctx.measureText(hint).width + 12;
+    ctx.fillRect(6, 6, w, big ? 22 : 16);
+    ctx.fillStyle = '#bff7ea';
+    ctx.fillText(hint, 12, big ? 22 : 18);
+  }
+}
+
+/** Port briefing chart: whole area, candidates, peers' observations and own operation spots. */
+export function drawBriefingChart(canvas, staticMap, { candidates = [], reports = [], logs = [] }) {
+  const dpr = Math.min(window.devicePixelRatio || 1, 2);
+  const cssW = canvas.clientWidth || canvas.width;
+  const cssH = canvas.clientHeight || canvas.height;
+  canvas.width = Math.round(cssW * dpr);
+  canvas.height = Math.round(cssH * dpr);
+  const ctx = canvas.getContext('2d');
+  ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+  const W = cssW;
+  const H = cssH;
+  const scale = W / AREA.W;
+  const toPx = (x, y) => [x * scale, H - y * scale];
+  ctx.drawImage(staticMap, 0, 0, W, H);
+  ctx.font = '11px sans-serif';
+  ctx.textAlign = 'center';
+  ctx.fillStyle = 'rgba(255,255,255,0.7)';
+  for (const l of CHART_LABELS) {
+    const [px, py] = toPx(l.x, l.y);
+    ctx.fillText(l.name, px, py - 12);
+  }
+  const [hx, hy] = toPx(PORT.dock.x, PORT.dock.y);
+  ctx.fillStyle = '#ffd25e';
+  ctx.fillRect(hx - 4, hy - 8, 8, 8);
+  // own operation spots
+  ctx.fillStyle = 'rgba(160,240,255,0.8)';
+  for (const l of logs.slice(-40)) {
+    const [px, py] = toPx(l.start.x, l.start.y);
+    ctx.fillRect(px - 2.5, py - 2.5, 5, 5);
+  }
+  for (const { r, label } of reports) {
+    if (!r.spot) continue;
+    const [px, py] = toPx(r.spot.x, r.spot.y);
+    drawReportMarker(ctx, r, px, py, label, true);
+  }
+  for (const c of candidates) {
+    if (!c.spot) continue;
+    const [px, py] = toPx(c.spot.x, c.spot.y);
+    ctx.strokeStyle = c.feasible.ok ? '#7cf2d6' : '#f2b45a';
+    ctx.lineWidth = 2;
+    ctx.setLineDash([4, 3]);
+    ctx.beginPath();
+    ctx.arc(px, py, 22, 0, Math.PI * 2);
+    ctx.stroke();
+    ctx.setLineDash([]);
+    ctx.fillStyle = 'rgba(6,20,33,0.85)';
+    ctx.beginPath();
+    ctx.arc(px - 16, py - 16, 9, 0, Math.PI * 2);
+    ctx.fill();
+    ctx.fillStyle = '#ffffff';
+    ctx.font = 'bold 12px sans-serif';
+    ctx.textAlign = 'center';
+    ctx.fillText(c.letter, px - 16, py - 12);
+  }
 }

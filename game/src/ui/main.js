@@ -1,17 +1,20 @@
 // App controller: boot, screens, input, main loop.
-import { TIME, BOATS, PORT, EQUIPMENT, METHODS, SIM } from '../core/data.js';
+import { TIME, BOATS, PORT, EQUIPMENT, METHODS, SIM, SPECIES } from '../core/data.js';
 import { createProfile, markDeparture, resolveInterruptedVoyage } from '../core/profile.js';
 import { settleVoyage, purchaseEquipment, purchasePreview, equipFromStorage } from '../core/economy.js';
 import { loadSave, writeSave, exportSave, checkImport, memoryStorage, KEYS } from '../core/save.js';
 import {
-  createVoyage, advanceVoyage, isOperating, setHelm, startOperation, stopOperation, redrift, returnToPort,
-  nearPort, addManualMark, summarizeVoyage, canStartOperation,
+  createVoyage, advanceVoyage, isOperating, isTrolling, setHelm, setMethod, startOperation, stopOperation, redrift, returnToPort,
+  nearPort, addManualMark, summarizeVoyage, canStartOperation, addRoutePoint, clearRoute, trollRouteFrom,
 } from '../core/voyage.js';
+import { acquireBriefing, buildCandidates, planSummary } from '../core/knowledge.js';
+import { reportLine, peerName } from '../core/reports.js';
+import { trollLineLabel } from '../core/troll.js';
 import { linePhaseLabel, recentPace } from '../core/fishing.js';
-import { fmtClock, compass8, areaNameAt, currentAt } from '../core/sea.js';
+import { fmtClock, compass8, areaNameAt, currentAt, makeDayConditions, forecastOf } from '../core/sea.js';
 import { levelFromXp } from '../core/progress.js';
 import { schoolCenter } from '../core/world.js';
-import { buildStaticMap, drawChart } from './chart.js';
+import { buildStaticMap, drawChart, drawBriefingChart, chartToWorld } from './chart.js';
 import { createSounderView } from './sounderView.js';
 import * as S from './screens.js';
 
@@ -94,6 +97,7 @@ function show(screen) {
     return;
   }
   el.hidden = false;
+  if (screen === 'port' || screen === 'log') preparePort();
   let html = '';
   switch (screen) {
     case 'title':
@@ -122,6 +126,10 @@ function show(screen) {
   }
   el.innerHTML = html;
   el.scrollTop = 0;
+  if (screen === 'port') {
+    const c = $('portChart');
+    if (c) drawBriefingChart(c, staticMap, { candidates: app.candidates, reports: chartReports(app.profile.knowledge.reports, app.profile.day + 1), logs: app.profile.logs });
+  }
   if (screen === 'save') {
     const f = $('importFile');
     if (f) f.addEventListener('change', onImportFile);
@@ -148,6 +156,29 @@ function toast(text) {
   toastTimer = setTimeout(() => t.classList.remove('show'), 2600);
 }
 
+/**
+ * The morning in port: hear the peers (once per day, saved), read the forecast
+ * and build today's candidates from what the player now knows.
+ */
+function preparePort() {
+  const p = app.profile;
+  if (!p) return;
+  const d = p.day + 1;
+  if (!p.activeVoyage && p.knowledge.briefedDay < d) commit(acquireBriefing(p, d), '港で仲間の話を聞いた');
+  app.forecast = forecastOf(makeDayConditions(app.profile.worldSeed, d));
+  app.candidates = buildCandidates({ knowledge: app.profile.knowledge, logs: app.profile.logs, today: d, forecast: app.forecast, profile: app.profile });
+}
+
+/** Peers' observations to mark on a chart (recent ones), labelled with who and when. */
+function chartReports(reports, today) {
+  return reports
+    .filter((r) => r.spot && r.kind !== 'rule' && !r.relayedFrom && r.obsDay >= today - 1)
+    .map((r) => {
+      const l = reportLine(r, today);
+      return { r, label: `${peerName(r.speaker).replace('さん', '')} ${l.when.replace(/の.*$/, '')}` };
+    });
+}
+
 // ---------------------------------------------------------------- actions
 function newGame() {
   const seed = DEV && params.get('seed') ? Number(params.get('seed')) : undefined;
@@ -158,9 +189,14 @@ function newGame() {
   show('port');
 }
 
-function depart() {
+function depart(planKey = null) {
   if (app.profile.activeVoyage) return;
-  const p = markDeparture(app.profile);
+  let plan = null;
+  if (planKey) {
+    const c = (app.candidates || []).find((x) => x.key === planKey);
+    if (c) plan = { ...planSummary(c, app.profile.day + 1), methodId: c.methodId };
+  }
+  const p = markDeparture(app.profile, new Date().toISOString(), plan);
   const r = commit(p, '出港を記録');
   if (!r.ok) toast('出港の記録を保存できませんでした（このまま出港します）');
   let scenario = null;
@@ -317,11 +353,38 @@ function cmd(name) {
     case 'throttleDown':
       r = setHelm(v, { throttle: v.boat.throttle - 1 });
       break;
+    case 'method':
+      r = setMethod(v, v.method === 'troll' ? 'handline' : 'troll');
+      if (r.ok) toast(`漁法：${METHODS[v.method].name}${v.method === 'troll' ? '（海図 C をクリックして航路、Spaceで開始）' : ''}`);
+      break;
+    case 'clearRoute':
+      r = clearRoute(v);
+      if (r.ok) toast('航路を消しました');
+      break;
     default:
       break;
   }
   if (r && !r.ok && r.reason) toast(r.reason);
   updateHudStatic();
+}
+
+/** Click on the big chart while trolling is selected: add a route point there. */
+function onChartClick(ev) {
+  const v = app.voyage;
+  if (!v || app.screen !== 'sea') return;
+  if (!app.chartBig) {
+    toggle('chart');
+    return;
+  }
+  if (v.method !== 'troll' && !isTrolling(v)) {
+    toast('航路の指定は曳縄のとき（T で切替）');
+    return;
+  }
+  const c = $('chart');
+  const rect = c.getBoundingClientRect();
+  const w = chartToWorld(c, v, true, ev.clientX - rect.left, ev.clientY - rect.top);
+  const r = addRoutePoint(v, w);
+  toast(r.ok ? `経由点${v.plannedRoute.length}を追加${isTrolling(v) ? '（航路を変更）' : ''}` : r.reason);
 }
 
 function toggle(name) {
@@ -378,6 +441,12 @@ document.addEventListener('keydown', (e) => {
     case 'm':
       cmd('mark');
       break;
+    case 't':
+      cmd('method');
+      break;
+    case 'x':
+      cmd('clearRoute');
+      break;
     case 'f':
       toggle('sounder');
       break;
@@ -426,6 +495,14 @@ const releaseHold = (e) => {
 document.addEventListener('pointerup', releaseHold);
 document.addEventListener('pointercancel', releaseHold);
 
+$('chart').addEventListener('click', onChartClick);
+document.addEventListener('change', (e) => {
+  const sel = e.target.closest && e.target.closest('[data-filter]');
+  if (!sel || app.screen !== 'log') return;
+  app.logFilter = { ...(app.logFilter || { method: '', area: '' }), [sel.dataset.filter]: sel.value };
+  show('log');
+});
+
 document.addEventListener('click', (e) => {
   const b = e.target.closest('[data-act]');
   if (!b || b.disabled) return;
@@ -444,6 +521,9 @@ document.addEventListener('click', (e) => {
       break;
     case 'depart':
       depart();
+      break;
+    case 'departPlan':
+      depart(b.dataset.key);
       break;
     case 'toPort':
       app.notice = '';
@@ -536,7 +616,11 @@ function updateHudStatic() {
     op.innerHTML = '操業開始<kbd>Space</kbd>';
     op.disabled = false;
   }
-  $('btnRedrift').disabled = !(isOperating(v) || v.logs.length);
+  const troll = v.method === 'troll' || isTrolling(v);
+  $('btnRedrift').disabled = troll || !(isOperating(v) || v.logs.length);
+  $('btnMethod').innerHTML = `${METHODS[isOperating(v) ? v.op.methodId : v.method].name}<kbd>T</kbd>`;
+  $('btnMethod').disabled = isOperating(v) || !v.equip.troll;
+  $('btnClearRoute').hidden = !troll;
   const bp = $('btnPort');
   bp.innerHTML = v.autopilot && v.autopilot.kind === 'return' ? '帰港中…' : `${nearPort(v) ? '入港' : '帰港'}<kbd>H</kbd>`;
   $('btnSpeed').textContent = `早送り×${TIME.USER_MULT[app.speedIdx]}`;
@@ -567,6 +651,7 @@ function updateHud(now) {
   html += chip('対地', `${(sog * 1.944).toFixed(1)}kt ${sog > 0.05 ? compass8(b.vx, b.vy) : ''}`);
   html += chip('水深', last ? `${last.bottom.toFixed(1)}m` : '--');
   html += chip('場所', S.esc(areaNameAt(b.x, b.y)));
+  html += chip('漁法', METHODS[isOperating(v) ? v.op.methodId : v.method].name);
   html += chip('魚倉', `${v.hold.kg.toFixed(1)}/${v.capacityKg}kg`, v.hold.kg > v.capacityKg * 0.9 ? 'warn' : '');
   html += chip('時間', `×${scale}${app.paused ? ' 停止中' : ''}`, app.paused ? 'warn' : '');
   if (b.grounded) html += chip('注意', '浅瀬・陸', 'warn');
@@ -576,7 +661,20 @@ function updateHud(now) {
 
   // operation panel
   const panel = $('opPanel');
-  if (isOperating(v)) {
+  if (isTrolling(v)) {
+    const op = v.op;
+    const pace = recentPace(op, v.world.time, 1800);
+    const el = v.world.time - op.startT;
+    panel.hidden = false;
+    panel.innerHTML = `<h3>自動操業 — ${METHODS.troll.name} Lv${op.level}</h3>
+      ${op.lines.map((l) => `<div class="state">${S.esc(trollLineLabel(l))}</div>`).join('')}
+      <div class="row"><span>経過</span><span>${Math.floor(el / 60)}分${String(Math.floor(el % 60)).padStart(2, '0')}秒</span></div>
+      <div class="row"><span>この曳縄</span><span>${op.landedCount}本・${op.landedKg.toFixed(1)}kg</span></div>
+      <div class="row"><span>直近30分</span><span>${pace.n}本</span></div>
+      <div class="row"><span>航路</span><span>経由点${op.route.points.length - 1}・${op.route.dir > 0 ? '往路' : '復路'}${op.route.changes ? `（変更${op.route.changes}回）` : ''}</span></div>
+      <div class="row"><span>速力</span><span>${(Math.abs(b.speed) * 1.944).toFixed(1)}kt</span></div>
+      <div class="feed">${S.esc(app.lastFeed)}</div>`;
+  } else if (isOperating(v)) {
     const op = v.op;
     const pace = recentPace(op, v.world.time);
     const line = op.lines[0];
@@ -597,13 +695,19 @@ function updateHud(now) {
       <div class="row"><span>${fmtClock(l.startT)}〜 ${S.esc(l.area)}</span><span>${Math.round(l.durationS / 60)}分</span></div>
       <div class="row"><span>漁獲</span><span>${l.count}尾・${l.kg.toFixed(1)}kg</span></div>
       <div class="row"><span>この航海の合計</span><span>${v.hold.count}尾・${v.hold.kg.toFixed(1)}kg</span></div>
-      <div class="feed">${canStartOperation(v).ok ? '停船中：Spaceで操業開始できます' : ''}</div>`;
+      <div class="feed">${canStartOperation(v).ok ? (v.method === 'troll' ? 'Spaceで曳縄を開始できます' : '停船中：Spaceで操業開始できます') : ''}</div>`;
+  } else if (v.method === 'troll') {
+    const rt = trollRouteFrom(v);
+    panel.hidden = false;
+    panel.innerHTML = `<h3>曳縄の準備</h3>
+      <div class="row"><span>航路</span><span>${rt.ok ? (rt.planned ? `経由点${v.plannedRoute.length}（海図で指定）` : '今の向きで往復（約700m）') : '取れない'}</span></div>
+      <div class="feed">${rt.ok ? '海図（C）をクリックで経由点を追加、Spaceで開始' : S.esc(rt.reason)}</div>`;
   } else panel.hidden = true;
 
   // messages
   const box = $('msgs');
   const recent = v.messages.slice(-4);
-  box.innerHTML = recent.map((m) => `<div class="msg ${m.level === 'warn' ? 'warn' : ''}"><span class="t">${fmtClock(m.t)}</span>${S.esc(m.text)}</div>`).join('');
+  box.innerHTML = recent.map((m) => `<div class="msg ${m.level}"><span class="t">${fmtClock(m.t)}</span>${S.esc(m.text)}</div>`).join('');
 }
 
 function consumeEvents(v) {
@@ -614,9 +718,11 @@ function consumeEvents(v) {
     if (ev.type === 'landed') {
       landed += ev.fish.length;
       const by = {};
-      for (const f of ev.fish) by[f.size] = (by[f.size] || 0) + 1;
-      const names = { s: '小アジ', m: '中アジ', l: '大アジ' };
-      app.lastFeed = `${fmtClock(ev.t)} 取り込み：${Object.entries(by).map(([k, n]) => `${names[k]}×${n}`).join('・')}`;
+      for (const f of ev.fish) {
+        const name = SPECIES[f.species].sizes[f.size].label;
+        by[name] = (by[name] || 0) + 1;
+      }
+      app.lastFeed = `${fmtClock(ev.t)} 取り込み：${Object.entries(by).map(([k, n]) => `${k}×${n}`).join('・')}`;
     }
   }
   return landed;
@@ -649,14 +755,25 @@ function frame(now) {
     const n = consumeEvents(v);
     if (n) newLandings = [n];
     updateHud(now);
-    drawChart($('chart'), staticMap, v, { big: app.chartBig, dev: DEV });
+    const trollSel = v.method === 'troll' || isTrolling(v);
+    let route = null;
+    if (isTrolling(v)) route = { points: v.op.route.points, live: true };
+    else if (v.method === 'troll') {
+      const rt = trollRouteFrom(v);
+      if (rt.ok) route = { points: rt.points, live: false };
+    }
+    const hint = trollSel ? (app.chartBig ? 'クリックで曳縄の経由点を追加（最大6）・Xで消去' : '曳縄：クリックで海図を拡大して航路を指定') : '';
+    const reps = chartReports([...app.profile.knowledge.reports, ...v.heard], v.day);
+    drawChart($('chart'), staticMap, v, { big: app.chartBig, dev: DEV, reports: reps, route, hint });
     if (app.sounderOpen) sounderView.draw(v.obs, { lines: isOperating(v) ? v.op.lines : null, waterTemp: v.world.cond.waterTemp });
     if (v.phase === 'docked') arriveAndSettle();
   }
   if (scene) {
     const atSea = app.screen === 'sea' && v;
-    const line = atSea && isOperating(v) ? v.op.lines[0] : null;
+    const line = atSea && isOperating(v) && v.op.methodId === 'handline' ? v.op.lines[0] : null;
+    const tl = atSea && isTrolling(v) ? v.op.lines : null;
     const reel = app.profile ? app.profile.boat.slots.starboard_reel.itemId : 'reel_hand';
+    const trollGear = atSea ? !!v.equip.troll : !!(app.profile && app.profile.boat.slots.stern_troll);
     scene.render({
       mode: atSea ? 'sea' : 'port',
       boat: atSea ? v.boat : { x: PORT.dock.x, y: PORT.dock.y + 20, heading: 0, speed: 0, vx: 0, vy: 0 },
@@ -665,7 +782,9 @@ function frame(now) {
       reelId: atSea ? v.equip.reelId : reel,
       lineActive: !!(line && ['drop', 'fish', 'adjust', 'retrieve'].includes(line.phase)),
       lineDepth: line ? line.depth : 0,
-      working: line ? line.phase : null,
+      working: line ? line.phase : tl ? (tl.some((l) => l.phase === 'haul' || l.phase === 'fight') ? 'retrieve' : tl.some((l) => l.phase === 'unhook' || l.phase === 'deploy') ? 'unhook' : null) : null,
+      trollGear,
+      trollLines: tl ? tl.map((l) => ({ active: l.phase === 'tow' || l.phase === 'fight' || l.phase === 'haul', side: l.side, len: l.phase === 'haul' ? l.haulLeft : 40 })) : null,
       view: app.view,
       realTime,
       realDt,
@@ -727,6 +846,10 @@ function devApi() {
         level: app.profile && levelFromXp(app.profile.methods.handline.xp),
         xp: app.profile && app.profile.methods.handline.xp,
         reel: app.profile && app.profile.boat.slots.starboard_reel.itemId,
+        troll: app.profile && app.profile.boat.slots.stern_troll ? app.profile.boat.slots.stern_troll.itemId : null,
+        trollXp: app.profile && app.profile.methods.troll.xp,
+        reports: app.profile && app.profile.knowledge.reports.length,
+        candidates: (app.candidates || []).map((c) => ({ key: c.key, letter: c.letter, labels: c.labels, feasible: c.feasible.ok })),
         revision: app.revision,
         saveStatus: app.saveStatus,
         voyage: v && {
@@ -738,6 +861,11 @@ function devApi() {
           hold: v.hold,
           logs: v.logs.length,
           autopilot: v.autopilot ? v.autopilot.kind : null,
+          method: v.method,
+          trolling: isTrolling(v),
+          heard: v.heard.length,
+          plan: v.plan,
+          route: isTrolling(v) ? v.op.route.points : v.plannedRoute,
           phase: v.phase,
           pings: v.obs.pingCount,
           schools: v.world.schools.map((s) => ({ id: s.id, counts: { ...s.counts } })),

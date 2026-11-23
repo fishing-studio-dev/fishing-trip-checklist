@@ -10,7 +10,7 @@ export default [
   },
   {
     files: ['tests/e2e/**/*.cjs'],
-    languageOptions: { ecmaVersion: 2023, sourceType: 'commonjs', globals: { ...node, window: 'readonly' } },
+    languageOptions: { ecmaVersion: 2023, sourceType: 'commonjs', globals: { ...node, window: 'readonly', document: 'readonly', localStorage: 'readonly' } }, // browser globals inside page.evaluate()
     rules: { 'no-unused-vars': ['error', { args: 'none' }], 'no-undef': 'error' },
   },
 ];

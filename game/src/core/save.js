@@ -3,14 +3,15 @@
 // Keys are namespaced so they never collide with the checklist app that lives
 // at the repository root (it uses 'fishing-checklist-v1').
 import { hashString } from './rng.js';
-import { validateProfile, PROFILE_SCHEMA } from './profile.js';
+import { validateProfile, PROFILE_SCHEMA, migrateProfile1to2 } from './profile.js';
 
 export const SAVE_FORMAT = 'ryoshi-game-save';
-export const SAVE_SCHEMA = 1;
+export const SAVE_SCHEMA = 2;
 export const KEYS = {
   main: 'ryoshi-game:save:main',
   backup: 'ryoshi-game:save:backup',
   quarantinePrefix: 'ryoshi-game:save:quarantine:',
+  preMigrationPrefix: 'ryoshi-game:save:pre-migration:v',
 };
 
 export function memoryStorage(initial = {}) {
@@ -44,18 +45,31 @@ export function parseEnvelope(raw) {
   if (!env || env.format !== SAVE_FORMAT) return { ok: false, error: '漁師ゲームのセーブ形式ではありません' };
   if (typeof env.schemaVersion !== 'number') return { ok: false, error: '保存形式の版がありません' };
   if (env.schemaVersion > SAVE_SCHEMA) return { ok: false, newer: true, error: `新しい版(${env.schemaVersion})のセーブです。このバージョンでは読み込めません` };
+  // integrity is checked on the data exactly as it was written
+  if (hashString(JSON.stringify(env.data)) !== env.checksum) return { ok: false, error: 'チェックサムが一致しません（破損の可能性）' };
   const migrated = migrate(env);
   if (!migrated.ok) return migrated;
   const profile = migrated.envelope.data;
-  if (hashString(JSON.stringify(env.data)) !== env.checksum) return { ok: false, error: 'チェックサムが一致しません（破損の可能性）' };
   const errs = validateProfile(profile);
   if (errs.length) return { ok: false, error: `内容が不正です: ${errs.slice(0, 3).join(' / ')}` };
-  return { ok: true, envelope: migrated.envelope, profile };
+  return { ok: true, envelope: migrated.envelope, profile, migratedFrom: migrated.from };
 }
 
-/** Migration hook. Schema 1 is the first format, so nothing to migrate yet. */
+/** Step-by-step migration to the current schema. Never mutates the input. */
 function migrate(env) {
-  if (env.schemaVersion === SAVE_SCHEMA && env.data && env.data.schema === PROFILE_SCHEMA) return { ok: true, envelope: env };
+  let ver = env.schemaVersion;
+  let data = env.data;
+  const from = ver;
+  if (!data || typeof data !== 'object') return { ok: false, error: 'データがありません' };
+  if (ver === 1 && data.schema === 1) {
+    try {
+      data = migrateProfile1to2(data);
+    } catch (e) {
+      return { ok: false, error: `M0形式からの移行に失敗しました: ${e.message}` };
+    }
+    ver = 2;
+  }
+  if (ver === SAVE_SCHEMA && data.schema === PROFILE_SCHEMA) return { ok: true, envelope: { ...env, schemaVersion: ver, data }, from: from !== ver ? from : null };
   return { ok: false, error: `移行できない版です（${env.schemaVersion}/${env.data && env.data.schema}）` };
 }
 
@@ -75,7 +89,19 @@ export function loadSave(storage, now = Date.now()) {
   }
   if (rawMain == null && rawBackup == null) return { status: 'none' };
   const main = parseEnvelope(rawMain);
-  if (main.ok) return { status: 'ok', profile: main.profile, revision: main.envelope.revision, savedAt: main.envelope.savedAt };
+  if (main.ok) {
+    // keep the original of an older-format save before it is ever overwritten
+    let preMigrationKey = null;
+    if (main.migratedFrom) {
+      preMigrationKey = `${KEYS.preMigrationPrefix}${main.migratedFrom}`;
+      try {
+        if (storage.getItem(preMigrationKey) == null) storage.setItem(preMigrationKey, rawMain);
+      } catch {
+        preMigrationKey = null;
+      }
+    }
+    return { status: 'ok', profile: main.profile, revision: main.envelope.revision, savedAt: main.envelope.savedAt, migratedFrom: main.migratedFrom, preMigrationKey };
+  }
   if (main.newer) return { status: 'newer', error: main.error, readOnly: true };
   // keep the unreadable data
   let quarantineKey = null;

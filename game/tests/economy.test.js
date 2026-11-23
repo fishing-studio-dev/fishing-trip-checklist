@@ -23,7 +23,8 @@ test('A11: settlement pays the catch once and records logs/XP', () => {
   const r = res.receipt;
   assert.equal(r.sales, r.lines.reduce((a, l) => a + l.amount, 0));
   assert.equal(res.profile.funds, p.funds + r.sales - r.costs.paid);
-  assert.equal(res.profile.methods.handline.xp, p.methods.handline.xp + r.xp.total);
+  assert.equal(res.profile.methods.handline.xp, p.methods.handline.xp + r.xp.handline.total);
+  assert.equal(res.profile.methods.troll.xp, 0, 'no trolling was done, no trolling XP');
   assert.equal(res.profile.logs.length, summary.logs.length);
   assert.equal(res.profile.activeVoyage, null);
   assert.deepEqual(validateProfile(res.profile), []);
@@ -36,7 +37,7 @@ test('A11: settlement pays the catch once and records logs/XP', () => {
 
 test('A11: settlement refuses a hold that does not match the operation logs', () => {
   const { p, summary } = caughtVoyage();
-  const forged = { ...summary, hold: { ...summary.hold, counts: { ...summary.hold.counts, l: summary.hold.counts.l + 10 } } };
+  const forged = { ...summary, hold: { ...summary.hold, counts: { ...summary.hold.counts, aji: { ...summary.hold.counts.aji, l: summary.hold.counts.aji.l + 10 } } } };
   const res = settleVoyage(p, forged);
   assert.equal(res.ok, false);
 });
@@ -70,8 +71,8 @@ test('XP cannot be farmed by start/stop spam or idling where there are no fish',
   while (isOperating(v)) advanceVoyage(v, 1);
   const res = settleVoyage(p, summarizeVoyage(v));
   assert.ok(res.ok);
-  assert.equal(res.receipt.xp.fishXp, 0);
-  assert.ok(res.receipt.xp.total <= PROGRESSION.xpOpCapPerVoyage);
+  assert.equal(res.receipt.xp.handline.fishXp, 0);
+  assert.ok(res.receipt.xp.handline.total <= PROGRESSION.xpOpCapPerVoyage);
   // every operation is logged (no-catch ones included), each with a unique id
   const ids = res.profile.logs.map((l) => l.id);
   assert.equal(new Set(ids).size, ids.length);

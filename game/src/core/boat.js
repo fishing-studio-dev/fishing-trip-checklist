@@ -13,6 +13,7 @@ export function createBoatRuntime(model, x, y, heading) {
     rudder: 0, // -1..1 (input)
     vx: 0,
     vy: 0,
+    speedOverride: null,
     distance: 0, // m travelled under power
     grounded: false,
     outOfBounds: false,
@@ -62,7 +63,7 @@ export function routeToPort(from) {
 
 /**
  * Advance boat by dt game seconds.
- * `mode`: 'manual' | 'drift' (engine idle while fishing) | 'docked'
+ * `mode`: 'manual' | 'drift' (engine idle while handline fishing) | 'docked'
  */
 export function stepBoat(boat, model, cond, t, dt, mode) {
   if (mode === 'docked') {
@@ -71,7 +72,8 @@ export function stepBoat(boat, model, cond, t, dt, mode) {
     boat.vy = 0;
     return;
   }
-  const target = mode === 'drift' ? 0 : model.speeds[boat.throttle];
+  // speedOverride: an exact speed held by the trolling helm (not a throttle step)
+  const target = mode === 'drift' ? 0 : boat.speedOverride != null ? boat.speedOverride : model.speeds[boat.throttle];
   boat.speed += (target - boat.speed) * Math.min(1, dt * model.accel);
   if (Math.abs(boat.speed) < 0.01 && target === 0) boat.speed = 0;
   const turnFactor = Math.max(0.15, Math.min(1, Math.abs(boat.speed) / 3));

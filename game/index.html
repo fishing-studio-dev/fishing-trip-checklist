@@ -4,7 +4,7 @@
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
   <meta name="theme-color" content="#0b2236">
-  <title>漁師ゲーム（試作M0）</title>
+  <title>漁師ゲーム（試作M1）</title>
   <link rel="stylesheet" href="./styles.css">
   <script type="importmap">{ "imports": { "three": "./vendor/three/three.module.js" } }</script>
 </head>
@@ -38,7 +38,9 @@
       <div class="ctl-group cmds">
         <button type="button" class="ctl primary" id="btnOp" data-act="op">操業開始<kbd>Space</kbd></button>
         <button type="button" class="ctl" id="btnRedrift" data-act="redrift">流し直し<kbd>R</kbd></button>
-        <button type="button" class="ctl" data-act="mark">印を付ける<kbd>M</kbd></button>
+        <button type="button" class="ctl" id="btnMethod" data-act="method" title="漁法の切替（T）">一本釣り<kbd>T</kbd></button>
+        <button type="button" class="ctl" id="btnClearRoute" data-act="clearRoute" hidden>航路を消す<kbd>X</kbd></button>
+        <button type="button" class="ctl" data-act="mark">印<kbd>M</kbd></button>
         <button type="button" class="ctl" id="btnPort" data-act="port">帰港<kbd>H</kbd></button>
       </div>
       <div class="ctl-group sys">

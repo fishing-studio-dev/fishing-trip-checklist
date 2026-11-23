@@ -2,21 +2,21 @@
 // The live sea (WorldState) is NOT part of this; it is regenerated per voyage.
 import { ECONOMY, START_PROFILE, BOATS, EQUIPMENT, METHODS } from './data.js';
 
-export const PROFILE_SCHEMA = 1;
+export const PROFILE_SCHEMA = 2;
 
 export function createProfile({ worldSeed, now = new Date().toISOString() } = {}) {
   const seed = worldSeed != null ? worldSeed >>> 0 : (Math.floor(Math.random() * 0xffffffff) >>> 0);
   let seq = 0;
   const inst = (itemId) => ({ uid: `eq${++seq}`, itemId });
   const slots = {};
-  for (const [slotId, itemId] of Object.entries(START_PROFILE.slots)) slots[slotId] = inst(itemId);
+  for (const [slotId, itemId] of Object.entries(START_PROFILE.slots)) slots[slotId] = itemId ? inst(itemId) : null;
   return {
     schema: PROFILE_SCHEMA,
     createdAt: now,
     worldSeed: seed,
     funds: ECONOMY.startFunds,
     day: 0, // number of days started
-    methods: { handline: { xp: 0 } },
+    methods: { handline: { xp: 0 }, troll: { xp: 0 } },
     boat: { uid: 'boat1', model: START_PROFILE.boatModel, name: START_PROFILE.boatName, slots },
     storage: [],
     equipSeq: seq,
@@ -25,7 +25,25 @@ export function createProfile({ worldSeed, now = new Date().toISOString() } = {}
     activeVoyage: null,
     interruptedVoyages: [],
     stats: { voyages: 0, fish: 0, kg: 0, sales: 0 },
+    knowledge: { reports: [], briefedDay: 0 },
   };
+}
+
+/**
+ * Schema 1 (M0) -> 2 (M1). Keeps funds, XP, boat, equipment, storage, logs
+ * and history; adds the trolling method, the optional stern slot and the
+ * knowledge store. M0 logs were all 一本釣り of マアジ.
+ */
+export function migrateProfile1to2(p1) {
+  const p = clone(p1);
+  p.schema = 2;
+  p.methods = { handline: { xp: 0 }, troll: { xp: 0 }, ...p.methods };
+  if (!('stern_troll' in p.boat.slots)) p.boat.slots.stern_troll = null;
+  p.logs = p.logs.map((l) => ({ methodId: 'handline', species: 'aji', ...l }));
+  p.knowledge = p.knowledge || { reports: [], briefedDay: 0 };
+  // reports of days already passed were never heard; start hearing from the next day
+  p.knowledge.briefedDay = Math.max(p.knowledge.briefedDay || 0, p.day);
+  return p;
 }
 
 export function clone(p) {
@@ -33,11 +51,11 @@ export function clone(p) {
 }
 
 /** Start a new day at sea. Returns a new profile with the active-voyage marker. */
-export function markDeparture(profile, now = new Date().toISOString()) {
+export function markDeparture(profile, now = new Date().toISOString(), plan = null) {
   if (profile.activeVoyage) throw new Error('すでに航海中です。');
   const p = clone(profile);
   p.day += 1;
-  p.activeVoyage = { id: `V${p.day}`, day: p.day, departedAt: now, snapshot: null };
+  p.activeVoyage = { id: `V${p.day}`, day: p.day, departedAt: now, snapshot: null, plan };
   return p;
 }
 
@@ -76,7 +94,7 @@ export function validateProfile(p) {
     for (const slot of model.slots) {
       const inst = p.boat.slots ? p.boat.slots[slot.id] : null;
       if (!inst) {
-        errs.push(`装備位置 ${slot.id} が空です`);
+        if (!slot.optional || !p.boat.slots || !(slot.id in p.boat.slots)) errs.push(`装備位置 ${slot.id} が空です`);
         continue;
       }
       const item = EQUIPMENT[inst.itemId];
@@ -90,6 +108,7 @@ export function validateProfile(p) {
   if (!Array.isArray(p.settledVoyages)) errs.push('settledVoyages が配列ではありません');
   if (!Array.isArray(p.interruptedVoyages)) errs.push('interruptedVoyages が配列ではありません');
   if (!p.stats || typeof p.stats !== 'object') errs.push('stats がありません');
+  if (!p.knowledge || !Array.isArray(p.knowledge.reports) || typeof p.knowledge.briefedDay !== 'number') errs.push('knowledge が不正です');
   // equipment instances must be unique (no duplication through bugs)
   const uids = [];
   if (p.boat && p.boat.slots) for (const v of Object.values(p.boat.slots)) if (v) uids.push(v.uid);

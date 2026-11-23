@@ -1,19 +1,11 @@
 // World state: game time, the day's conditions and fish schools.
 // One shared state feeds the sounder, the catch and the logs (A05).
 import { SPECIES } from './data.js';
-import { createRng, rngNext, rngRange, rngInt, noise1 } from './rng.js';
+import { createRng, rngNext, noise1 } from './rng.js';
+import { dayPlan } from './season.js';
 import { depthAt, makeDayConditions, currentAt } from './sea.js';
 
-// Places where マアジ schools tend to hold in this fictional sea (game setting).
-export const HABITATS = [
-  { id: 'kita_e', area: '北の瀬', x: 2190, y: 2270, drift: [2120, 2330], weight: 1.0, big: 0.35 },
-  { id: 'kita_s', area: '北の瀬', x: 1990, y: 2030, drift: [2040, 2110], weight: 1.0, big: 0.3 },
-  { id: 'kita_w', area: '北の瀬', x: 1800, y: 2300, drift: [1880, 2240], weight: 0.8, big: 0.3 },
-  { id: 'nishi', area: '西の根', x: 640, y: 1240, drift: [700, 1330], weight: 0.9, big: 0.25 },
-  { id: 'higashi_s', area: '東の駆け上がり', x: 2460, y: 1450, drift: [2470, 1650], weight: 0.8, big: 0.2 },
-  { id: 'higashi_n', area: '東の駆け上がり', x: 2480, y: 2000, drift: [2450, 1850], weight: 0.6, big: 0.2 },
-  { id: 'minami', area: '南の浅場', x: 1050, y: 700, drift: [1150, 760], weight: 0.6, big: 0.05 },
-];
+export { HABITATS } from './season.js';
 
 const SQRT2PI3 = Math.pow(2 * Math.PI, 1.5);
 
@@ -26,7 +18,7 @@ export function createWorld(worldSeed, day, startTime, scenario = null) {
   if (scenario && scenario.schools) {
     schools = scenario.schools.map((s, i) => normalizeSchool({ ...s, id: s.id || `S${i + 1}` }));
   } else {
-    schools = generateSchools(rng, day);
+    schools = dayPlan(worldSeed, day).schools.map(normalizeSchool);
   }
   return {
     time: startTime,
@@ -36,55 +28,6 @@ export function createWorld(worldSeed, day, startTime, scenario = null) {
     rng, // simulation RNG (size draws, bite phases); never used by UI
     nextReservation: 1,
   };
-}
-
-function generateSchools(rng, day) {
-  const pool = HABITATS.slice();
-  const count = rngInt(rng, 3, 5);
-  const out = [];
-  for (let i = 0; i < count && pool.length; i++) {
-    const total = pool.reduce((a, h) => a + h.weight, 0);
-    let r = rngNext(rng) * total;
-    let idx = 0;
-    for (; idx < pool.length - 1; idx++) {
-      r -= pool[idx].weight;
-      if (r <= 0) break;
-    }
-    const h = pool.splice(idx, 1)[0];
-    const n = Math.round(rngRange(rng, 300, 900));
-    const big = Math.min(0.6, Math.max(0, h.big + rngRange(rng, -0.1, 0.15)));
-    const small = Math.max(0.05, 0.55 - big - rngRange(rng, 0, 0.2));
-    const med = Math.max(0, 1 - big - small);
-    const counts = splitCounts(n, { s: small, m: med, l: big });
-    out.push(
-      normalizeSchool({
-        id: `D${day}-${h.id}`,
-        species: 'aji',
-        habitat: h.id,
-        area: h.area,
-        a: { x: h.x + rngRange(rng, -60, 60), y: h.y + rngRange(rng, -60, 60) },
-        b: { x: h.drift[0] + rngRange(rng, -60, 60), y: h.drift[1] + rngRange(rng, -60, 60) },
-        moveStart: rngRange(rng, 6.5, 8.5) * 3600,
-        moveEnd: rngRange(rng, 10, 12.5) * 3600,
-        orbitR: rngRange(rng, 30, 90),
-        orbitPeriod: rngRange(rng, 50, 110) * 60,
-        orbitPhase: rngRange(rng, 0, Math.PI * 2),
-        sigmaH: rngRange(rng, 35, 65),
-        sigmaZ: rngRange(rng, 2.5, 4),
-        offBottomBias: rngRange(rng, -0.6, 0.8),
-        noiseSeed: Math.floor(rngNext(rng) * 1e9),
-        counts,
-      }),
-    );
-  }
-  return out;
-}
-
-function splitCounts(n, frac) {
-  const s = Math.round(n * frac.s);
-  const l = Math.round(n * frac.l);
-  const m = Math.max(0, n - s - l);
-  return { s, m, l };
 }
 
 function normalizeSchool(s) {
@@ -102,7 +45,9 @@ function normalizeSchool(s) {
     sigmaH: 30,
     sigmaZ: 3,
     offBottomBias: 0,
+    depthBias: 0,
     noiseSeed: 1,
+    fixedDepth: null, // pelagic test scenarios can pin the depth
     fixedOffBottom: null, // test scenarios can pin the layer
     activityOverride: null,
     ...s,
@@ -137,10 +82,22 @@ export function offBottomAt(school, t) {
   return Math.max(1.2, 2.6 + morning + evening + school.offBottomBias + 0.6 * noise1(school.noiseSeed, t / 1200));
 }
 
+/** Depth of a pelagic school's core below the surface (m) — game setting for サワラ. */
+export function pelagicDepthAt(school, t) {
+  if (school.fixedDepth != null) return school.fixedDepth;
+  const h = t / 3600;
+  const morning = Math.exp(-(((h - 6) / 1.6) ** 2));
+  return Math.max(2.5, 7.5 - 4 * morning + school.depthBias + 0.8 * noise1(school.noiseSeed, t / 1500));
+}
+
 /** Full 3D centre: {x, y, z} with z = depth (m, positive down). */
 export function schoolPose(school, t) {
   const c = schoolCenter(school, t);
   const bottom = depthAt(c.x, c.y);
+  if (SPECIES[school.species].habit === 'pelagic') {
+    const z = Math.min(pelagicDepthAt(school, t), Math.max(2, bottom - 3));
+    return { x: c.x, y: c.y, z, bottom };
+  }
   const z = Math.max(3, bottom - offBottomAt(school, t));
   return { x: c.x, y: c.y, z, bottom };
 }
@@ -153,22 +110,29 @@ export function activityAt(world, school, t) {
   const c = currentAt(world.cond, t);
   const sp = Math.hypot(c.x, c.y);
   const tide = 0.7 + 0.45 * Math.min(1, sp / 0.22);
-  const temp = 1 - 0.06 * Math.abs(world.cond.waterTemp - 19);
   const wobble = 1 + 0.15 * noise1(school.noiseSeed + 99, t / 900);
+  if (school.species === 'sawara') {
+    // サワラ（本作設定）: strongest at dawn and evening, likes warmer water
+    const todS = 0.6 + 0.6 * Math.exp(-(((h - 6) / 1.5) ** 2)) + 0.35 * Math.exp(-(((h - 16.5) / 1.3) ** 2));
+    const warm = Math.max(0.6, Math.min(1.2, 0.8 + (world.cond.waterTemp - 18.8) * 0.3));
+    return Math.max(0.3, Math.min(1.4, todS * (0.8 + 0.25 * Math.min(1, sp / 0.22)) * warm * wobble));
+  }
+  const temp = 1 - 0.06 * Math.abs(world.cond.waterTemp - 19);
   return Math.max(0.3, Math.min(1.4, tod * tide * temp * wobble));
 }
 
 /**
- * Fish density (fish / m^3) contributed by each school at (x, y, depth z).
+ * Fish density (fish / m^3) at (x, y, depth z), optionally for one species.
  * Truncated at 3 sigma so that empty water is exactly empty (A04).
  * `poses` may be precomputed for time t.
  */
-export function densityAt(world, x, y, z, poses) {
+export function densityAt(world, x, y, z, poses, species = null) {
   let total = 0;
   let best = null;
   let bestRho = 0;
   for (let i = 0; i < world.schools.length; i++) {
     const s = world.schools[i];
+    if (species && s.species !== species) continue;
     const n = schoolTotal(s);
     if (n <= 0) continue;
     const p = poses ? poses[i] : schoolPose(s, world.time);

@@ -1,6 +1,7 @@
-// End-to-end playthrough in headless Chromium (A01, A06, A12 in the real UI).
-// Steering, stopping, starting/stopping the operation, re-drifting, returning,
-// landing, buying and departing are all done with the game's own keys/buttons.
+// End-to-end playthrough in headless Chromium (M0 + M1).
+// Steering, stopping, choosing a plan, switching method, setting a trolling
+// route on the chart, starting/stopping operations, returning, buying and
+// departing are all done with the game's own keys/buttons/clicks.
 // Dev mode (?dev=1) is used only to READ positions for the scripted skipper
 // and to fast-forward the same fixed-step simulation instead of waiting.
 //
@@ -33,16 +34,19 @@ const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
   const port = 8100 + Math.floor(Math.random() * 500);
   const server = spawn(process.execPath, [path.join(root, 'tools', 'serve.mjs'), String(port)], { stdio: 'ignore' });
   await sleep(600);
-  const base = `http://localhost:${port}/?dev=1&seed=2026`;
+  const base = `http://localhost:${port}/?dev=1&seed=77`;
   const browser = await chromium.launch();
-  const context = await browser.newContext({ viewport: { width: 1280, height: 800 } });
+  const context = await browser.newContext({ viewport: { width: 1280, height: 860 } });
   const page = await context.newPage();
   const errors = [];
-  page.on('pageerror', (e) => errors.push(`pageerror: ${e.message}`));
-  page.on('console', (m) => {
-    if (m.type() === 'error') errors.push(`console.error: ${m.text()}`);
-  });
-  const shot = (name) => page.screenshot({ path: path.join(outDir, `${name}.png`) });
+  const watch = (pg) => {
+    pg.on('pageerror', (e) => errors.push(`pageerror: ${e.message}`));
+    pg.on('console', (m) => {
+      if (m.type() === 'error') errors.push(`console.error: ${m.text()}`);
+    });
+  };
+  watch(page);
+  const shot = (name, pg = page) => pg.screenshot({ path: path.join(outDir, `${name}.png`) });
   const st = () => page.evaluate(() => window.__ryoshi.state());
   const ff = (s) => page.evaluate((x) => window.__ryoshi.fastForward(x), s);
   const press = (k) => page.keyboard.press(k);
@@ -55,11 +59,12 @@ const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
       await sleep(100);
     }
   }
+  const schools = async (species) => (await page.evaluate(() => window.__ryoshi.schoolCenters())).filter((s) => !species || s.id.includes('sawara') === (species === 'sawara'));
 
   /** Steer with A/D, set speed with W/S, stop at the target (keyboard only). */
-  async function driveTo(target, label) {
-    await press('2'); // time ×2 for the drive
-    let s = await st();
+  async function driveTo(target, label, { stop = true } = {}) {
+    await press('2');
+    let s;
     for (let i = 0; i < 6000; i++) {
       s = await st();
       const b = s.voyage.boat;
@@ -80,186 +85,234 @@ const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
         await page.keyboard.up(key);
       } else await sleep(40);
     }
-    // stop the boat
+    if (!stop) return s;
     for (let i = 0; i < 6; i++) {
       s = await st();
       if (s.voyage.boat.throttle > 1) await press('s');
       if (s.voyage.boat.throttle < 1) await press('w');
     }
-    s = await waitFor((x) => Math.abs(x.voyage.boat.speed) < 0.5, `${label}: boat stopped`);
-    return s;
+    return waitFor((x) => Math.abs(x.voyage.boat.speed) < 0.5, `${label}: boat stopped`);
+  }
+
+  /** Handline day: go up-current of the aji school nearest `near`, drift 3 passes, return. */
+  async function handlineDay(near, label) {
+    const sc = (await schools('aji')).sort((a, b) => Math.hypot(a.x - near.x, a.y - near.y) - Math.hypot(b.x - near.x, b.y - near.y))[0];
+    const c = await page.evaluate(() => window.__ryoshi.current());
+    const sp = Math.hypot(c.x, c.y) || 1;
+    await driveTo({ x: sc.x - (c.x / sp) * 60, y: sc.y - (c.y / sp) * 60 }, label);
+    await press('Space');
+    await waitFor((x) => x.voyage.operating, `${label}: operating`);
+    for (let pass = 0; pass < 3; pass++) {
+      await ff(480);
+      if (pass < 2) {
+        await press('r');
+        await ff(400);
+        await waitFor((x) => x.voyage.operating, `${label}: redrift`, 30000);
+      }
+    }
+  }
+
+  async function returnAndLand(label) {
+    await press('h');
+    await ff(60);
+    await ff(2400);
+    await page.waitForSelector('[data-act=toPort]', { timeout: 30000 });
+    await sleep(200);
+    return st();
+  }
+
+  /** Click a world point on the enlarged chart (the player's route input). */
+  async function clickChart(x, y) {
+    const box = await page.evaluate(() => {
+      const r = document.getElementById('chart').getBoundingClientRect();
+      return { left: r.left, top: r.top, w: r.width, h: r.height };
+    });
+    const scale = box.w / 3000;
+    await page.mouse.click(box.left + (x - 1500) * scale + box.w / 2, box.top + box.h / 2 - (y - 1500) * scale);
+    await sleep(150);
   }
 
   try {
-    // ---------------------------------------------------------------- start
+    // ---------------------------------------------------------------- start (day 1 briefing)
     await page.goto(base);
     await page.waitForSelector('[data-act=newGame]');
     await shot('01-title');
     await page.click('[data-act=newGame]');
-    await page.waitForSelector('[data-act=depart]');
+    await page.waitForSelector('#portChart');
     let s = await st();
-    check('new game saved to storage', s.saveStatus && s.saveStatus.ok, JSON.stringify(s.saveStatus));
-    await shot('02-port');
+    check('new game saved; morning talk heard and saved', s.saveStatus.ok && s.reports >= 3, `${s.reports} reports, ${JSON.stringify(s.saveStatus.reason)}`);
+    const a1 = s.candidates.find((c) => c.key === 'handline:北の瀬');
+    check('M1 scenario 1: 北の瀬 is a candidate from a peer\'s report, shown as untried (not unsuitable)', a1 && a1.labels.includes('昨日の情報あり') && a1.labels.includes('未経験'), JSON.stringify(s.candidates));
+    const portText = await page.textContent('#screen');
+    check('peers\' talk shows observation time and the time it was heard', /昨日\d\d:\d\dの水揚げ/.test(portText) && /今朝04:30に港で聞いた/.test(portText));
+    await shot('02-port-briefing');
 
-    // ---------------------------------------------------------------- voyage 1
-    await page.click('[data-act=depart]');
+    // ---------------------------------------------------------------- day 1: plan A, handline at 北の瀬
+    await page.click('[data-act=departPlan][data-key="handline:北の瀬"]');
     await waitFor((x) => x.screen === 'sea', 'at sea');
-    await sleep(800);
     s = await st();
-    check('departure marker saved (voyage V1)', s.day === 1 && s.saveStatus.ok);
-    // search: drive toward the biggest school (positions read via dev overlay)
-    const schools = await page.evaluate(() => window.__ryoshi.schoolCenters());
-    const best = schools.sort((a, b) => b.total - a.total)[0];
-    const cur = await page.evaluate(() => window.__ryoshi.current());
-    const sp = Math.hypot(cur.x, cur.y) || 1;
-    const target = { x: best.x - (cur.x / sp) * 60, y: best.y - (cur.y / sp) * 60 };
-    await shot('03-departing');
-    s = await driveTo(target, 'voyage1');
-    const pingsBefore = s.voyage.pings;
-    check('sounder pings while driving', pingsBefore > 50, `pings=${pingsBefore}`);
-    await shot('04-on-the-spot');
-    await press('Space');
-    s = await waitFor((x) => x.voyage.operating, 'operation started');
-    check('operation started with Space after stopping', s.voyage.operating);
-    await press('3'); // ×4
-    await sleep(6000);
-    await shot('05-operating-helm');
-    await press('v');
-    await sleep(700);
-    await shot('06-operating-deck-view');
-    await press('v');
-
+    check('departed with a plan (target and basis carried to sea)', s.voyage.plan && /北の瀬/.test(s.voyage.plan.label) && /源さん/.test(s.voyage.plan.basis), JSON.stringify(s.voyage.plan));
+    await handlineDay({ x: 2190, y: 2270 }, 'day1');
+    await shot('03-day1-handline');
+    s = await st();
+    const day1Fish = s.voyage.hold.count;
+    check('caught アジ at the place the peer reported', day1Fish > 0, `${day1Fish} fish`);
     // A06 in the real UI: while paused, toggling views/panels changes nothing
     await press('p');
     await sleep(300);
     const before = JSON.stringify((await st()).voyage);
-    for (const k of ['f', 'f', 'v', 'v', 'c', 'c', 'f', 'v']) {
+    for (const k of ['f', 'f', 'v', 'v', 'c', 'c', 'f', 'f', 'v', 'v']) {
       await press(k);
       await sleep(60);
     }
-    await sleep(400);
-    const after = JSON.stringify((await st()).voyage);
-    check('A06: view/sounder/chart toggles do not change the sea, boat or catch', before === after);
-    await press('p');
-
-    await ff(420);
     await sleep(300);
-    s = await st();
-    const firstPass = s.voyage.hold.count;
-    check('caught fish on the first drift', firstPass > 0, `hold=${firstPass} fish`);
-    await press('r'); // 流し直し
-    await waitFor((x) => x.voyage.autopilot === 'redrift' || (x.voyage.operating && x.voyage.opState === 'stopping'), 'redrift accepted');
-    await ff(400);
-    s = await waitFor((x) => x.voyage.operating, 're-drift restarted operation', 30000);
-    check('re-drift: retrieved, ran back and restarted automatically', s.voyage.logs >= 1 && s.voyage.operating);
-    await ff(480);
-    await press('h'); // return (retrieves first)
-    await ff(60);
-    s = await st();
-    check('return command retrieved the rig first', !s.voyage.operating);
-    s = await st();
-    const fundsBefore = s.funds;
-    const xpBefore = s.xp;
-    const catch1 = s.voyage.hold.count;
-    await ff(1800);
-    await page.waitForSelector('[data-act=toPort]', { timeout: 30000 });
-    s = await st();
-    check('docking landed, sold and paid once; XP gained', s.funds > fundsBefore && s.xp > xpBefore, `funds ${fundsBefore}→${s.funds}, xp ${xpBefore}→${s.xp}, fish ${catch1}`);
-    check('saved after landing', s.saveStatus.ok && s.saveStatus.reason === '水揚げ・精算', JSON.stringify(s.saveStatus));
-    await shot('08-receipt');
-    const snap = { funds: s.funds, xp: s.xp, day: s.day, reel: s.reel };
-
-    // ---------------------------------------------------------------- reload -> restore
-    await page.reload();
-    await page.waitForSelector('[data-act=depart]');
-    s = await st();
-    check('A12: reload restores funds/XP/day/equipment', s.funds === snap.funds && s.xp === snap.xp && s.day === snap.day && s.reel === snap.reel, JSON.stringify({ snap, now: { funds: s.funds, xp: s.xp, day: s.day, reel: s.reel } }));
-    await page.click('[data-act=log]');
-    await page.waitForSelector('table.data');
-    const logRows = await page.$$eval('table.data tr', (r) => r.length - 1);
-    check('logbook restored after reload', logRows >= 2, `${logRows} operations`);
-    await shot('09-logbook');
+    check('A06: view/sounder/chart toggles do not change the sea, boat or catch', before === JSON.stringify((await st()).voyage));
+    await press('p');
+    s = await returnAndLand('day1');
+    const receiptText = await page.textContent('#screen');
+    check('landing settled and saved; receipt shows the plan vs result', s.saveStatus.ok && /今日の狙いと結果/.test(receiptText) && /北の瀬/.test(receiptText), `funds ${s.funds}`);
+    await shot('04-day1-receipt');
     await page.click('[data-act=toPort]');
+    await page.waitForSelector('#portChart');
 
-    // ---------------------------------------------------------------- more voyages until the upgrade
-    let voyages = 1;
-    while ((await st()).funds < 15000 && voyages < 8) {
-      voyages++;
-      await page.click('[data-act=depart]');
-      await waitFor((x) => x.screen === 'sea', 'at sea');
-      const sc = (await page.evaluate(() => window.__ryoshi.schoolCenters())).sort((a, b) => b.total - a.total)[0];
-      const c2 = await page.evaluate(() => window.__ryoshi.current());
-      const sp2 = Math.hypot(c2.x, c2.y) || 1;
-      await driveTo({ x: sc.x - (c2.x / sp2) * 60, y: sc.y - (c2.y / sp2) * 60 }, `voyage${voyages}`);
-      await press('Space');
-      await waitFor((x) => x.voyage.operating, 'operating');
-      for (let pass = 0; pass < 3; pass++) {
-        await ff(480);
-        if (pass < 2) {
-          await press('r');
-          await ff(400);
-          await waitFor((x) => x.voyage.operating, 'redrift', 30000);
-        }
-      }
-      await press('h');
-      await ff(2400);
-      await page.waitForSelector('[data-act=toPort]', { timeout: 30000 });
-      await page.click('[data-act=toPort]');
-      await page.waitForSelector('[data-act=depart]');
-    }
+    // ---------------------------------------------------------------- day 2: own record recognised
     s = await st();
-    check('earned enough for the electric reel by playing', s.funds >= 15000, `funds=${s.funds} after ${voyages} voyages, Lv${s.level}`);
+    const k2 = s.candidates.find((c) => c.key === 'handline:北の瀬');
+    check('M1 scenario 2: next morning the past success under similar conditions is shown', k2 && k2.labels.includes('自分の実績あり') && k2.labels.includes('似た条件の記録あり'), JSON.stringify(k2));
+    await shot('05-day2-briefing');
+    await page.click('[data-act=departPlan][data-key="handline:北の瀬"]');
+    await waitFor((x) => x.screen === 'sea', 'at sea');
+    await handlineDay({ x: 2190, y: 2270 }, 'day2');
+    s = await returnAndLand('day2');
+    await page.click('[data-act=toPort]');
+    await page.waitForSelector('#portChart');
+    s = await st();
+    check('earned enough for the trolling gear by playing', s.funds >= 9000, `funds ${s.funds}, Lv${s.level}`);
 
-    // ---------------------------------------------------------------- upgrade
+    // ---------------------------------------------------------------- day 3 morning: trolling candidate needs gear
+    const t3 = s.candidates.find((c) => c.key.startsWith('troll:'));
+    check('day 3: a trolling candidate appears from fresh signs, marked as needing gear', t3 && t3.labels.includes('装備が必要') && !t3.feasible, JSON.stringify(s.candidates));
+    await shot('06-day3-briefing');
     await page.click('[data-act=equip]');
-    await page.waitForSelector('[data-act=buy]');
-    await shot('10-equipment');
+    await page.waitForSelector('[data-act=buy][data-item=troll_tr1]');
     const fundsPre = (await st()).funds;
-    await page.click('[data-act=buy]');
+    await page.click('[data-act=buy][data-item=troll_tr1]');
     await page.waitForSelector('[data-act=buyConfirm]');
-    await shot('11-purchase-confirm');
+    await shot('07-buy-troll-gear');
     await page.click('[data-act=buyConfirm]');
     await sleep(300);
     s = await st();
-    check('purchase: reel installed, price paid once, saved', s.reel === 'reel_electric' && s.funds === fundsPre - 15000 && s.saveStatus.ok, `funds ${fundsPre}→${s.funds}`);
+    check('bought trolling gear: installed on the stern slot, paid once, saved', s.troll === 'troll_tr1' && s.funds === fundsPre - 9000 && s.saveStatus.ok);
     await page.click('[data-act=toPort]');
-    await page.reload();
-    await page.waitForSelector('[data-act=depart]');
+    await page.waitForSelector('#portChart');
     s = await st();
-    check('upgrade survives reload', s.reel === 'reel_electric');
-    await shot('12-port-after-upgrade');
+    const t3b = s.candidates.find((c) => c.key.startsWith('troll:'));
+    check('with the gear the trolling candidate becomes feasible', t3b && t3b.feasible, JSON.stringify(t3b));
 
-    // ---------------------------------------------------------------- re-depart with the upgrade
-    await page.click('[data-act=depart]');
+    // ---------------------------------------------------------------- day 3: trolling
+    await page.click(`[data-act=departPlan][data-key="${t3b.key}"]`);
     await waitFor((x) => x.screen === 'sea', 'at sea');
-    const sc = (await page.evaluate(() => window.__ryoshi.schoolCenters())).sort((a, b) => b.total - a.total)[0];
-    await driveTo({ x: sc.x, y: sc.y }, 'upgraded');
+    s = await st();
+    check('plan sets the method to 曳縄 (gear on board)', s.voyage.method === 'troll');
+    const sw = (await schools('sawara')).sort((a, b) => b.total - a.total)[0];
+    // run toward the school, then lay a route straight through it on the chart
+    const startS = await st();
+    const dirx = sw.x - startS.voyage.boat.x;
+    const diry = sw.y - startS.voyage.boat.y;
+    const dl = Math.hypot(dirx, diry);
+    await driveTo({ x: sw.x - (dirx / dl) * 450, y: sw.y - (diry / dl) * 450 }, 'troll approach', { stop: false });
+    await press('c');
+    await sleep(200);
+    await clickChart(sw.x + (dirx / dl) * 450, sw.y + (diry / dl) * 450);
+    s = await st();
+    check('chart click adds a trolling waypoint', s.voyage.route.length === 1, JSON.stringify(s.voyage.route));
+    await shot('08-troll-route-planned');
+    await press('c');
     await press('Space');
-    await waitFor((x) => x.voyage.operating, 'operating');
-    const retrieve = await page.evaluate(() => window.__ryoshi.app.voyage.op.retrieveSpeed);
-    check('next operation uses the electric reel', retrieve === 2.6, `retrieve=${retrieve} m/s`);
+    s = await waitFor((x) => x.voyage.trolling, 'trolling started');
+    check('Space starts trolling while under way', s.voyage.trolling);
+    // helm keys are not needed (and are refused) while trolling
+    await page.keyboard.down('d');
+    await sleep(200);
+    await page.keyboard.up('d');
+    await press('3');
+    await sleep(3000);
+    await shot('09-trolling-helm');
     await press('v');
-    await ff(200);
-    await sleep(900);
-    await shot('13-upgraded-deck-view');
+    await sleep(1500);
+    await shot('10-trolling-deck');
     await press('v');
-    await sleep(500);
-    await shot('14-upgraded-operating');
+    await ff(1500);
+    s = await st();
+    const trollFish = s.voyage.hold.counts.sawara.s + s.voyage.hold.counts.sawara.m + s.voyage.hold.counts.sawara.l;
+    check('trolling the route through the school lands サワラ', trollFish > 0, `${trollFish} sawara`);
+    // change the route without stopping
+    await press('c');
+    await sleep(200);
+    const sw2 = (await schools('sawara')).sort((a, b) => b.total - a.total)[0];
+    await clickChart(sw2.x, sw2.y + 300);
+    await press('c');
+    s = await st();
+    check('route changed while trolling (still trolling)', s.voyage.trolling && s.voyage.route.length >= 2);
+    for (let i = 0; i < 40 && (await st()).voyage.heard < 1; i++) await ff(300);
+    s = await st();
+    const msgs = await page.textContent('#msgs');
+    check('radio calls from peers were heard at sea (with the time of the observation)', s.voyage.heard >= 1 && /無線（.+・\d\d:\d\dの話）/.test(msgs), `${s.voyage.heard} radio reports at ${Math.floor(s.voyage.time / 3600)}h`);
+    s = await returnAndLand('day3');
+    check('trolling XP gained at landing', s.trollXp > 0, `troll xp ${s.trollXp}`);
+    await shot('11-day3-receipt');
+    const snap = { funds: s.funds, xp: s.xp, trollXp: s.trollXp, troll: s.troll, reports: s.reports, day: s.day };
 
-    // ---------------------------------------------------------------- close the page at sea
+    // ---------------------------------------------------------------- reload -> restore
+    await page.reload();
+    await page.waitForSelector('#portChart');
+    s = await st();
+    check('A12: reload restores funds, both method levels, gear and knowledge', s.funds === snap.funds && s.xp === snap.xp && s.trollXp === snap.trollXp && s.troll === snap.troll && s.reports >= snap.reports && s.day === snap.day, JSON.stringify({ snap, now: s }));
+    await page.click('[data-act=log]');
+    await page.waitForSelector('table.data');
+    await page.selectOption('select[data-filter=method]', 'handline');
+    await page.waitForSelector('select[data-filter=area]');
+    await page.selectOption('select[data-filter=area]', '北の瀬');
+    await sleep(200);
+    const logText = await page.textContent('#screen');
+    check('logbook: filter + comparison with today\'s conditions + plan column + heard reports', /北の瀬・一本釣りの記録（今日の予報/.test(logText) && /(似た条件|同じ潮・風)/.test(logText) && /狙い/.test(logText) && /聞いた話の記録/.test(logText) && /無線で聞いた/.test(logText), '');
+    await shot('12-logbook');
+    await page.click('[data-act=toPort]');
+
+    // ---------------------------------------------------------------- closing at sea
     const preDay = (await st()).day;
     const preFunds = (await st()).funds;
-    await ff(300);
+    await page.click('[data-act=depart]');
+    await waitFor((x) => x.screen === 'sea', 'at sea');
+    await ff(1200);
     await page.reload();
-    await page.waitForSelector('[data-act=depart]');
+    await page.waitForSelector('#portChart');
     s = await st();
-    const notice = await page.textContent('#screen');
-    check('closing at sea: voyage marked interrupted, no reward, day consumed', s.day === preDay && s.funds === preFunds && /中断/.test(notice), `day=${s.day} funds=${s.funds}`);
-    await shot('15-port-after-interrupted');
+    check('closing at sea: voyage interrupted, no reward, day consumed', s.day === preDay + 1 && s.funds === preFunds && /中断/.test(await page.textContent('#screen')));
   } catch (e) {
     check('playthrough ran to the end', false, e.message);
     await shot('99-failure').catch(() => {});
   }
+
+  // ---------------------------------------------------------------- an M0 save opens in M1
+  try {
+    const ctx2 = await browser.newContext({ viewport: { width: 1280, height: 860 } });
+    const pg = await ctx2.newPage();
+    watch(pg);
+    await pg.goto(`http://localhost:${port}/?dev=1`);
+    await pg.waitForSelector('[data-act=newGame]');
+    const m0 = fs.readFileSync(path.join(__dirname, 'fixtures', 'm0-save.json'), 'utf8');
+    await pg.evaluate((raw) => localStorage.setItem('ryoshi-game:save:main', raw), m0);
+    await pg.reload();
+    await pg.waitForSelector('#portChart');
+    const r = await pg.evaluate(() => ({ s: window.__ryoshi.state(), pre: localStorage.getItem('ryoshi-game:save:pre-migration:v1') }));
+    check('M0 save loads in M1: funds/XP/logs kept, original kept aside', r.s.funds === 12345 && r.s.xp === 95 && r.s.trollXp === 0 && r.pre === m0, JSON.stringify({ funds: r.s.funds, xp: r.s.xp }));
+    await shot('13-m0-save-migrated', pg);
+    await ctx2.close();
+  } catch (e) {
+    check('M0 save migration in the browser', false, e.message);
+  }
+
   check('no page errors or console errors', errors.length === 0, errors.slice(0, 5).join(' | '));
   await browser.close();
   server.kill();
