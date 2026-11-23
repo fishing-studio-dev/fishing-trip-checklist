@@ -839,6 +839,23 @@ const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
     await pg.waitForSelector('#portChart');
     await pg.click('[data-act=depart]');
     await waitFor((x) => x.screen === 'sea', 'at sea (泳がせ)');
+    // item 8: at dawn the lookout calls out birds over bait pushed up by fish (dev: the sign's place read only to head there)
+    await ff(900);
+    const bird = await pg.evaluate(() => window.__ryoshi.cues().filter((c) => c.kind === 'birds' && c.y < 2900).sort((a, b) => b.strength - a.strength)[0]);
+    if (bird) {
+      await press('c');
+      await sleep(200);
+      await clickChart(bird.x, bird.y);
+      await press('c');
+      await press('g');
+      for (let i = 0; i < 40 && (await st()).voyage.autopilot && !/鳥山が見えます/.test(await pg.textContent('#msgs')); i++) await ff(10);
+      await press('s');
+      await press('s');
+      await press('s');
+      await sleep(300);
+      check('海面の手掛かり: the lookout calls out a 鳥山 when it comes into sight (from the sea itself)', /鳥山が見えます（/.test(await pg.textContent('#msgs')), (await pg.textContent('#msgs')).slice(-80));
+      await shot('32-birds');
+    } else check('海面の手掛かり: a 鳥山 at dawn (seed 77, day of this section)', false, 'no birds in the sea this morning');
     // the biggest アジ school within reach (dev: positions read only to drive there)
     const aji = await pg.evaluate(() => window.__ryoshi.schoolCenters().filter((s) => s.species === 'aji' && s.y < 2900 && s.total > 50).sort((a, b) => b.total - a.total)[0]);
     await press('c');

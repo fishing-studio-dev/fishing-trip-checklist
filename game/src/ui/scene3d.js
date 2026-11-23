@@ -88,6 +88,86 @@ export function createScene(canvas) {
     scene.add(m);
     return m;
   });
+  // surface signs (鳥山・ナブラ・潮目): drawn where the simulation says they are
+  const birdGeo = new THREE.BufferGeometry();
+  birdGeo.setAttribute('position', new THREE.Float32BufferAttribute([0, 0, 0.3, -1, 0.18, -0.12, 0, 0, -0.2, 0, 0, 0.3, 0, 0, -0.2, 1, 0.18, -0.12], 3));
+  const birdMat = new THREE.MeshBasicMaterial({ color: 0x2a2e35, side: THREE.DoubleSide });
+  const birds = [];
+  for (let i = 0; i < 64; i++) {
+    const m = new THREE.Mesh(birdGeo, birdMat);
+    m.visible = false;
+    scene.add(m);
+    birds.push(m);
+  }
+  const splashGeo = new THREE.SphereGeometry(1, 6, 4);
+  const splashMat = new THREE.MeshBasicMaterial({ color: 0xffffff, transparent: true, opacity: 0.85 });
+  const splashes = [];
+  for (let i = 0; i < 64; i++) {
+    const m = new THREE.Mesh(splashGeo, splashMat);
+    m.visible = false;
+    scene.add(m);
+    splashes.push(m);
+  }
+  const foamGeo = new THREE.PlaneGeometry(1, 1);
+  foamGeo.rotateX(-Math.PI / 2);
+  const shiomeObjs = [0, 1, 2].map(() => {
+    const m = new THREE.Mesh(foamGeo, new THREE.MeshBasicMaterial({ color: 0xeaf6fa, transparent: true, opacity: 0.3, depthWrite: false }));
+    m.visible = false;
+    scene.add(m);
+    return m;
+  });
+
+  function drawCues(cues, rt, amp) {
+    let bi = 0;
+    let si = 0;
+    let li = 0;
+    for (const c of cues) {
+      const cx = c.x;
+      const cz = -c.y;
+      if (c.kind === 'birds') {
+        const n = Math.round(6 + 10 * c.strength);
+        for (let k = 0; k < n && bi < birds.length; k++, bi++) {
+          const b = birds[bi];
+          const r = 8 + (k % 5) * 5;
+          const ang = rt * (0.45 + (k % 3) * 0.15) + k * 2.399;
+          b.position.set(cx + Math.cos(ang) * r, 7 + (k % 4) * 4 + Math.sin(rt * 1.3 + k) * 1.5, cz + Math.sin(ang) * r);
+          b.rotation.set(0, -ang, Math.sin(rt * 2 + k) * 0.3);
+          b.scale.set(1.5, 1.5 * (0.4 + 0.6 * Math.abs(Math.sin(rt * 7 + k))), 1.5);
+          b.visible = true;
+        }
+      } else if (c.kind === 'nabura') {
+        for (let k = 0; k < 16 && si < splashes.length; k++, si++) {
+          const s = splashes[si];
+          const cyc = rt * 1.5 + k * 0.37;
+          const ph = cyc - Math.floor(cyc);
+          const seed = Math.floor(cyc) * 7 + k * 13;
+          const ang = (seed * 2.399) % (Math.PI * 2);
+          const r = 3 + ((seed * 0.618) % 1) * 16;
+          const x = cx + Math.cos(ang) * r;
+          const z = cz + Math.sin(ang) * r;
+          const up = Math.sin(ph * Math.PI);
+          s.position.set(x, waveH(x, z, rt, amp) + up * 1.5 * (0.5 + c.strength), z);
+          s.scale.setScalar(0.2 + 0.45 * up);
+          s.visible = ph < 0.85;
+        }
+      } else if (c.kind === 'shiome' && li < shiomeObjs.length) {
+        const m = shiomeObjs[li++];
+        const ax = c.a.x;
+        const az = -c.a.y;
+        const dx = c.b.x - ax;
+        const dz = -c.b.y - az;
+        m.position.set(ax + dx / 2, 0.12, az + dz / 2);
+        m.scale.set(Math.hypot(dx, dz), 1, 5 + 4 * c.strength);
+        m.rotation.y = -Math.atan2(dz, dx);
+        m.material.opacity = 0.18 + 0.25 * c.strength;
+        m.visible = true;
+      }
+    }
+    for (; bi < birds.length; bi++) birds[bi].visible = false;
+    for (; si < splashes.length; si++) splashes[si].visible = false;
+    for (; li < shiomeObjs.length; li++) shiomeObjs[li].visible = false;
+  }
+
   // walking on deck (a view of the boat; never touches the simulation)
   const walk = { on: false, x: 0, z: 0, yaw: 0 };
   const wake = buildWake(scene);
@@ -282,6 +362,8 @@ export function createScene(canvas) {
       b.rotation.z = 0.12 * Math.sin(rt * 1.4 + i);
       b.rotation.x = 0.1 * Math.sin(rt * 1.1 + i * 2);
     });
+
+    drawCues(st.mode === 'sea' ? st.cues || [] : [], rt, amp);
 
     // heading chevrons ahead of the bow (helm view at sea)
     chevrons.forEach((m, i) => {

@@ -9,6 +9,7 @@ import {
   isLonglining, lineInWater, haulLongline, lineRouteFrom, runRoute, addMarkAt, cycleSonarRange, baitInHold, editVoyageMark, removeVoyageMark, routeTo,
 } from '../core/voyage.js';
 import { sonarToWorld } from '../core/sonar.js';
+import { surfaceCues } from '../core/surface.js';
 import { longlineLabel, baitLeft, nearestBuoy, buoys } from '../core/longline.js';
 import { acquireBriefing, buildCandidates, planSummary } from '../core/knowledge.js';
 import { reportLine, peerName } from '../core/reports.js';
@@ -1422,6 +1423,8 @@ function consumeEvents(v) {
 // ---------------------------------------------------------------- loop
 let bathyAt = 0;
 let sonarAt = 0;
+let cuesAt = 0;
+let cuesNow = [];
 let bathyNow = null;
 let sideAt = 0;
 let lastFrame = performance.now();
@@ -1529,8 +1532,14 @@ function frame(now) {
     const lineBuoys = atSea && v.line && v.line.state !== 'aboard' ? buoys(v.line).filter((bu, i) => i === 0 || v.line.state !== 'setting') : null;
     const longlineId = atSea ? v.equip.longlineId : Object.values(slots).map((x) => x && x.itemId).find((id) => id && EQUIPMENT[id].type === 'longline') || null;
     const haulerId = atSea ? v.equip.haulerId : Object.values(slots).map((x) => x && x.itemId).find((id) => id && EQUIPMENT[id].type === 'hauler') || null;
+    // surface signs (鳥山・ナブラ・潮目) worked out from the sea, refreshed twice a second
+    if (atSea && now - cuesAt > 500) {
+      cuesAt = now;
+      cuesNow = surfaceCues(v.world).filter((c) => Math.hypot(c.x - v.boat.x, c.y - v.boat.y) < 2600);
+    }
     scene.render({
       mode: atSea ? 'sea' : 'port',
+      cues: atSea ? cuesNow : [],
       boat: atSea ? v.boat : { x: PORT.dock.x, y: PORT.dock.y + 20, heading: 0, speed: 0, vx: 0, vy: 0 },
       gameTime: atSea ? v.world.time : app.screen === 'receipt' ? 13 * 3600 : TIME.DEPART + 1800,
       windSpeed: atSea ? v.world.cond.windSpeed : 3,
@@ -1676,6 +1685,9 @@ function devApi() {
       const r = c.getBoundingClientRect();
       const p = worldToChart(c, app.voyage, app.chartBig, x, y);
       return { x: r.left + p.px, y: r.top + p.py };
+    },
+    cues() {
+      return app.voyage ? surfaceCues(app.voyage.world) : [];
     },
     schoolCenters() {
       const v = app.voyage;

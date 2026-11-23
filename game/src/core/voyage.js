@@ -7,7 +7,8 @@ import { createWorld } from './world.js';
 import { createBoatRuntime, stepBoat, autopilotCommand, routeToPort, clearPath } from './boat.js';
 import { createObservation, pingColumn, pushColumn } from './sounder.js';
 import { sideColumn } from './sideview.js';
-import { MARK_KINDS, MARK_LIMITS, cleanText, newVoyageMark, pushVoyageMark } from './marks.js';
+import { MARK_KINDS, MARK_LIMITS, cleanText, newVoyageMark, pushVoyageMark, bearingOf } from './marks.js';
+import { surfaceCues, visibleCues, cueDistance } from './surface.js';
 import { recordDepth } from './bathy.js';
 import { createSonar, stepSonar } from './sonar.js';
 import { createOperation, stepOperation, requestStop, inFlightKg } from './fishing.js';
@@ -259,6 +260,9 @@ export function stepVoyage(v) {
     if (v.op.state === 'ended') finishOperation(v);
   }
 
+  // the lookout: signs on the surface (鳥山・ナブラ・潮目) are called out when they come into sight
+  if (w.step % 100 === 0) lookout(v);
+
   // radio calls from peers become known when they are made
   for (const r of v.radio) {
     if (r.delivered || w.time < r.deliverAt) continue;
@@ -285,6 +289,22 @@ export function stepVoyage(v) {
     v.flags.dayEnd = true;
     say(v, '日暮れが近いので帰港します。', 'warn');
     returnToPort(v, true);
+  }
+}
+
+/** Call out surface signs that have just come into sight (once per sighting, again after 30 min). */
+function lookout(v) {
+  if (!v.seenCues) v.seenCues = {};
+  const t = v.world.time;
+  for (const c of visibleCues(surfaceCues(v.world, t), v.boat.x, v.boat.y)) {
+    const last = v.seenCues[c.id];
+    v.seenCues[c.id] = t;
+    if (last != null && t - last < 1800) continue;
+    const d = cueDistance(c, v.boat.x, v.boat.y);
+    const where = d < 60 ? 'すぐそば' : `${bearingOf(v.boat, c).name}・約${Math.round(d / 50) * 50}m`;
+    const what = c.kind === 'birds' ? '鳥山が見えます' : c.kind === 'nabura' ? 'ナブラ（魚が水面で小魚を追っている）が見えます' : `潮目が出ています（${c.name}）`;
+    say(v, `${what}（${where}）。`, 'sight');
+    emit(v, { type: 'sighting', kind: c.kind, x: c.x, y: c.y });
   }
 }
 
