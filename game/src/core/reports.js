@@ -150,9 +150,15 @@ function hamadaTrolling(seed, od, t0, idBase, stepS = 2700) {
   });
 }
 
-/** Which ground 松じい lays his line on, on day od (his own habit; not a fish lookup). */
+/**
+ * Which ground 松じい lays his line on, on day od: his own habit — in the
+ * 乗っ込み season (known from the water temperature, like everyone in port)
+ * he goes to the flank of 北の瀬. Not a fish lookup.
+ */
 function matsuGround(seed, od) {
-  return MADAI_GROUNDS[Math.floor(hashFloat(seed, od, 501) * MADAI_GROUNDS.length)];
+  if (makeDayConditions(seed, od).season.nokkomi) return MADAI_GROUNDS.find((g) => g.nokkomi);
+  const usual = MADAI_GROUNDS.filter((g) => !g.nokkomi);
+  return usual[Math.floor(hashFloat(seed, od, 501) * usual.length)];
 }
 
 /** 松じい's longline on day od, hauled at time t: what it caught where it lay. */
@@ -223,7 +229,9 @@ function rules(seed, d, hadSawara) {
     out.push(report({ originId: `O${d}-gen-rule-wind`, speaker: 'gen', kind: 'rule', methodId: 'handline', obsDay: d, obsT: BRIEFING_T, text: '今日みたいに風が強い日は、船が流されて瀬の上に留まりにくい。' }));
   }
   if (d >= PEERS.matsu.fromDay) {
-    if (tideClass(fc.tideName) === '小潮系') {
+    if (fc.season && fc.season.nokkomi) {
+      out.push(report({ originId: `O${d}-matsu-rule-nokkomi`, speaker: 'matsu', kind: 'rule', species: 'madai', methodId: 'longline', obsDay: d, obsT: BRIEFING_T, text: '水温が上がってきた。この頃はマダイが瀬の肩に寄ってくる（乗っ込み）。北の瀬の裾あたりだな。' }));
+    } else if (tideClass(fc.tideName) === '小潮系') {
       out.push(report({ originId: `O${d}-matsu-rule-tide`, speaker: 'matsu', kind: 'rule', species: 'madai', methodId: 'longline', obsDay: d, obsT: BRIEFING_T, text: '潮の緩い日のマダイは、潮が動き出すころにならんと食わん。' }));
     } else if (hashFloat(seed, d, 502) < 0.5) {
       out.push(report({ originId: `O${d}-matsu-rule-soak`, speaker: 'matsu', kind: 'rule', species: 'madai', methodId: 'longline', obsDay: d, obsT: BRIEFING_T, text: '延縄は餌が持つうちに揚げるもんだ。浸けて1時間前後が目安だな。' }));

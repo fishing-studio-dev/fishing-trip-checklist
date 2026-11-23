@@ -14,10 +14,11 @@ import { depthAt, isLand, inBounds } from './sea.js';
 import { rngNext } from './rng.js';
 import { maxFishKg, requestStop } from './fishing.js';
 import { clearPath } from './boat.js';
+import { initHands, fillHands, takeHands, releaseHands } from './hands.js';
 
-export function createTrollOperation({ id, voyageId, level, gear, gearId, startT, x, y, route }) {
+export function createTrollOperation({ id, voyageId, level, gear, gearId, startT, x, y, route, hands = 1 }) {
   const skill = trollSkillForLevel(level);
-  return {
+  const op = {
     id,
     voyageId,
     methodId: 'troll',
@@ -33,8 +34,6 @@ export function createTrollOperation({ id, voyageId, level, gear, gearId, startT
     start: { x, y },
     end: null,
     route: { points: route.map((p) => ({ x: p.x, y: p.y })), idx: route.length > 1 ? 1 : 0, dir: 1, changes: 0 },
-    worker: null,
-    queue: [],
     lines: gear.lureDepths.map((depth, i) => {
       const side = i % 2 ? 1 : -1;
       const outer = gear.lines > 2 && i >= 2;
@@ -71,6 +70,8 @@ export function createTrollOperation({ id, voyageId, level, gear, gearId, startT
       lastTanaSource: 'lure',
     },
   };
+  initHands(op, hands);
+  return op;
 }
 
 export function trollNeedsHands(line) {
@@ -113,19 +114,15 @@ export function stepTrollOperation(op, ctx, dt) {
   if (op.state === 'running') op.stats.towDistance += speed * dt;
   const stopping = op.state === 'stopping';
   let poses = null;
-  if (op.worker == null && op.queue.length) op.worker = op.queue.shift();
+  fillHands(op);
 
   for (let li = 0; li < op.lines.length; li++) {
     const line = op.lines[li];
     if (stopping && line.phase === 'deploy') line.phase = 'idle';
-    // one fisher: setting, playing, hauling and unhooking take turns
-    if (trollNeedsHands(line)) {
-      if (op.worker == null) op.worker = li;
-      if (op.worker !== li) {
-        if (!op.queue.includes(li)) op.queue.push(li);
-        line.waiting = true;
-        continue;
-      }
+    // setting, playing, hauling and unhooking take hands; they take turns when all hands are busy
+    if (trollNeedsHands(line) && !takeHands(op, li)) {
+      line.waiting = true;
+      continue;
     }
     line.waiting = false;
     switch (line.phase) {
@@ -215,14 +212,9 @@ export function stepTrollOperation(op, ctx, dt) {
       default:
         break;
     }
-    if (trollNeedsHands(line) && op.worker !== li) {
-      if (op.worker == null) op.worker = li;
-      else {
-        line.waiting = true;
-        if (!op.queue.includes(li)) op.queue.push(li);
-      }
-    }
-    if (op.worker === li && !trollNeedsHands(line)) op.worker = op.queue.length ? op.queue.shift() : null;
+    if (trollNeedsHands(line)) {
+      if (!takeHands(op, li)) line.waiting = true;
+    } else releaseHands(op, li);
   }
 
   if (op.state === 'running' && op.stats.holdBlocked > 0 && trollInFlightKg(op) === 0) requestStop(op, 'hold_full');

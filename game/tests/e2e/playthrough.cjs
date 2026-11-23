@@ -145,6 +145,7 @@ const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
     check('M1 scenario 1: 北の瀬 is a candidate from a peer\'s report, shown as untried (not unsuitable)', a1 && a1.labels.includes('昨日の情報あり') && a1.labels.includes('未経験'), JSON.stringify(s.candidates));
     const portText = await page.textContent('#screen');
     check('peers\' talk shows observation time and the time it was heard', /昨日\d\d:\d\dの水揚げ/.test(portText) && /今朝04:30に港で聞いた/.test(portText));
+    check('M4: the forecast tells the season (water temperature trend)', /季節：水温の/.test(portText));
     await shot('02-port-briefing');
 
     // ---------------------------------------------------------------- day 1: plan A, handline at 北の瀬
@@ -456,14 +457,30 @@ const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
     check('bought the longline: on the stern, the trolling gear kept in storage, saved', s4.troll === null && s4.slots.stern_troll.startsWith('longline_ll1') && s4.storage.some((x) => x.startsWith('troll_tr1')) && s4.saveStatus.ok, JSON.stringify({ slots: s4.slots, storage: s4.storage }));
     await pg.click('[data-act=toPort]');
     await pg.waitForSelector('#portChart');
+    // M4: hire a deckhand for this trip
+    await pg.check('#hireCrew');
+    check('M4: a deckhand can be hired at port (wage shown)', (await st()).hireCrew === true && /甲板員を乗せる（日当1,800G/.test(await pg.textContent('#screen')));
     await pg.click('[data-act=depart]');
     await waitFor((x) => x.screen === 'sea', 'at sea (M3)');
+    check('M4: the deckhand is on board (HUD)', (await st()).voyage.crew === 1 && /2人（甲板員）/.test(await pg.textContent("#hudTop")));
     await press('t');
     s4 = await st();
     check('T switches to 延縄 (the gear on board)', s4.voyage.method === 'longline', s4.voyage.method);
     // run to the south side of the マダイ, then lay the line north through them (chart click = where the line goes)
     const md = (await pg.evaluate(() => window.__ryoshi.schoolCenters())).filter((x) => x.id.includes('madai')).sort((a, b) => b.total - a.total)[0];
-    await driveTo({ x: md.x, y: md.y - 330 }, 'longline approach');
+    // move there along a route drawn on the chart (G), not by steering
+    await press('c');
+    await sleep(200);
+    await clickChart(md.x, md.y - 330);
+    const planned = (await st()).voyage.route.slice(-1)[0];
+    await press('c');
+    await press('g');
+    s4 = await waitFor((x) => x.voyage.autopilot === 'route', 'route movement started');
+    for (let i = 0; i < 60 && (await st()).voyage.autopilot; i++) await ff(20); // stop as soon as it arrives (then it drifts with the tide)
+    s4 = await waitFor((x) => !x.voyage.autopilot && Math.abs(x.voyage.boat.speed) < 0.5, 'route movement arrived');
+    const off = Math.hypot(s4.voyage.boat.x - planned.x, s4.voyage.boat.y - planned.y);
+    const clickErr = Math.hypot(planned.x - md.x, planned.y - (md.y - 330));
+    check('chart route (G): the boat runs to the clicked point and stops there', off < 60 && clickErr < 30, `${Math.round(off)} m from the route end; click landed ${Math.round(clickErr)} m from the aim`);
     await press('c');
     await sleep(200);
     await clickChart(md.x, md.y + 360);
@@ -508,12 +525,13 @@ const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
     s4 = await returnAndLand('M3');
     const rc = await pg.textContent('#screen');
     check('landing: マダイ sold, 延縄 experience', /マダイ/.test(rc) && /延縄/.test(rc) && s4.saveStatus.ok);
+    check('M4: the deckhand\'s wage is paid once, shown with the costs', /甲板員の日当/.test(rc) && /1,800G/.test(rc));
     await shot('23-longline-receipt');
     await pg.click('[data-act=toPort]');
     await pg.click('[data-act=log]');
     await pg.waitForSelector('table.data');
     const lg4 = await pg.textContent('#screen');
-    check('logbook: the longline with its soak time and gear', /延縄/.test(lg4) && /浸け\d+分/.test(lg4) && /延縄具 LL-1/.test(lg4));
+    check('logbook: the longline with its soak time and gear (and the deckhand)', /延縄/.test(lg4) && /浸け\d+分/.test(lg4) && /延縄具 LL-1（針100本）＋甲板員/.test(lg4));
     await pg.click('[data-act=toPort]');
     await pg.click('[data-act=openSave]');
     await pg.click('[data-act=playtestRestore]');

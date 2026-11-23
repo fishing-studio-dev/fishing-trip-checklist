@@ -70,6 +70,24 @@ export function createScene(canvas) {
   scene.add(llLine.obj);
   const buoyObjs = [buildBuoy(), buildBuoy()];
   for (const b of buoyObjs) scene.add(b);
+  // chevrons on the water ahead of the bow: which way the boat points
+  const chevMat = new THREE.MeshBasicMaterial({ color: 0xffd84d, transparent: true, opacity: 0.55, depthWrite: false, side: THREE.DoubleSide });
+  const chevShape = new THREE.Shape();
+  chevShape.moveTo(0, 1.6);
+  chevShape.lineTo(1.6, -0.6);
+  chevShape.lineTo(0.9, -0.6);
+  chevShape.lineTo(0, 0.6);
+  chevShape.lineTo(-0.9, -0.6);
+  chevShape.lineTo(-1.6, -0.6);
+  chevShape.closePath();
+  const chevGeo = new THREE.ShapeGeometry(chevShape);
+  chevGeo.rotateX(-Math.PI / 2);
+  const chevrons = [0, 1, 2].map(() => {
+    const m = new THREE.Mesh(chevGeo, chevMat);
+    m.visible = false;
+    scene.add(m);
+    return m;
+  });
   // walking on deck (a view of the boat; never touches the simulation)
   const walk = { on: false, x: 0, z: 0, yaw: 0 };
   const wake = buildWake(scene);
@@ -124,6 +142,7 @@ export function createScene(canvas) {
     boat.setReels(st.reels || { starboard: 'reel_hand' });
     boat.setTroll(st.trollId || null);
     boat.setLongline(st.longlineId || null);
+    boat.setCrew(!!st.crew && st.mode === 'sea');
 
     const amp = Math.min(1.6, 0.35 + (st.windSpeed || 3) / 6);
     // boat pose
@@ -201,6 +220,7 @@ export function createScene(canvas) {
       walk.on = false;
       boat.moveWorkerTo(st.mode === 'sea' ? st.station || 'helm' : 'helm', dtR, rt);
     }
+    if (st.crew && st.mode === 'sea') boat.moveCrewTo(st.crewStation || 'fishbox', dtR, rt, st.crewWorking);
 
     // handlines from the rod tips straight down
     g.updateMatrixWorld(true);
@@ -261,6 +281,18 @@ export function createScene(canvas) {
       b.rotation.z = 0.12 * Math.sin(rt * 1.4 + i);
       b.rotation.x = 0.1 * Math.sin(rt * 1.1 + i * 2);
     });
+
+    // heading chevrons ahead of the bow (helm view at sea)
+    chevrons.forEach((m, i) => {
+      m.visible = st.mode === 'sea' && st.view === 'helm';
+      if (!m.visible) return;
+      const d = boat.cam.half + 5 + i * 4.5;
+      const p = g.position.clone().add(fwd.clone().multiplyScalar(d));
+      m.position.set(p.x, waveH(p.x, p.z, rt, amp) + 0.25, p.z);
+      m.rotation.set(0, -st.boat.heading, 0);
+      m.scale.setScalar(boat.cam.half / 3.75);
+    });
+    chevMat.opacity = 0.35 + 0.25 * (0.5 + 0.5 * Math.sin(rt * 3));
 
     // landed fish: arc from the water by the rod to the fish box
     for (const n of st.newLandings || []) {
@@ -546,6 +578,8 @@ function buildBoat(modelId = 'skiff_1') {
     port: { x: -(H.beam - 0.62), z: -0.55 * sz, yaw: -Math.PI / 2, label: '左舷' },
     stern: { x: 0, z: 3.15 * sz, yaw: Math.PI, label: '船尾' },
     hauler: { x: H.beam - 0.62, z: -1.55 * sz, yaw: Math.PI / 2, label: '揚げ縄機' },
+    haulerAft: { x: H.beam - 0.66, z: -0.75 * sz, yaw: Math.PI * 0.8, crewOnly: true },
+    sternPort: { x: -0.45, z: 3.1 * sz, yaw: Math.PI, crewOnly: true },
     fishbox: { x: 0.5, z: 2.25 * sz, yaw: -Math.PI * 0.7, label: '魚倉' },
   };
   const hullW = [[-3.75, 1.05], [-0.5, 1.15], [1.9, 0.85], [3.25, 0.35], [3.75, 0]]; // (shape y, half-width)
@@ -578,6 +612,60 @@ function buildBoat(modelId = 'skiff_1') {
     }
     return { x: xx, z: zz };
   }
+  // the deckhand (乗組員): an orange jacket, walks to the second job
+  const crewMan = new THREE.Group();
+  crewMan.rotation.order = 'YXZ';
+  const cBody = new THREE.Mesh(new THREE.CylinderGeometry(0.2, 0.25, 0.95, 10), new THREE.MeshStandardMaterial({ color: 0xe07a2e }));
+  cBody.position.y = 0.48;
+  crewMan.add(cBody);
+  const cHead = new THREE.Mesh(new THREE.SphereGeometry(0.15, 12, 10), new THREE.MeshStandardMaterial({ color: 0xd9a77f }));
+  cHead.position.y = 1.08;
+  crewMan.add(cHead);
+  const cCap = new THREE.Mesh(new THREE.CylinderGeometry(0.17, 0.17, 0.09, 12), new THREE.MeshStandardMaterial({ color: 0x23395a }));
+  cCap.position.y = 1.2;
+  crewMan.add(cCap);
+  const cArm = new THREE.Mesh(new THREE.BoxGeometry(0.1, 0.1, 0.55), new THREE.MeshStandardMaterial({ color: 0xe07a2e }));
+  cArm.position.set(0.18, 0.7, -0.22);
+  crewMan.add(cArm);
+  const cLegs = [-1, 1].map((sd) => {
+    const leg = new THREE.Mesh(new THREE.BoxGeometry(0.11, 0.42, 0.12), legMat);
+    leg.position.set(sd * 0.09, 0.05, 0);
+    crewMan.add(leg);
+    return leg;
+  });
+  crewMan.position.set(0.45, deckY, 2.3 * sz);
+  crewMan.visible = false;
+  group.add(crewMan);
+  function setCrew(on) {
+    crewMan.visible = on;
+  }
+  function moveCrewTo(name, dt, rt, working) {
+    const p = posts[name] || posts.fishbox;
+    const dx = p.x - crewMan.position.x;
+    const dz = p.z - crewMan.position.z;
+    const d = Math.hypot(dx, dz);
+    let walking = false;
+    if (d >= 0.03) {
+      const stepLen = Math.min(d, 1.4 * dt);
+      let c = clampDeck(crewMan.position.x + (dx / d) * stepLen, crewMan.position.z + (dz / d) * stepLen);
+      if (Math.hypot(c.x - crewMan.position.x, c.z - crewMan.position.z) < stepLen * 0.2) c = clampDeck(crewMan.position.x + Math.sign(dx || 1) * stepLen, crewMan.position.z + (dz / d) * stepLen * 0.3);
+      crewMan.position.x = c.x;
+      crewMan.position.z = c.z;
+      crewMan.rotation.y = -Math.atan2(dx, -dz);
+      walking = true;
+    } else crewMan.rotation.y = -p.yaw;
+    const sw = walking ? 0.5 * Math.sin(rt * 9) : 0;
+    cLegs[0].rotation.x = sw;
+    cLegs[1].rotation.x = -sw;
+    if (!walking && working) {
+      crewMan.rotation.x = 0.22;
+      cArm.rotation.x = 0.4 * Math.sin(rt * 6);
+    } else {
+      crewMan.rotation.x = 0;
+      cArm.rotation.x = 0;
+    }
+  }
+
   let wYaw = 0;
   function placeWorker(x, z, yaw, walkingAt) {
     worker.position.x = x;
@@ -678,7 +766,7 @@ function buildBoat(modelId = 'skiff_1') {
   setTroll(null);
   setReels({ starboard: 'reel_hand' });
   const stationList = Object.entries(posts)
-    .filter(([name]) => name !== 'port' || stations.port)
+    .filter(([name, p]) => !p.crewOnly && (name !== 'port' || stations.port))
     .map(([name, p]) => ({ name, label: p.label }));
   return {
     group,
@@ -689,6 +777,8 @@ function buildBoat(modelId = 'skiff_1') {
     animateWorker,
     setTroll,
     setLongline,
+    setCrew,
+    moveCrewTo,
     spinHauler,
     trollTips,
     llTip,

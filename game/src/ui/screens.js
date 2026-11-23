@@ -1,5 +1,5 @@
 // HTML for the menu screens. Pure functions of state -> markup.
-import { EQUIPMENT, BOATS, ECONOMY, METHODS, SPECIES, PEERS, skillForLevel, trollSkillForLevel, longlineSkillForLevel, TIME, fits, sellValue } from '../core/data.js';
+import { EQUIPMENT, BOATS, ECONOMY, METHODS, SPECIES, PEERS, CREW, skillForLevel, trollSkillForLevel, longlineSkillForLevel, TIME, fits, sellValue } from '../core/data.js';
 import { xpProgress, cycleEstimate, trollCycleEstimate, levelFromXp } from '../core/progress.js';
 import { purchasePreview, boatOffers, planBoatPurchase } from '../core/economy.js';
 import { forecastText, fmtClock } from '../core/sea.js';
@@ -160,6 +160,14 @@ function skillCard(profile) {
     <p class="note">手返し目安：一本釣りは水深30mで3本針すべてに掛かったとき、曳縄は1本掛かってから仕掛けを出し直すまで。延縄は張る・揚げるのが速いほど、同じ時間に多く浸けられます。魚が少ない場所では腕前の差は小さくなります。</p></div>`;
 }
 
+/** Hire a deckhand for today's trip (optional; the fisher can always go alone). */
+function crewChoice(app) {
+  const can = app.profile.funds >= CREW.wage;
+  return `<div class="crew-choice"><label><input type="checkbox" id="hireCrew" ${app.hireCrew && can ? 'checked' : ''} ${can ? '' : 'disabled'}>
+    今日は${esc(CREW.label)}を乗せる（日当${money(CREW.wage)}・帰港時に精算）</label>
+    <p class="note">手が2人になります。2本の竿・TR-2の4本の取り込みで順番待ちが減り、延縄では${esc(CREW.label)}が魚を外す間も揚げ続けます。1人でも漁はすべてできます。${can ? '' : `（資金が${money(CREW.wage)}以上あるときに雇えます）`}</p></div>`;
+}
+
 function boatCard(profile) {
   const model = BOATS[profile.boat.model];
   const slots = model.slots.map((sl) => `<dt>${esc(sl.label)}</dt><dd>${esc(itemOf(profile, sl.id) ? itemOf(profile, sl.id).name : '（空き）')}</dd>`).join('');
@@ -189,6 +197,7 @@ export function portScreen(app) {
         <p class="note">● 水揚げ ◎ 魚探の反応 △ 目撃 × 反応なし（仲間が観測した地点・時刻。今の魚の位置ではありません）　■ 自分の操業地点　A/B/C 候補</p></div>
       <div class="cands">${cands.map((c) => candidateCard(c, today, p)).join('')}</div>
     </div>
+    ${crewChoice(app)}
     <div class="actions"><button type="button" class="btn" data-act="depart">狙いを決めずに出港</button><button type="button" class="btn" data-act="help">操作説明</button></div>
   </div>
   <div class="grid">
@@ -258,7 +267,7 @@ export function receiptScreen(app) {
     ${planHtml}
     <div class="card full"><h2>売上</h2><div class="table-wrap"><table class="data"><tr><th>区分</th><th class="num">数</th><th class="num">重量</th><th class="num">単価</th><th class="num">金額</th></tr>${rows}
       <tr><th colspan="4">売上合計</th><th class="num">${money(r.sales)}</th></tr></table></div>
-      <dl class="kv" style="margin-top:8px"><dt>氷・餌（定額）</dt><dd>−${money(r.costs.base)}</dd><dt>燃料（${(r.distanceM / 1000).toFixed(1)}km）</dt><dd>−${money(r.costs.fuel)}</dd>
+      <dl class="kv" style="margin-top:8px"><dt>氷・餌（定額）</dt><dd>−${money(r.costs.base)}</dd><dt>燃料（${(r.distanceM / 1000).toFixed(1)}km）</dt><dd>−${money(r.costs.fuel)}</dd>${r.costs.crew ? `<dt>${esc(CREW.label)}の日当</dt><dd>−${money(r.costs.crew)}</dd>` : ''}
       ${r.costs.waived ? `<dt>経費の免除</dt><dd>+${money(r.costs.waived)}</dd>` : ''}
       <dt>差引</dt><dd><b>${r.net >= 0 ? '+' : '−'}${money(Math.abs(r.net))}</b></dd><dt>資金</dt><dd>${money(r.fundsBefore)} → <b>${money(r.fundsAfter)}</b></dd></dl>
       ${r.costs.waived ? '<p class="note">資金が足りない分の経費は免除されます（不漁でも次の出港ができるように）。</p>' : ''}</div>
@@ -425,7 +434,7 @@ export function boatQuoteModal(profile, offerId) {
     <div class="actions"><button type="button" class="btn primary" data-act="buyBoatConfirm" data-offer="${esc(offerId)}" ${plan.ok ? '' : 'disabled'}>この内容で買い替える</button><button type="button" class="btn" data-act="closeModal">やめる</button>${plan.ok ? '' : `<span class="note">${esc(plan.reason)}</span>`}</div></div>`;
 }
 
-const END_TEXT = { player: '終了', redrift: '流し直し', return: '帰港', day_end: '時間切れ', hold_full: '魚倉満杯' };
+const END_TEXT = { player: '終了', redrift: '流し直し', return: '帰港', day_end: '時間切れ', hold_full: '魚倉満杯', move: '移動', haul: '揚げ縄へ' };
 
 export function logScreen(app) {
   const p = app.profile;
@@ -447,7 +456,7 @@ export function logScreen(app) {
       return `<tr><td>${l.day}日目</td><td>${fmtClock(l.startT)}–${fmtClock(l.endT)}<div class="note">${esc(timeBandLabel(g.timeBand))}</div></td><td>${esc(METHODS[m].name)}</td><td>${esc(l.area)}</td><td class="num">${Math.round(l.durationS / 60)}分</td>
       <td class="num">${l.count === 0 ? '<span class="tag">この時間に漁獲なし</span>' : `${l.count}${unitOf(m)}`}</td><td class="num">${l.kg.toFixed(1)}kg</td><td class="num">${opRate(l).toFixed(0)}${unitOf(m)}/時</td>
       <td class="num">${l.tana.min != null ? `${l.tana.min.toFixed(0)}–${l.tana.max.toFixed(0)}m` : '—'}${l.longline ? `<div class="note">浸け${l.longline.soakMin}分</div>` : ''}</td><td class="num">${Math.round(l.sounder.echoRatio * 100)}%</td><td>${esc(l.conditions.tideName)}・風${esc(g.windBand)}・潮${l.conditions.current.speed.toFixed(2)}m/s</td>
-      <td>Lv${l.level}・${esc(BOATS[thenBoat] ? BOATS[thenBoat].name : thenBoat)}・${esc(thenItems.map((id) => (EQUIPMENT[id] ? EQUIPMENT[id].name : id)).join('＋') || '—')}${marks.map((x) => `<span class="tag warn">${esc(x)}</span>`).join('')}</td><td>${l.plan ? esc(l.plan.label) : '—'}</td><td>${esc(END_TEXT[l.endReason] || l.endReason)}</td></tr>`;
+      <td>Lv${l.level}・${esc(BOATS[thenBoat] ? BOATS[thenBoat].name : thenBoat)}・${esc(thenItems.map((id) => (EQUIPMENT[id] ? EQUIPMENT[id].name : id)).join('＋') || '—')}${l.crew ? `＋${esc(CREW.label)}` : ''}${marks.map((x) => `<span class="tag warn">${esc(x)}</span>`).join('')}</td><td>${l.plan ? esc(l.plan.label) : '—'}</td><td>${esc(END_TEXT[l.endReason] || l.endReason)}</td></tr>`;
     })
     .join('');
   let summary = '';
@@ -505,8 +514,9 @@ export function helpModal() {
   <li><b>T</b> 漁法の切替（一本釣り／曳縄。積んでいる装備の範囲）</li>
   <li><b>Space</b> 操業開始／回収して終了（一本釣りは停船してから。曳縄は走りながら開始）</li>
   <li><b>R</b> 流し直し（一本釣り：回収→流し始めの地点へ自動で戻って再開）</li>
-  <li><b>C</b> 海図の拡大。曳縄のときは拡大した海図をクリックすると航路の経由点を追加、<b>X</b> で航路を消去（操業中でも変更できます）</li>
+  <li><b>C</b> 海図の拡大。拡大した海図をクリックすると航路の経由点を追加（曳縄は曳く航路、延縄は縄を張る向き、ほかは移動の行き先）、<b>X</b> で航路を消去</li>
   <li><b>H</b> 帰港（港まで移動補助。操船すると取り消し）</li>
+  <li><b>G</b> 航路で移動：拡大した海図をクリックして経由点（行き先）を置き、G でその順に走って終点で止まる（どの漁法でも。操船すると取り消し）</li>
   <li><b>L</b> 揚げ縄（延縄：縄を浸けているとき。遠ければブイまで移動補助で向かってから揚げる）</li>
   <li><b>M</b> 海図に印、<b>F</b> 魚探の表示切替、<b>V</b> 視点切替（操船 → 作業 → 甲板を歩く）、<b>1 / 2 / 3</b> 時間の早さ、<b>P</b> 一時停止</li>
   <li><b>甲板を歩く</b>：W/S で前後、A/D で向き。画面の持ち場ボタン（操舵席・右舷・船尾・魚倉など）で移動。操業中は釣り人が持ち場で作業するので歩けません。歩いても海や漁獲は変わりません。</li>

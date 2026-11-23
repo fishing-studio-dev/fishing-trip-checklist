@@ -312,6 +312,16 @@ export const BOAT_OFFERS = [
   { id: 'used_skiff', kind: 'used', model: 'skiff_1', price: 22000, title: '中古 小型和船（船齢15年）', note: '最低限の装備付き。', included: { helm_sounder: 'sounder_es1', starboard_reel: 'reel_hand' } },
 ];
 
+// ---- Crew (乗組員) ----
+// A deckhand hired for one voyage adds a second pair of hands: hand jobs on
+// two rigs / four trolling lines wait less, and on the longline he unhooks
+// while the fisher keeps hauling. He works at the fisher's own pace (same
+// handling skill). Optional: everything works without him (handover §4.1).
+export const CREW = {
+  wage: 1800, // G per voyage, paid at settlement with the other costs (仮設定)
+  label: '甲板員',
+};
+
 export const ECONOMY = {
   startFunds: 5000,
   currency: 'G',

@@ -124,7 +124,7 @@ export function createSetOperation({ id, voyageId, level, set, route, startT, x,
 }
 
 /** Hauling the line from one end (an operation: the boat follows the line). */
-export function createHaulOperation({ id, voyageId, level, set, fromEnd, startT, x, y }) {
+export function createHaulOperation({ id, voyageId, level, set, fromEnd, startT, x, y, hands = 1 }) {
   const n = set.hooks.length;
   const order = Array.from({ length: n }, (_, k) => (fromEnd === 'end' ? n - 1 - k : k));
   return {
@@ -140,9 +140,11 @@ export function createHaulOperation({ id, voyageId, level, set, fromEnd, startT,
     order,
     pos: 0,
     hauled: 0,
-    phase: 'haul', // haul | unhook
+    phase: 'haul', // haul | unhook (the fisher stops hauling to unhook)
     timer: 0,
     current: null,
+    hands,
+    crewJob: null, // with a deckhand: {hook, timer} — he unhooks while the hauling goes on
     state: 'running',
     endReason: null,
     startT,
@@ -213,17 +215,26 @@ export function stepLonglineOperation(op, set, ctx, dt) {
     set.state = 'hauling';
     set.haulStartT = t;
   }
+  const land = (h) => {
+    const f = h.fish;
+    h.fish = null;
+    op.landed[f.size] += 1;
+    op.landedKg += f.kg;
+    op.landedCount += 1;
+    op.landings.push({ t, n: 1, kg: f.kg });
+    ctx.onLand([f]);
+  };
+  if (op.crewJob) {
+    op.crewJob.timer -= dt;
+    if (op.crewJob.timer <= 0) {
+      land(op.crewJob.hook);
+      op.crewJob = null;
+    }
+  }
   if (op.phase === 'unhook') {
     op.timer -= dt;
     if (op.timer <= 0) {
-      const h = op.current;
-      const f = h.fish;
-      h.fish = null;
-      op.landed[f.size] += 1;
-      op.landedKg += f.kg;
-      op.landedCount += 1;
-      op.landings.push({ t, n: 1, kg: f.kg });
-      ctx.onLand([f]);
+      land(op.current);
       op.current = null;
       op.phase = 'haul';
       op.pos += 1;
@@ -234,6 +245,12 @@ export function stepLonglineOperation(op, set, ctx, dt) {
       const h = set.hooks[op.order[op.pos]];
       h.up = true;
       if (h.fish) {
+        if ((op.hands || 1) > 1 && !op.crewJob) {
+          // the deckhand takes it off; the line keeps coming
+          op.crewJob = { hook: h, timer: op.skill.unhook };
+          op.pos += 1;
+          continue;
+        }
         op.phase = 'unhook';
         op.timer = op.skill.unhook;
         op.current = h;
@@ -242,7 +259,7 @@ export function stepLonglineOperation(op, set, ctx, dt) {
       op.pos += 1;
     }
   }
-  if (op.pos >= op.order.length && op.phase === 'haul') {
+  if (op.pos >= op.order.length && op.phase === 'haul' && !op.crewJob) {
     set.state = 'aboard';
     set.haulEndT = t;
     endOp(op, t, boat, op.endReason || 'player');

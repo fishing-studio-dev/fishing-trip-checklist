@@ -14,6 +14,7 @@ import { densityAt, posesAt, takeFish, activityAt } from './world.js';
 import { depthAt } from './sea.js';
 import { readTana } from './sounder.js';
 import { rngNext } from './rng.js';
+import { initHands, fillHands, takeHands, releaseHands } from './hands.js';
 
 export function maxFishKg(species) {
   return Math.max(...Object.values(SPECIES[species].sizes).map((s) => s.kg));
@@ -26,11 +27,11 @@ const MAX_FISH_KG = maxFishKg('aji');
  * hands, so with two rigs those steps take turns (op.worker). Dropping,
  * waiting for bites and electric retrieval do not.
  */
-export function createOperation({ id, voyageId, methodId, level, rigs, startT, x, y }) {
+export function createOperation({ id, voyageId, methodId, level, rigs, startT, x, y, hands = 1 }) {
   const method = METHODS[methodId];
   const skill = skillForLevel(level);
   const lines = rigs.map((r) => newLine(method, skill, r));
-  return {
+  const op = {
     id,
     voyageId,
     methodId,
@@ -39,8 +40,6 @@ export function createOperation({ id, voyageId, methodId, level, rigs, startT, x
     reelId: rigs[0].reelId,
     retrieveSpeed: lines[0].retrieveSpeed,
     maxDepth: lines[0].maxDepth,
-    worker: null,
-    queue: [],
     skill,
     state: 'running',
     endReason: null,
@@ -68,6 +67,8 @@ export function createOperation({ id, voyageId, methodId, level, rigs, startT, x
       lastTanaSource: null,
     },
   };
+  initHands(op, hands);
+  return op;
 }
 
 function newLine(method, skill, rig) {
@@ -126,19 +127,15 @@ export function stepOperation(op, ctx, dt) {
   op.stats.bottomMax = op.stats.bottomMax == null ? bottom : Math.max(op.stats.bottomMax, bottom);
   let poses = null;
   const stopping = op.state === 'stopping';
-  if (op.worker == null && op.queue.length) op.worker = op.queue.shift();
+  fillHands(op);
 
   for (let li = 0; li < op.lines.length; li++) {
     const line = op.lines[li];
     if (stopping && line.phase === 'prep') line.phase = 'idle';
-    // the fisher's hands: one rig at a time for the steps that need them
-    if (handlineNeedsHands(line)) {
-      if (op.worker == null) op.worker = li;
-      if (op.worker !== li) {
-        if (!op.queue.includes(li)) op.queue.push(li);
-        line.waiting = true;
-        continue;
-      }
+    // the hands on deck: the steps that need them take turns when all hands are busy
+    if (handlineNeedsHands(line) && !takeHands(op, li)) {
+      line.waiting = true;
+      continue;
     }
     line.waiting = false;
     switch (line.phase) {
@@ -288,15 +285,10 @@ export function stepOperation(op, ctx, dt) {
       default:
         break;
     }
-    if (handlineNeedsHands(line) && op.worker !== li) {
-      // just stepped into a hand job: take the hands if free, otherwise wait in turn
-      if (op.worker == null) op.worker = li;
-      else {
-        line.waiting = true;
-        if (!op.queue.includes(li)) op.queue.push(li);
-      }
-    }
-    if (op.worker === li && !handlineNeedsHands(line)) op.worker = op.queue.length ? op.queue.shift() : null;
+    // just stepped into a hand job: take hands if free, otherwise wait in turn; done: pass them on
+    if (handlineNeedsHands(line)) {
+      if (!takeHands(op, li)) line.waiting = true;
+    } else releaseHands(op, li);
   }
 
   if (op.state === 'running' && op.stats.holdBlocked > 0 && inFlightKg(op) === 0) {

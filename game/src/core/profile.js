@@ -74,11 +74,11 @@ export function clone(p) {
 }
 
 /** Start a new day at sea. Returns a new profile with the active-voyage marker. */
-export function markDeparture(profile, now = new Date().toISOString(), plan = null) {
+export function markDeparture(profile, now = new Date().toISOString(), plan = null, { crew = 0 } = {}) {
   if (profile.activeVoyage) throw new Error('すでに航海中です。');
   const p = clone(profile);
   p.day += 1;
-  p.activeVoyage = { id: `V${p.day}`, day: p.day, departedAt: now, snapshot: null, plan };
+  p.activeVoyage = { id: `V${p.day}`, day: p.day, departedAt: now, snapshot: null, plan, crew: crew ? 1 : 0 };
   return p;
 }
 

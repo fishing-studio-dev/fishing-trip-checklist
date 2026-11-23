@@ -128,6 +128,7 @@ async function layout(page) {
       await sleep(1200);
       const lo = await layout(page);
       check(`${name}: operation panel visible without covering the controls`, lo.op && !overlap(lo.op, lo.controls), JSON.stringify(lo.op));
+      check(`${name}: the chart stays on screen while fishing, clear of the sounder, panel and controls`, lo.chart && lo.chart.left >= 0 && lo.chart.top >= 0 && !overlap(lo.chart, lo.sounder) && !overlap(lo.chart, lo.op) && !overlap(lo.chart, lo.controls), JSON.stringify({ chart: lo.chart, op: lo.op }));
       await page.screenshot({ path: path.join(outDir, `${slug}-3-operating.png`) });
       await page.tap('#btnPort');
       await page.evaluate(() => window.__ryoshi.fastForward(4000));

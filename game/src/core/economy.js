@@ -41,7 +41,8 @@ export function settleVoyage(profile, summary) {
   const lines = priceLines(summary.hold.counts);
   const sales = lines.reduce((a, l) => a + l.amount, 0);
   const fuel = Math.round((summary.distanceM / 1000) * (summary.fuelPerKm || ECONOMY.fuelPerKm));
-  const costTotal = ECONOMY.tripBaseCost + fuel;
+  const crew = summary.crewWage || 0;
+  const costTotal = ECONOMY.tripBaseCost + fuel + crew;
   // never leave the player unable to go out again (A13): unpaid cost is waived
   const payable = Math.min(costTotal, p.funds + sales);
   const waived = costTotal - payable;
@@ -79,7 +80,7 @@ export function settleVoyage(profile, summary) {
     day: summary.day,
     lines,
     sales,
-    costs: { base: ECONOMY.tripBaseCost, fuel, total: costTotal, paid: payable, waived },
+    costs: { base: ECONOMY.tripBaseCost, fuel, crew, total: costTotal, paid: payable, waived },
     net: sales - payable,
     fundsBefore,
     fundsAfter: p.funds,

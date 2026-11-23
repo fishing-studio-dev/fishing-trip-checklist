@@ -94,6 +94,30 @@ export function tideOfDay(day) {
   return TIDE_CYCLE[(((day + TIDE_OFFSET) % 15) + 15) % 15];
 }
 
+/** The day's water temperature before rounding (season curve, or the early-season script). */
+function rawTemp(worldSeed, day) {
+  const script = SEASON_SCRIPT[day];
+  return script && script.cond && script.cond.waterTemp != null ? script.cond.waterTemp : seasonalTemp(worldSeed, day);
+}
+
+/**
+ * Season of the sea (本作設定), from the water temperature and how it has
+ * moved over the last two days — public knowledge in port, like the tide table.
+ * 乗っ込み: while the water is warming through 17.9-19.3 ℃, マダイ gather on the
+ * flanks of 北の瀬 (game setting, not a biological claim).
+ */
+export function seasonOf(worldSeed, day) {
+  const t = rawTemp(worldSeed, day);
+  const trend = Math.round(((t - rawTemp(worldSeed, day - 2)) / 2) * 100) / 100;
+  let label;
+  if (trend >= 0.03) label = '水温の上がる時期';
+  else if (trend <= -0.03) label = '水温の下がる時期';
+  else if (t >= 19.2) label = '水温の高い時期';
+  else if (t <= 18.0) label = '水温の低い時期';
+  else label = '水温の落ち着いた時期';
+  return { label, trend, nokkomi: trend >= 0.03 && t >= 17.9 && t <= 19.3 };
+}
+
 export function makeDayConditions(worldSeed, day) {
   const [tideName, tideAmp] = tideOfDay(day);
   const highWater = (day * 50 * 60 + Math.floor(hashFloat(worldSeed, day, 11) * 3600)) % TIDE_PERIOD;
@@ -117,6 +141,7 @@ export function makeDayConditions(worldSeed, day) {
     waterTemp: Math.round(waterTemp * 10) / 10,
     axis,
     seed: worldSeed,
+    season: seasonOf(worldSeed, day),
   };
 }
 
@@ -181,6 +206,7 @@ export function forecastText(cond) {
   const from = compass8(-Math.sin(cond.windDir), -Math.cos(cond.windDir));
   lines.push(`風：${from}の風 ${cond.windSpeed.toFixed(1)}m/s 前後`);
   lines.push(`水温：${cond.waterTemp.toFixed(1)}℃前後`);
+  if (cond.season) lines.push(`季節：${cond.season.label}（ここ2日で水温${cond.season.trend >= 0 ? '+' : ''}${cond.season.trend.toFixed(2)}℃/日）${cond.season.nokkomi ? '・マダイの乗っ込みの頃' : ''}`);
   // describe the tide between 05:00 and 12:00 by sampling the closed form
   const parts = [];
   let prev = null;

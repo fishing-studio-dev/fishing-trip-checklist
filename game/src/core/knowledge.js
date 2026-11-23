@@ -145,7 +145,7 @@ export function similarLogs(logs, { methodId, area, forecast, profile }) {
 const GROUNDS = {
   handline: ['北の瀬', '西の根', '東の駆け上がり'],
   troll: ['東の駆け上がり', '沖の平場', '北の瀬'],
-  longline: ['沖の平場', '東の駆け上がり', '西の根'],
+  longline: ['沖の平場', '東の駆け上がり', '西の根', '北の瀬'],
 };
 const GENERAL = {
   handline: 'アジは瀬・根・駆け上がりなど起伏のある場所に付きやすい（一般的な目安）',
@@ -317,6 +317,7 @@ function conditionNotes(methodId, fc) {
     else notes.push('中潮：ほどよく潮が動く');
     if (fc.windSpeed >= 6) notes.push(`風${fc.windSpeed}m/s（予報）：船が流されやすい`);
   } else if (methodId === 'longline') {
+    if (fc.season && fc.season.nokkomi) notes.push('水温が上がる時期：マダイが瀬の肩に寄る「乗っ込み」の頃（一般的な目安）');
     if (tc === '大潮') notes.push('大潮：潮がよく動き、マダイの食いが立ちやすい');
     else if (tc === '小潮系') notes.push(`${fc.tideName}：潮が緩い。潮が動く時間に浸けたい`);
     else notes.push('中潮：ほどよく潮が動く');

@@ -297,23 +297,73 @@ export function drawChart(canvas, staticMap, v, { big = false, dev = false, repo
     }
     ctx.setLineDash([]);
   }
-  // boat
+  // boat: where the bow points (solid yellow) and where the boat is actually going over the ground (dashed)
   {
     const [px, py] = toPx(v.boat.x, v.boat.y);
+    const sog = Math.hypot(v.boat.vx || 0, v.boat.vy || 0);
+    if (sog > 0.15) {
+      // ground track for the next 90 s (tide and wind included), at least 18 px so a slow drift still shows
+      const len = Math.max(18 / scale, sog * 90);
+      const [ex, ey] = toPx(v.boat.x + (v.boat.vx / sog) * len, v.boat.y + (v.boat.vy / sog) * len);
+      ctx.save();
+      ctx.strokeStyle = '#7cf2ff';
+      ctx.lineWidth = 2;
+      ctx.setLineDash([4, 3]);
+      ctx.beginPath();
+      ctx.moveTo(px, py);
+      ctx.lineTo(ex, ey);
+      ctx.stroke();
+      ctx.setLineDash([]);
+      ctx.fillStyle = '#7cf2ff';
+      ctx.beginPath();
+      ctx.arc(ex, ey, 2.5, 0, Math.PI * 2);
+      ctx.fill();
+      ctx.restore();
+    }
     ctx.save();
     ctx.translate(px, py);
     ctx.rotate(v.boat.heading);
-    ctx.fillStyle = '#ffffff';
-    ctx.strokeStyle = '#000';
-    ctx.lineWidth = 1;
+    // heading line with an arrowhead
+    const hl = big ? 46 : 34;
+    ctx.strokeStyle = '#ffd84d';
+    ctx.fillStyle = '#ffd84d';
+    ctx.lineWidth = 2.5;
     ctx.beginPath();
-    ctx.moveTo(0, -9);
-    ctx.lineTo(5, 6);
-    ctx.lineTo(-5, 6);
+    ctx.moveTo(0, -11);
+    ctx.lineTo(0, -hl);
+    ctx.stroke();
+    ctx.beginPath();
+    ctx.moveTo(0, -hl - 7);
+    ctx.lineTo(5, -hl + 1);
+    ctx.lineTo(-5, -hl + 1);
+    ctx.closePath();
+    ctx.fill();
+    // the boat itself, bow pointed
+    ctx.fillStyle = '#ffffff';
+    ctx.strokeStyle = '#0b2236';
+    ctx.lineWidth = 2;
+    ctx.beginPath();
+    ctx.moveTo(0, -12);
+    ctx.lineTo(6, -2);
+    ctx.lineTo(5, 8);
+    ctx.lineTo(-5, 8);
+    ctx.lineTo(-6, -2);
     ctx.closePath();
     ctx.fill();
     ctx.stroke();
     ctx.restore();
+    if (big) {
+      ctx.save();
+      ctx.font = '11px sans-serif';
+      ctx.textAlign = 'right';
+      ctx.fillStyle = 'rgba(0,0,0,0.55)';
+      ctx.fillRect(W - 186, H - 40, 180, 34);
+      ctx.fillStyle = '#ffd84d';
+      ctx.fillText('━ 船首の向き', W - 10, H - 26);
+      ctx.fillStyle = '#7cf2ff';
+      ctx.fillText('┅ 実際に進む向き（潮・風込み）', W - 10, H - 12);
+      ctx.restore();
+    }
   }
   // scale bar
   ctx.fillStyle = 'rgba(255,255,255,0.8)';

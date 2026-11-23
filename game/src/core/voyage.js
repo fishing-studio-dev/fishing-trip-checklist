@@ -2,9 +2,9 @@
 // automatic operation (一本釣り, 曳縄 or 延縄), plus the player's commands. The
 // player decides where, which method, which route, when to move or stop; the
 // repetitive work is automatic.
-import { SIM, TIME, PORT, BOATS, EQUIPMENT, METHODS, SPECIES } from './data.js';
+import { SIM, TIME, PORT, BOATS, EQUIPMENT, METHODS, SPECIES, CREW } from './data.js';
 import { createWorld } from './world.js';
-import { createBoatRuntime, stepBoat, autopilotCommand, routeToPort } from './boat.js';
+import { createBoatRuntime, stepBoat, autopilotCommand, routeToPort, clearPath } from './boat.js';
 import { createObservation, pingColumn, pushColumn } from './sounder.js';
 import { createOperation, stepOperation, requestStop, inFlightKg } from './fishing.js';
 import { createTrollOperation, stepTrollOperation, trollTargetSpeed, validateRoute, defaultRoute, routeLength, trollInFlightKg } from './troll.js';
@@ -81,6 +81,8 @@ export function createVoyage(profile, opts = {}) {
     opSeq: 0,
     line: null, // the longline (延縄): lives here while it soaks, also when no operation runs
     lineSeq: 0,
+    crew: opts.crew != null ? (opts.crew ? 1 : 0) : av.crew ? 1 : 0, // a hired deckhand on board
+
     logs: [],
     hold: emptyHold(),
     capacityKg: model.holdKg,
@@ -304,6 +306,9 @@ function runAutopilot(v, model) {
     } else if (ap.kind === 'haul') {
       const r = startHaul(v);
       if (!r.ok) say(v, r.reason, 'warn');
+    } else if (ap.kind === 'route') {
+      v.plannedRoute = [];
+      say(v, '航路の終点に着きました（停止）。');
     }
     return;
   }
@@ -359,7 +364,7 @@ export function setHelm(v, { throttle, rudder }) {
     if (v.flags.dayEnd && (v.autopilot.kind === 'return' || v.autopilot.kind === 'haul')) return { ok: false, reason: v.autopilot.kind === 'haul' ? '日暮れが近いので、縄を揚げて帰港します。' : '帰港中です。' };
     const kind = v.autopilot.kind;
     v.autopilot = null;
-    say(v, { return: '自動帰港を取り消しました。', haul: 'ブイへの移動を取り消しました（縄は浸けたまま）。' }[kind] || '流し直しの移動を取り消しました。');
+    say(v, { return: '自動帰港を取り消しました。', haul: 'ブイへの移動を取り消しました（縄は浸けたまま）。', route: '航路の移動を取り消しました（航路は残しています）。' }[kind] || '流し直しの移動を取り消しました。');
   }
   const model = boatModel(v);
   if (throttle != null) v.boat.throttle = Math.max(0, Math.min(model.speeds.length - 1, throttle));
@@ -461,6 +466,7 @@ export function startOperation(v) {
       x: v.boat.x,
       y: v.boat.y,
       route: route.points,
+      hands: 1 + v.crew,
     });
     v.op.startConditions = conditionsSnapshot(v);
     say(v, `曳縄開始（${areaNameAt(v.boat.x, v.boat.y)}・航路${Math.round(routeLength(route.points))}m${route.planned ? '' : '：今の向きで往復'}）。航行と仕掛けの作業は自動です。`);
@@ -477,6 +483,7 @@ export function startOperation(v) {
     startT: v.world.time,
     x: v.boat.x,
     y: v.boat.y,
+    hands: 1 + v.crew,
   });
   v.op.startConditions = conditionsSnapshot(v);
   if (depth > v.equip.reel.maxDepth) say(v, `水深${depth.toFixed(0)}mはリールの対応水深${v.equip.reel.maxDepth}mを超えています。届く深さまでで操業します。`, 'warn');
@@ -514,7 +521,7 @@ function startHaul(v) {
   if (b.dist > METHODS.longline.nearBuoy * 1.5) return { ok: false, reason: 'ブイから離れています。' };
   v.autopilot = null;
   v.opSeq += 1;
-  v.op = createHaulOperation({ id: `${v.id}-op${v.opSeq}`, voyageId: v.id, level: v.levels.longline, set: v.line, fromEnd: b.end, startT: v.world.time, x: v.boat.x, y: v.boat.y });
+  v.op = createHaulOperation({ id: `${v.id}-op${v.opSeq}`, voyageId: v.id, level: v.levels.longline, set: v.line, fromEnd: b.end, startT: v.world.time, x: v.boat.x, y: v.boat.y, hands: 1 + v.crew });
   if (v.afterHaul) {
     v.after = v.afterHaul;
     v.afterHaul = null;
@@ -533,19 +540,39 @@ export function stopOperation(v, reason = 'player') {
   return { ok: true };
 }
 
-/** Add a waypoint to the trolling route (applied at once while trolling). */
+/** Route points the boat can run to from where it is (the boat's own spot is not checked for depth). */
+function checkRoutePoints(points, from) {
+  if (!points.length) return { ok: false, reason: '航路の点がありません。' };
+  // validateRoute wants two or more points: a single point is checked as a zero-length route
+  return validateRoute(points.length === 1 ? [points[0], points[0]] : points, { x: from.x, y: from.y });
+}
+
+/** Add a waypoint to the route (trolling / where the longline goes / plain movement; applied at once while trolling). */
 export function addRoutePoint(v, p) {
   if (v.plannedRoute.length >= MAX_ROUTE_POINTS) return { ok: false, reason: `航路の点は${MAX_ROUTE_POINTS}つまでです。` };
-  const next = [...v.plannedRoute, { x: Math.round(p.x), y: Math.round(p.y) }];
-  const chk = validateRoute([{ x: v.boat.x, y: v.boat.y }, ...next]);
+  const pt = { x: Math.round(p.x), y: Math.round(p.y) };
+  let next = [...v.plannedRoute, pt];
+  // from inside the harbour, a route goes out through the harbour mouth first
+  const mouth = { x: PORT.entrance.x, y: PORT.entrance.y + 40 };
+  if (!v.plannedRoute.length && !isTrolling(v) && Math.hypot(v.boat.x - PORT.entrance.x, v.boat.y - PORT.entrance.y) < 420 && !clearPath({ x: v.boat.x, y: v.boat.y }, pt) && clearPath(mouth, pt)) {
+    next = [mouth, pt];
+  }
+  const chk = checkRoutePoints(next, v.boat);
   if (!chk.ok) return chk;
   v.plannedRoute = next;
   if (isTrolling(v)) applyRouteNow(v);
+  if (v.autopilot && v.autopilot.kind === 'route') v.autopilot.route.push({ ...next[next.length - 1] });
   return { ok: true };
 }
 
 export function clearRoute(v) {
   v.plannedRoute = [];
+  if (v.autopilot && v.autopilot.kind === 'route') {
+    v.autopilot = null;
+    v.boat.throttle = boatModel(v).steps.stop;
+    v.boat.rudder = 0;
+    say(v, '航路を消し、移動をやめました。');
+  }
   if (isTrolling(v)) {
     const pts = defaultRoute(v.boat);
     if (pts) {
@@ -559,6 +586,30 @@ export function clearRoute(v) {
 function applyRouteNow(v) {
   v.op.route = { points: [{ x: v.boat.x, y: v.boat.y }, ...v.plannedRoute], idx: 1, dir: 1, changes: v.op.route.changes + 1 };
   say(v, `航路を変更しました（経由点${v.plannedRoute.length}）。`);
+}
+
+/**
+ * Run the planned chart route (movement assistance, any method): the boat
+ * steers through the points and stops at the last one. Steering cancels it.
+ * An operation in progress is retrieved first. It never looks for fish.
+ */
+export function runRoute(v) {
+  if (v.phase !== 'sea') return { ok: false, reason: '海上でのみ使えます。' };
+  if (!v.plannedRoute.length) return { ok: false, reason: '航路がありません。海図（C）を拡大してクリックで経由点を置いてください。' };
+  if (isTrolling(v)) return { ok: false, reason: '曳縄中は、この航路に沿って曳いています。' };
+  if (isLonglining(v)) return { ok: false, reason: v.op.kind === 'set' ? '投縄中です。' : '揚げ縄中です。' };
+  if (v.autopilot && v.autopilot.kind === 'return' && v.flags.dayEnd) return { ok: false, reason: '帰港中です。' };
+  const chk = checkRoutePoints(v.plannedRoute, v.boat);
+  if (!chk.ok) return chk;
+  if (isOperating(v)) {
+    if (v.op.state === 'running') requestStop(v.op, 'move');
+    v.after = 'route';
+    say(v, '仕掛けを回収してから、航路に沿って移動します。');
+    return { ok: true };
+  }
+  v.autopilot = { kind: 'route', route: v.plannedRoute.map((p) => ({ ...p })), leg: 0 };
+  say(v, `航路に沿って移動します（経由点${v.plannedRoute.length}・移動補助。操船すると取り消し）。`);
+  return { ok: true };
 }
 
 /** 流し直し (一本釣り): retrieve, run back up to where this drift started, and start again. */
@@ -636,6 +687,7 @@ function finishOperation(v) {
   emit(v, { type: 'opEnded', logId: log.id });
   if (log.endReason === 'hold_full') say(v, '魚倉が満杯です。帰港して水揚げしましょう。', 'warn');
   if (after === 'redrift') v.autopilot = { kind: 'redrift', route: [v.redriftTarget], leg: 0 };
+  else if (after === 'route') runRoute(v);
   else if (after === 'haul') haulLongline(v);
   else if (after === 'return') returnToPort(v, true);
 }
@@ -649,6 +701,7 @@ export function endReasonText(r) {
       day_end: '時間切れで終了。',
       hold_full: '魚倉が満杯になりました。',
       haul: '縄を揚げに向かいます。',
+      move: '航路に沿って移動します。',
     }[r] || ''
   );
 }
@@ -704,6 +757,7 @@ function makeOperationLog(v, op) {
     gear: { boat: v.modelId, sounder: v.equip.sounderId, reel: v.equip.reelId, reels: v.equip.rigs.map((r) => r.reelId), troll: v.equip.trollId },
     level: op.level,
     plan: v.plan ? { key: v.plan.key, label: v.plan.label, basis: v.plan.basis } : null,
+    crew: v.crew,
   };
   if (op.methodId === 'troll') {
     log.troll = { routeLength: Math.round(routeLength(op.route.points)), routeChanges: op.route.changes, towDistance: Math.round(st.towDistance) };
@@ -752,6 +806,7 @@ function makeLonglineLog(v, op, set) {
     gear: { boat: v.modelId, sounder: v.equip.sounderId, reel: v.equip.reelId, reels: v.equip.rigs.map((r) => r.reelId), troll: v.equip.trollId, longline: set.gearId },
     level: op.level,
     plan: set.plan || null,
+    crew: v.crew,
     longline: {
       hooks: hooks.length,
       lineLength: Math.round(routeLength(hooks.map((h) => ({ x: h.x, y: h.y })))),
@@ -779,6 +834,8 @@ export function summarizeVoyage(v) {
     heard: v.heard.map((r) => ({ ...r })),
     distanceM: Math.round(v.boat.distance),
     fuelPerKm: boatModel(v).fuelPerKm,
+    crew: v.crew,
+    crewWage: v.crew ? CREW.wage : 0,
     opSeconds: Math.round(v.opSeconds),
     plan: v.plan,
   };

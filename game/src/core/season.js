@@ -30,6 +30,8 @@ export const MADAI_GROUNDS = [
   { id: 'hira', area: '沖の平場', x: 1150, y: 1900, spread: 300, weight: 0.85 },
   { id: 'kake', area: '東の駆け上がり', x: 2470, y: 1250, spread: 220, weight: 0.8 },
   { id: 'nishi', area: '西の根', x: 820, y: 1520, spread: 150, weight: 0.6 },
+  // only in the 乗っ込み season (warming water): マダイ gather on the flank of 北の瀬
+  { id: 'kita', area: '北の瀬', x: 2150, y: 2060, spread: 180, weight: 0, nokkomi: true },
 ];
 
 const habIndex = (id) => HABITATS.findIndex((h) => h.id === id);
@@ -165,11 +167,22 @@ export function madaiSchool(seed, d, groundId, n, ep) {
 
 function madaiSchools(seed, d) {
   const out = [];
+  const { nokkomi } = makeDayConditions(seed, d).season;
   MADAI_GROUNDS.forEach((g, gi) => {
+    if (g.nokkomi) {
+      if (!nokkomi) return;
+      // 乗っ込み: a bigger gathering with more large fish
+      const n = (130 + hashFloat(seed, gi, d, 405) * 80) * (0.9 + 0.2 * hashFloat(seed, gi, d, 406));
+      const s = madaiSchool(seed, d, g.id, Math.round(n), 1000 + Math.floor(d / 6));
+      s.counts = splitCounts(Math.round(n), 0.3, 0.2);
+      out.push(s);
+      return;
+    }
     const ep = madaiEpisode(seed, gi, d);
     if (!ep.present) return;
     let n = (70 + hashFloat(seed, gi, ep.i, 403) * 90) * (0.9 + 0.2 * hashFloat(seed, gi, d, 404));
     if (ep.last) n *= 0.6;
+    if (nokkomi) n *= 0.6; // many have moved up onto the reef flank
     out.push(madaiSchool(seed, d, g.id, Math.round(n), ep.i));
   });
   return out;
@@ -191,6 +204,7 @@ export function dayPlan(seed, d) {
     const base = 300 + hashFloat(seed, hi, ep.i, 103) * 600;
     let n = base * (0.9 + 0.2 * hashFloat(seed, hi, d, 104));
     if (ep.last) n *= 0.45; // thinning out before leaving
+    if (makeDayConditions(seed, d).waterTemp <= 18.0) n *= 0.7; // fewer アジ on the grounds in cold water (本作設定)
     const big = Math.min(0.6, Math.max(0, h.big + (hashFloat(seed, hi, ep.i, 105) - 0.4) * 0.25));
     schools.push(ajiSchool(seed, d, h.id, Math.round(n), big, ep.i));
   });
