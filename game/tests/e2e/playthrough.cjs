@@ -197,6 +197,7 @@ const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
     await page.waitForSelector('[data-act=buyConfirm]');
     await shot('07-buy-troll-gear');
     await page.click('[data-act=buyConfirm]');
+    if (await page.isVisible('#modal [data-act=closeModal]').catch(() => false)) await page.click('#modal [data-act=closeModal]'); // the 'fitted' note
     await sleep(300);
     s = await st();
     check('bought trolling gear: installed on the stern slot, paid once, saved', s.troll === 'troll_tr1' && s.funds === fundsPre - 9000 && s.saveStatus.ok);
@@ -448,6 +449,7 @@ const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
     check('M3: the longline gear is offered for the small boat\'s stern (instead of the trolling gear)', /延縄具 LL-1/.test(eqText) && /船尾（曳縄・延縄）/.test(eqText));
     await pg.click('[data-act=buy][data-item=longline_ll1][data-slot=stern_troll]');
     await pg.click('[data-act=buyConfirm]');
+    if (await pg.isVisible('#modal [data-act=closeModal]').catch(() => false)) await pg.click('#modal [data-act=closeModal]'); // the 'fitted' note
     await sleep(200);
     let s4 = await st();
     check('bought the longline: on the stern, the trolling gear kept in storage, saved', s4.troll === null && s4.slots.stern_troll.startsWith('longline_ll1') && s4.storage.some((x) => x.startsWith('troll_tr1')) && s4.saveStatus.ok, JSON.stringify({ slots: s4.slots, storage: s4.storage }));
@@ -514,7 +516,14 @@ const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
     await press('p');
     await ff(1500);
     // 揚げ縄: L runs to the nearer buoy and hauls
+    // L asks first (an accidental press must not end the soak); Space cannot answer it
     await press('l');
+    await pg.waitForSelector('[data-act=haulConfirm]');
+    const askText = await pg.textContent('#modal');
+    await press('Space');
+    const stillSoaking = (await st()).voyage.line.state === 'soaking' && (await pg.isVisible('[data-act=haulConfirm]'));
+    check('揚げ縄 asks once before starting (soak time, bait, distance); Space does not answer it', /よろしいですか/.test(askText) && /浸けた時間/.test(askText) && stillSoaking);
+    await pg.click('[data-act=haulConfirm]');
     s4 = await waitFor((x) => (x.voyage.line && x.voyage.line.state === 'hauling') || x.voyage.autopilot === 'haul', 'haul started');
     await ff(400);
     await shot('22-longline-hauling');
@@ -561,12 +570,17 @@ const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
     await pg.click('[data-act=equip]');
     await pg.click('[data-act=buy][data-item=longline_ll1][data-slot=deck_longline]');
     await pg.click('[data-act=buyConfirm]');
+    if (await pg.isVisible('#modal [data-act=closeModal]').catch(() => false)) await pg.click('#modal [data-act=closeModal]'); // the 'fitted' note
     await pg.waitForSelector('[data-act=buy][data-item=hauler_lh1]');
     const eq5 = await pg.textContent('#screen');
     check('M5: the line hauler is offered for its own mounting with its effect', /右舷前（揚げ縄機）/.test(eq5) && /揚げ縄の速さ/.test(eq5));
     await pg.click('[data-act=buy][data-item=hauler_lh1]');
+    const conf5 = await pg.textContent('#modal');
     await pg.click('[data-act=buyConfirm]');
     await sleep(200);
+    const fitted5 = await pg.textContent('#modal');
+    check('upgrades are explained: what changes before buying, what to look for after fitting', /何が変わるか/.test(conf5) && /次の航海での見どころ/.test(fitted5), fitted5.slice(0, 60));
+    await pg.click('[data-act=closeModal]');
     let s5 = await st();
     check('M5: medium boat with longline deck and hauler, saved', s5.boatModel === 'cruiser_2' && s5.slots.deck_longline.startsWith('longline_ll1') && s5.slots.starboard_hauler.startsWith('hauler_lh1') && s5.saveStatus.ok, JSON.stringify(s5.slots));
     await pg.click('[data-act=toPort]');
@@ -596,6 +610,7 @@ const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
     await ff(900);
     await ff(1800);
     await press('l');
+    await pg.click('[data-act=haulConfirm]');
     await waitFor((x) => x.voyage.line && x.voyage.line.state === 'hauling', 'hauling with the machine', 60000);
     await ff(60);
     const opText5 = await pg.textContent('#opPanel');

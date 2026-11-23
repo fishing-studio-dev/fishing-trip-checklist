@@ -1,7 +1,7 @@
 // 2D chart (GPS plotter). Shows fixed geography and what the player has
 // observed (track, marks, operation spots). Fish are only drawn in dev mode,
 // clearly labelled, and never in normal play.
-import { AREA, PORT, SPECIES, BOATS } from '../core/data.js';
+import { AREA, PORT, BOATS } from '../core/data.js';
 import { depthAt, isLand, CHART_LABELS, fmtClock } from '../core/sea.js';
 import { schoolCenter, schoolTotal } from '../core/world.js';
 
@@ -266,27 +266,7 @@ export function drawChart(canvas, staticMap, v, { big = false, dev = false, repo
     ctx.lineTo(bx, by);
     ctx.stroke();
   }
-  // operation spots of this voyage
-  const unitOf = (sp) => (SPECIES[sp] ? SPECIES[sp].unit : '尾');
-  const ops = v.logs.map((l) => ({ x: l.start.x, y: l.start.y, ex: l.end.x, ey: l.end.y, n: l.count, u: unitOf(l.species) }));
-  if (v.op && v.op.methodId !== 'longline') ops.push({ x: v.op.start.x, y: v.op.start.y, ex: v.boat.x, ey: v.boat.y, n: v.op.landedCount, u: unitOf(v.op.species), live: true });
-  ctx.lineWidth = 2;
-  ops.forEach((o, i) => {
-    const [px, py] = toPx(o.x, o.y);
-    const [ex, ey] = toPx(o.ex, o.ey);
-    ctx.strokeStyle = o.live ? '#3fc1b0' : 'rgba(63,193,176,0.6)';
-    ctx.beginPath();
-    ctx.moveTo(px, py);
-    ctx.lineTo(ex, ey);
-    ctx.stroke();
-    ctx.fillStyle = '#3fc1b0';
-    ctx.beginPath();
-    ctx.arc(px, py, 4, 0, Math.PI * 2);
-    ctx.fill();
-    ctx.fillStyle = '#d9fff9';
-    ctx.textAlign = 'left';
-    ctx.fillText(`#${i + 1} ${o.n}${o.u}`, px + 6, py - 5);
-  });
+  // (no automatic catch records on the chart: the player marks what matters with M)
   // marks: observation points with their time (not current fish positions)
   ctx.textAlign = 'left';
   for (const m of v.obs.marks) {
@@ -329,46 +309,39 @@ export function drawChart(canvas, staticMap, v, { big = false, dev = false, repo
     }
     ctx.setLineDash([]);
   }
-  // boat: where the bow points (solid yellow) and where the boat is actually going over the ground (dashed)
+  // boat: a bold yellow arrow from the bow shows where it is heading
   {
     const [px, py] = toPx(v.boat.x, v.boat.y);
-    const sog = Math.hypot(v.boat.vx || 0, v.boat.vy || 0);
-    if (sog > 0.15) {
-      // ground track for the next 90 s (tide and wind included), at least 18 px so a slow drift still shows
-      const len = Math.max(18 / scale, sog * 90);
-      const [ex, ey] = toPx(v.boat.x + (v.boat.vx / sog) * len, v.boat.y + (v.boat.vy / sog) * len);
-      ctx.save();
-      ctx.strokeStyle = '#7cf2ff';
-      ctx.lineWidth = 2;
-      ctx.setLineDash([4, 3]);
-      ctx.beginPath();
-      ctx.moveTo(px, py);
-      ctx.lineTo(ex, ey);
-      ctx.stroke();
-      ctx.setLineDash([]);
-      ctx.fillStyle = '#7cf2ff';
-      ctx.beginPath();
-      ctx.arc(ex, ey, 2.5, 0, Math.PI * 2);
-      ctx.fill();
-      ctx.restore();
-    }
     ctx.save();
     ctx.translate(px, py);
     ctx.rotate(v.boat.heading);
-    // heading line with an arrowhead
-    const hl = big ? 46 : 34;
-    ctx.strokeStyle = '#ffd84d';
-    ctx.fillStyle = '#ffd84d';
-    ctx.lineWidth = 2.5;
-    ctx.beginPath();
-    ctx.moveTo(0, -11);
-    ctx.lineTo(0, -hl);
+    const hl = big ? 64 : 52;
+    const shaft = () => {
+      ctx.beginPath();
+      ctx.moveTo(0, -12);
+      ctx.lineTo(0, -hl + 6);
+      ctx.stroke();
+    };
+    const head = () => {
+      ctx.beginPath();
+      ctx.moveTo(0, -hl - 10);
+      ctx.lineTo(9, -hl + 6);
+      ctx.lineTo(-9, -hl + 6);
+      ctx.closePath();
+    };
+    // dark outline first so the arrow stands out on light shallow water too
+    ctx.strokeStyle = 'rgba(0,0,0,0.75)';
+    ctx.lineWidth = 7.5;
+    shaft();
+    ctx.fillStyle = 'rgba(0,0,0,0.75)';
+    ctx.lineWidth = 3;
+    head();
     ctx.stroke();
-    ctx.beginPath();
-    ctx.moveTo(0, -hl - 7);
-    ctx.lineTo(5, -hl + 1);
-    ctx.lineTo(-5, -hl + 1);
-    ctx.closePath();
+    ctx.strokeStyle = '#ffd84d';
+    ctx.lineWidth = 4.5;
+    shaft();
+    ctx.fillStyle = '#ffd84d';
+    head();
     ctx.fill();
     // the boat itself, bow pointed
     ctx.fillStyle = '#ffffff';
@@ -384,22 +357,6 @@ export function drawChart(canvas, staticMap, v, { big = false, dev = false, repo
     ctx.fill();
     ctx.stroke();
     ctx.restore();
-    if (big) {
-      ctx.save();
-      ctx.font = '11px sans-serif';
-      ctx.textAlign = 'right';
-      // legend under the hint line, top left (open deep water; away from the harbour and the reef names)
-      ctx.textAlign = 'left';
-      const narrow = W < 420; // phones: a compact legend that stays clear of the reef names
-      if (narrow) ctx.font = '10px sans-serif';
-      ctx.fillStyle = 'rgba(0,0,0,0.55)';
-      ctx.fillRect(6, 34, narrow ? 104 : 180, narrow ? 30 : 34);
-      ctx.fillStyle = '#ffd84d';
-      ctx.fillText('━ 船首の向き', 12, 47);
-      ctx.fillStyle = '#7cf2ff';
-      ctx.fillText(narrow ? '┅ 実際の進路' : '┅ 実際に進む向き（潮・風込み）', 12, narrow ? 59 : 61);
-      ctx.restore();
-    }
   }
   // scale bar
   ctx.fillStyle = 'rgba(255,255,255,0.8)';
@@ -409,6 +366,28 @@ export function drawChart(canvas, staticMap, v, { big = false, dev = false, repo
   ctx.fillText(`${bar}m`, 8, H - 16);
   ctx.textAlign = 'right';
   ctx.fillText('N↑', W - 6, 14);
+  // boat speed, large, top left
+  const kt = Math.abs(v.boat.speed) * 1.944;
+  const drift = Math.hypot(v.boat.vx || 0, v.boat.vy || 0) * 1.944;
+  const sp = `船速 ${kt.toFixed(1)}kt`;
+  ctx.textAlign = 'left';
+  ctx.font = `bold ${big ? 20 : 16}px sans-serif`;
+  const spW = ctx.measureText(sp).width;
+  const sub = kt < 0.3 && drift >= 0.2 ? `流され ${drift.toFixed(1)}kt` : '';
+  ctx.fillStyle = 'rgba(0,0,0,0.6)';
+  ctx.fillRect(6, 6, spW + 14, big ? 30 : 25);
+  ctx.fillStyle = '#ffffff';
+  ctx.fillText(sp, 13, big ? 28 : 24);
+  let hintY = 6 + (big ? 30 : 25) + 4;
+  if (sub) {
+    ctx.font = `${big ? 12 : 10}px sans-serif`;
+    const w2 = ctx.measureText(sub).width;
+    ctx.fillStyle = 'rgba(0,0,0,0.6)';
+    ctx.fillRect(6, hintY, w2 + 12, big ? 18 : 15);
+    ctx.fillStyle = '#ffd9b0';
+    ctx.fillText(sub, 12, hintY + (big ? 13 : 11));
+    hintY += (big ? 18 : 15) + 4;
+  }
   if (hint) {
     ctx.textAlign = 'left';
     // shrink the hint until it fits the chart's width (narrow phones)
@@ -420,14 +399,14 @@ export function drawChart(canvas, staticMap, v, { big = false, dev = false, repo
     }
     ctx.fillStyle = 'rgba(0,0,0,0.55)';
     const w = ctx.measureText(hint).width + 12;
-    ctx.fillRect(6, 6, w, big ? 22 : 16);
+    ctx.fillRect(6, hintY, w, big ? 22 : 16);
     ctx.fillStyle = '#bff7ea';
-    ctx.fillText(hint, 12, big ? 22 : 18);
+    ctx.fillText(hint, 12, hintY + (big ? 16 : 12));
   }
 }
 
 /** Port briefing chart: whole area, candidates, peers' observations and own operation spots. */
-export function drawBriefingChart(canvas, staticMap, { candidates = [], reports = [], logs = [], boatModel = null }) {
+export function drawBriefingChart(canvas, staticMap, { candidates = [], reports = [], boatModel = null }) {
   const dpr = Math.min(window.devicePixelRatio || 1, 2);
   const cssW = canvas.clientWidth || canvas.width;
   const cssH = canvas.clientHeight || canvas.height;
@@ -456,12 +435,6 @@ export function drawBriefingChart(canvas, staticMap, { candidates = [], reports 
   const [hx, hy] = toPx(PORT.dock.x, PORT.dock.y);
   ctx.fillStyle = '#ffd25e';
   ctx.fillRect(hx - 4, hy - 8, 8, 8);
-  // own operation spots
-  ctx.fillStyle = 'rgba(160,240,255,0.8)';
-  for (const l of logs.slice(-40)) {
-    const [px, py] = toPx(l.start.x, l.start.y);
-    ctx.fillRect(px - 2.5, py - 2.5, 5, 5);
-  }
   for (const { r, label } of reports) {
     if (!r.spot) continue;
     const [px, py] = toPx(r.spot.x, r.spot.y);

@@ -260,3 +260,9 @@ textarea.paste { width: 100%; min-height: 90px; background: var(--panel-solid); 
 /* the enlarged chart (whole sea, taller than wide) wins over the phone / operating layouts */
 #hud.phone-land.op-mode .hud-chart.big, #hud.phone-port.op-mode .hud-chart.big, #hud .hud-chart.big { left: 50%; top: 50%; right: auto; bottom: auto; width: min(92vw, calc((92vh - 60px) * 0.652 + 14px)); transform: translate(-50%, -50%); z-index: 5; }
 #hud.phone-land.op-mode .hud-chart.big canvas, #hud.phone-port.op-mode .hud-chart.big canvas, #hud .hud-chart.big canvas { width: calc(100% - 14px); height: auto; aspect-ratio: 30 / 46; margin: 6px; }
+.guide ul { margin: 4px 0 6px; padding-left: 18px; }
+.guide li { font-size: 13px; line-height: 1.55; }
+.sdemo { display: grid; grid-template-columns: 1fr; gap: 8px; }
+.sdemo figure { margin: 0; }
+.sdemo canvas { width: 100%; height: 130px; display: block; border-radius: 6px; background: #05122b; }
+.sdemo figcaption { font-size: 12px; color: var(--sub); text-align: center; margin-top: 2px; }

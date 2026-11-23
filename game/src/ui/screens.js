@@ -1,5 +1,5 @@
 // HTML for the menu screens. Pure functions of state -> markup.
-import { EQUIPMENT, BOATS, ECONOMY, METHODS, SPECIES, PEERS, CREW, skillForLevel, trollSkillForLevel, longlineSkillForLevel, TIME, fits, sellValue } from '../core/data.js';
+import { EQUIPMENT, BOATS, ECONOMY, METHODS, SPECIES, PEERS, CREW, GUIDES, skillForLevel, trollSkillForLevel, longlineSkillForLevel, TIME, fits, sellValue } from '../core/data.js';
 import { xpProgress, cycleEstimate, trollCycleEstimate, levelFromXp } from '../core/progress.js';
 import { purchasePreview, boatOffers, planBoatPurchase } from '../core/economy.js';
 import { forecastText, fmtClock } from '../core/sea.js';
@@ -195,7 +195,7 @@ export function portScreen(app) {
   <div class="card full brief"><h2>今日の海図 — 狙いの候補</h2>
     <div class="brief-grid">
       <div class="brief-chart"><canvas id="portChart" width="380" height="380"></canvas>
-        <p class="note">● 水揚げ ◎ 魚探の反応 △ 目撃 × 反応なし（仲間が観測した地点・時刻。今の魚の位置ではありません）　■ 自分の操業地点　A/B/C 候補</p></div>
+        <p class="note">● 水揚げ ◎ 魚探の反応 △ 目撃 × 反応なし（仲間が観測した地点・時刻。今の魚の位置ではありません）　A〜D 候補</p></div>
       <div class="cands">${cands.map((c) => candidateCard(c, today, p)).join('')}</div>
     </div>
     ${crewChoice(app)}
@@ -303,6 +303,22 @@ function trollEffect(item) {
   <tr><td>曳く速さ</td><td class="num">約${(t.towSpeed * 1.944).toFixed(0)}ノット</td></tr></table></div>`;
 }
 
+/** What an upgrade changes and where to notice it (GUIDES), as a short block. */
+export function guideHtml(itemId, compact = false) {
+  const g = GUIDES[itemId];
+  if (!g) return '';
+  const li = (xs) => xs.map((x) => `<li>${esc(x)}</li>`).join('');
+  return `<div class="guide"><h3>何が変わるか</h3><ul>${li(g.changes || [])}</ul>${!compact && g.inPlay ? `<h3>遊びでの見どころ</h3><ul>${li(g.inPlay)}</ul>` : ''}${g.note ? `<p class="note">${esc(g.note)}</p>` : ''}</div>`;
+}
+
+/** Side by side: the same example water through the current and the new sounder. */
+function sounderDemo(cur, item) {
+  return `<div class="sdemo-wrap"><h3>同じ海を通ったときの見え方（例）</h3>
+    <div class="sdemo"><figure><canvas data-sdemo="${esc(cur.id)}"></canvas><figcaption>今：${esc(cur.name)}</figcaption></figure>
+    <figure><canvas data-sdemo="${esc(item.id)}"></canvas><figcaption>取り付け後：${esc(item.name)}</figcaption></figure></div>
+    <p class="note">例の海（船は左から右へ毎秒1mで180秒通過）：左に底から6mのアジの群れ、中ほどに上のほうの小さな群れ、右に底へ薄く散ったマダイ。ES-2では右のマダイの薄い反応と、群れの上下の形が見えるようになる。</p></div>`;
+}
+
 function haulerEffect(profile, item) {
   const lv = levelFromXp(profile.methods.longline.xp);
   const hand = longlineSkillForLevel(lv).haul;
@@ -353,7 +369,8 @@ export function equipScreen(app) {
         .map((it) => {
           const pv = purchasePreview(p, it.id, slot.id);
           const cmp = it.type === 'reel' ? reelCompare(level, cur ? cur.id : 'reel_hand', it.id) : it.type === 'troll' ? trollEffect(it) : it.type === 'longline' ? longlineEffect(it) : it.type === 'hauler' ? haulerEffect(p, it) : it.type === 'sounder' && cur ? sounderEffect(cur, it) : '';
-          return `<div class="card offer"><h2>${esc(it.name)} <span class="tag">${money(it.price)}</span></h2><p class="note">${esc(it.desc)}</p>${cmp}
+          const demo = it.type === 'sounder' && cur ? sounderDemo(cur, it) : '';
+          return `<div class="card offer"><h2>${esc(it.name)} <span class="tag">${money(it.price)}</span></h2><p class="note">${esc(it.desc)}</p>${cmp}${demo}${guideHtml(it.id)}
           <dl class="kv" style="margin-top:8px"><dt>支払総額</dt><dd>${money(it.price)}</dd><dt>購入後の資金</dt><dd>${money(Math.max(0, pv.fundsAfter))}</dd><dt>外す装備</dt><dd>${cur ? `${esc(cur.name)} → 倉庫` : 'なし（空きの取付位置）'}</dd></dl>
           <div class="actions"><button type="button" class="btn primary" data-act="buy" data-item="${esc(it.id)}" data-slot="${esc(slot.id)}" ${pv.ok ? '' : 'disabled'}>購入して取り付ける</button>${pv.ok ? '' : `<span class="note">${esc(pv.reason)}</span>`}</div></div>`;
         })

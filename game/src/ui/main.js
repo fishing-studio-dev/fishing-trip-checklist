@@ -1,5 +1,5 @@
 // App controller: boot, screens, input, main loop.
-import { TIME, BOATS, PORT, EQUIPMENT, METHODS, SIM, SPECIES, CREW, sellValue } from '../core/data.js';
+import { TIME, BOATS, PORT, EQUIPMENT, METHODS, SIM, SPECIES, CREW, GUIDES, sellValue } from '../core/data.js';
 import { createProfile, markDeparture, resolveInterruptedVoyage } from '../core/profile.js';
 import { settleVoyage, purchaseEquipment, purchasePreview, equipFromStorage, unmountToStorage, sellStored, buyBoat, planBoatPurchase } from '../core/economy.js';
 import { loadSave, writeSave, exportSave, checkImport, memoryStorage, KEYS } from '../core/save.js';
@@ -18,6 +18,7 @@ import { levelFromXp } from '../core/progress.js';
 import { schoolCenter } from '../core/world.js';
 import { buildStaticMap, drawChart, drawBriefingChart, chartToWorld, worldToChart } from './chart.js';
 import { createSounderView } from './sounderView.js';
+import { demoObservation } from './sounderDemo.js';
 import * as S from './screens.js';
 import { PLAYTEST_SAVE } from './playtestSave.js';
 
@@ -139,11 +140,20 @@ function show(screen) {
   el.scrollTop = 0;
   if (screen === 'port') {
     const c = $('portChart');
-    if (c) drawBriefingChart(c, staticMap, { candidates: app.candidates, reports: chartReports(app.profile.knowledge.reports, app.profile.day + 1), logs: app.profile.logs, boatModel: app.profile.boat.model });
+    if (c) drawBriefingChart(c, staticMap, { candidates: app.candidates, reports: chartReports(app.profile.knowledge.reports, app.profile.day + 1), boatModel: app.profile.boat.model });
   }
+  if (screen === 'equip') drawSounderDemos(el);
   if (screen === 'save') {
     const f = $('importFile');
     if (f) f.addEventListener('change', onImportFile);
+  }
+}
+
+/** The same example water seen through each sounder (equipment screen). */
+function drawSounderDemos(root) {
+  for (const c of root.querySelectorAll('canvas[data-sdemo]')) {
+    const spec = EQUIPMENT[c.dataset.sdemo].sounder;
+    createSounderView(c).draw(demoObservation(spec), { readout: !!spec.readout, fit: true });
   }
 }
 
@@ -261,7 +271,7 @@ function buy(itemId, slotId) {
     toast(pv.reason);
     return;
   }
-  modal(`<div class="card"><h2>購入の確認</h2><p><b>${S.esc(pv.item.name)}</b> を購入して「${S.esc(pv.slot.label)}」に取り付けます。</p>
+  modal(`<div class="card"><h2>購入の確認</h2><p><b>${S.esc(pv.item.name)}</b> を購入して「${S.esc(pv.slot.label)}」に取り付けます。</p>${S.guideHtml(itemId, true)}
   <dl class="kv"><dt>支払総額</dt><dd>${pv.price.toLocaleString()}G</dd><dt>購入後の資金</dt><dd>${pv.fundsAfter.toLocaleString()}G</dd><dt>外す装備</dt><dd>${S.esc(pv.removed ? pv.removed.name : 'なし')} → 倉庫</dd></dl>
   <div class="actions"><button type="button" class="btn primary" data-act="buyConfirm" data-item="${S.esc(itemId)}" data-slot="${S.esc(slotId)}">購入する</button><button type="button" class="btn" data-act="closeModal">やめる</button></div></div>`);
 }
@@ -274,8 +284,11 @@ function buyConfirm(itemId, slotId) {
     return;
   }
   commit(res.profile, '装備の購入');
-  toast(`${EQUIPMENT[itemId].name} を取り付けました`);
   show('equip');
+  const g = GUIDES[itemId];
+  modal(`<div class="card"><h2>${S.esc(EQUIPMENT[itemId].name)} を取り付けました</h2>
+  ${g ? `<h3>次の航海での見どころ</h3><ul>${[...(g.inPlay || []), ...(g.changes || [])].map((x) => `<li>${S.esc(x)}</li>`).join('')}</ul>${g.note ? `<p class="note">${S.esc(g.note)}</p>` : ''}` : ''}
+  <div class="actions"><button type="button" class="btn primary" data-act="closeModal">閉じる</button></div></div>`);
 }
 
 function unmount(slotId) {
@@ -445,13 +458,16 @@ function cmd(name) {
   switch (name) {
     case 'op':
       if (isOperating(v)) r = stopOperation(v, 'player');
+      else if (v.method === 'longline' && v.line && v.line.state === 'soaking') haulAsk('haul');
       else r = startOperation(v);
       break;
     case 'redrift':
       r = redrift(v);
       break;
     case 'port':
-      r = returnToPort(v);
+      // going home with the line in the water hauls it first: ask once
+      if (v.line && v.line.state === 'soaking' && !(v.autopilot && v.autopilot.kind === 'return')) haulAsk('port');
+      else r = returnToPort(v);
       break;
     case 'mark':
       addManualMark(v);
@@ -471,7 +487,7 @@ function cmd(name) {
       break;
     }
     case 'haul':
-      r = haulLongline(v);
+      haulAsk('haul');
       break;
     case 'route':
       r = runRoute(v);
@@ -483,6 +499,37 @@ function cmd(name) {
     default:
       break;
   }
+  if (r && !r.ok && r.reason) toast(r.reason);
+  updateHudStatic();
+}
+
+/**
+ * 揚げ縄 is asked once before it starts (it cannot be stopped midway, and an
+ * accidental press would end the soak). The sea is paused while the question
+ * is open; Space cannot answer it — only a tap / click on the button.
+ */
+function haulAsk(then) {
+  const v = app.voyage;
+  if (!v || !v.line || v.line.state !== 'soaking') {
+    const r = haulLongline(v);
+    if (!r.ok) toast(r.reason);
+    return;
+  }
+  const soakMin = Math.floor((v.world.time - v.line.setEndT) / 60);
+  const bait = Math.round(baitLeft(v.line, v.world.time) * 100);
+  const b = nearestBuoy(v.line, v.boat.x, v.boat.y);
+  const what = then === 'port' ? '縄を揚げてから帰港します' : '縄を揚げます';
+  modal(`<div class="card"><h2>${what}。よろしいですか？</h2>
+  <dl class="kv"><dt>浸けた時間</dt><dd>${soakMin}分</dd><dt>餌の残り（目安）</dt><dd>${bait}%</dd><dt>近いブイまで</dt><dd>${Math.round(b.dist)}m</dd></dl>
+  <p class="note">揚げ縄は途中でやめられません（最後まで揚げます）。${b.dist > METHODS.longline.nearBuoy ? 'ブイまでは移動補助で向かいます。' : ''}まだ浸けておくなら「やめる」。</p>
+  <div class="actions"><button type="button" class="btn primary" data-act="haulConfirm" data-then="${then}">${then === 'port' ? '揚げて帰港する' : '揚げる'}</button><button type="button" class="btn" data-act="closeModal">やめる（浸けておく）</button></div></div>`);
+}
+
+function haulConfirm(then) {
+  modal(null);
+  const v = app.voyage;
+  if (!v) return;
+  const r = then === 'port' ? returnToPort(v) : haulLongline(v);
   if (r && !r.ok && r.reason) toast(r.reason);
   updateHudStatic();
 }
@@ -789,6 +836,9 @@ document.addEventListener('click', (e) => {
       break;
     case 'walkTo':
       walkTo(b.dataset.station);
+      break;
+    case 'haulConfirm':
+      haulConfirm(b.dataset.then);
       break;
     case 'sounder':
     case 'chart':
@@ -1214,7 +1264,7 @@ function frame(now) {
     const reps = chartReports([...app.profile.knowledge.reports, ...v.heard], v.day);
     const showLine = v.line && v.line.state !== 'aboard' ? v.line : null;
     drawChart($('chart'), staticMap, v, { big: app.chartBig, dev: DEV, reports: reps, route, hint, line: showLine, lineLabel: showLine ? longlineLabel(showLine, v.op, v.world.time) : '' });
-    if (app.sounderOpen) sounderView.draw(v.obs, { lines: isOperating(v) && v.op.lines ? v.op.lines : null, waterTemp: v.world.cond.waterTemp });
+    if (app.sounderOpen) sounderView.draw(v.obs, { lines: isOperating(v) && v.op.lines ? v.op.lines : null, waterTemp: v.world.cond.waterTemp, readout: !!v.equip.sounder.readout });
     if (v.phase === 'docked') arriveAndSettle();
   }
   if (scene) {

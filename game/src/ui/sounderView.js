@@ -54,9 +54,10 @@ export function createSounderView(canvas) {
     const r = chooseRange(last ? last.bottom : 30);
     const data = img.data;
     data.fill(0);
-    const n = Math.min(cols.length, plotW);
+    // normally the newest pings at the right edge; opts.fit squeezes the whole history in (examples)
+    const n = opts.fit ? cols.length : Math.min(cols.length, plotW);
     for (let c = 0; c < plotW; c++) {
-      const colIdx = cols.length - plotW + c;
+      const colIdx = opts.fit ? Math.floor((c * cols.length) / plotW) : cols.length - plotW + c;
       const col = colIdx >= 0 ? cols[colIdx] : null;
       for (let yPx = 0; yPx < plotH; yPx++) {
         const k = (yPx * plotW + c) * 4;
@@ -120,6 +121,33 @@ export function createSounderView(canvas) {
     if (opts.waterTemp != null) ctx.fillText(`水温 ${opts.waterTemp.toFixed(1)}℃`, 6, 47);
     ctx.textAlign = 'right';
     ctx.fillText(`← ${Math.round(n / 2)}秒`, plotW - 4, plotH - 5);
+    // ES-2: the depth of the echo layer as numbers (from what the sounder shows)
+    if (opts.readout && cols.length) {
+      let top = null;
+      let bot = null;
+      let bottom = last.bottom;
+      for (const col of cols.slice(-6)) {
+        for (let i = 0; i < col.bins.length; i++) {
+          const z = (i + 0.5) * col.binSize;
+          if (z < 2.5 || z > col.bottom - 0.4) continue;
+          if (col.bins[i] >= 40) {
+            top = top == null ? z : Math.min(top, z);
+            bot = bot == null ? z : Math.max(bot, z);
+          }
+        }
+        bottom = Math.min(bottom, col.bottom);
+      }
+      ctx.textAlign = 'left';
+      ctx.font = 'bold 11px sans-serif';
+      const txt = top != null ? `反応 ${top.toFixed(0)}〜${bot.toFixed(0)}m・底から${Math.max(0, bottom - bot).toFixed(0)}m` : '反応なし';
+      const w = ctx.measureText(txt).width + 10;
+      // top right, clear of the depth readout and of the bottom echo
+      const x0 = Math.max(4, plotW - w - 4);
+      ctx.fillStyle = 'rgba(0,0,0,0.55)';
+      ctx.fillRect(x0, 4, w, 16);
+      ctx.fillStyle = top != null ? '#ffe680' : 'rgba(255,255,255,0.6)';
+      ctx.fillText(txt, x0 + 5, 16);
+    }
   }
   return { draw };
 }
