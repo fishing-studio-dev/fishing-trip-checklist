@@ -25,6 +25,7 @@ export function sideViewHit(canvas, side, px, py, range = 60) {
 }
 
 export function drawSideView(canvas, side, range = 60) {
+  if (!canvas.getClientRects().length) return; // not on screen (display:none): its size would read as 0
   const dpr = Math.min(window.devicePixelRatio || 1, 2);
   const W = canvas.clientWidth || canvas.width;
   const H = canvas.clientHeight || canvas.height;

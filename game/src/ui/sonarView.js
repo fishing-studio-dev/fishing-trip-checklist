@@ -27,6 +27,7 @@ let img = null;
 
 /** marks: [{x, y}] in world coordinates (shown as small triangles). */
 export function drawSonar(canvas, sonar, boat, marks = []) {
+  if (!canvas.getClientRects().length) return; // not on screen (display:none): its size would read as 0
   const dpr = Math.min(window.devicePixelRatio || 1, 2);
   const W = canvas.clientWidth || canvas.width;
   const H = canvas.clientHeight || canvas.height;

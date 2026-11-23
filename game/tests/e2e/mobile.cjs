@@ -101,15 +101,27 @@ async function layout(page) {
       for (const [a, b] of [['chart', 'sounder'], ['chart', 'top'], ['sounder', 'top'], ['controls', 'top'], ['controls', 'chart'], ['controls', 'sounder']]) if (overlap(ls[a], ls[b])) clashes.push(`${a}/${b}`);
       check(`${name}: HUD panels and controls don't overlap; controls on screen`, !clashes.length && ls.controls && ls.controls.bottom <= ls.vh + 1 && ls.scrollW <= ls.vw, clashes.join(', ') || `controls bottom ${ls.controls && Math.round(ls.controls.bottom)}/${ls.vh}`);
       await page.screenshot({ path: path.join(outDir, `${slug}-2-sea.png`) });
-      // the enlarged chart (the whole sea, taller than wide) fits the screen
+      // chart mode: the enlarged chart fits the screen above the controls (never over them), with its own touch toolbar
       await page.tap('#chartToggle');
       await sleep(300);
       const cb = await page.evaluate(() => {
-        const b = document.getElementById('chartPanel').getBoundingClientRect();
-        return { left: b.left, top: b.top, right: b.right, bottom: b.bottom, vw: window.innerWidth, vh: window.innerHeight };
+        const r = (id) => { const b = document.getElementById(id).getBoundingClientRect(); return { left: b.left, top: b.top, right: b.right, bottom: b.bottom }; };
+        return { chart: r('chartPanel'), controls: r('controls'), zoom: r('chartAll'), vw: window.innerWidth, vh: window.innerHeight };
       });
-      check(`${name}: the enlarged chart shows the whole sea inside the screen`, cb.left >= 0 && cb.top >= 0 && cb.right <= cb.vw + 1 && cb.bottom <= cb.vh + 1, JSON.stringify(cb));
+      check(`${name}: chart mode fits the screen and leaves the controls uncovered`, cb.chart.left >= 0 && cb.chart.top >= 0 && cb.chart.right <= cb.vw + 1 && cb.chart.bottom <= cb.controls.top + 1 && cb.zoom.bottom <= cb.chart.bottom, JSON.stringify(cb));
+      await page.tap('[data-act=chartZoomIn]');
+      const zoomed = await page.evaluate(() => window.__ryoshi.app.chartSpanIdx);
+      const here = await page.evaluate(() => { const v = window.__ryoshi.app.voyage; return { x: v.boat.x, y: v.boat.y }; });
+      const tp = await page.evaluate(([x, y]) => window.__ryoshi.chartPoint(x, y), [here.x + 150, here.y + 350]);
+      await page.touchscreen.tap(tp.x, tp.y);
+      await sleep(200);
+      const goVisible = await page.isVisible('#chartGo');
       await page.screenshot({ path: path.join(outDir, `${slug}-2a-chart.png`) });
+      if (goVisible) await page.tap('#chartGo');
+      await sleep(200);
+      const ap = await page.evaluate(() => window.__ryoshi.state().voyage.autopilot);
+      check(`${name}: chart mode by touch: zoom in, tap a point, 航路で移動`, zoomed === 1 && goVisible && ap === 'route', `zoom ${zoomed} go ${goVisible} ap ${ap}`);
+      await page.tap('[data-act=clearRoute]');
       await page.tap('#chartToggle');
       // walking the deck by touch: view button twice, the walk pad and the work-position bar
       await page.tap('#btnView');

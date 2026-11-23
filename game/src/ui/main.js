@@ -18,7 +18,7 @@ import { linePhaseLabel, recentPace } from '../core/fishing.js';
 import { fmtClock, compass8, areaNameAt, currentAt, makeDayConditions, forecastOf, visibilityAt } from '../core/sea.js';
 import { levelFromXp } from '../core/progress.js';
 import { schoolCenter } from '../core/world.js';
-import { buildStaticMap, drawChart, drawBriefingChart, chartToWorld, worldToChart, bathyCanvas } from './chart.js';
+import { buildStaticMap, drawChart, drawBriefingChart, chartToWorld, worldToChart, bathyCanvas, CHART_SPANS } from './chart.js';
 import { drawSideView, sideViewHit } from './sideView.js';
 import { markList, editSavedMark, removeSavedMark, MARK_KINDS, MARK_LIMITS } from '../core/marks.js';
 import { sideToWorld } from '../core/sideview.js';
@@ -68,6 +68,7 @@ const app = {
   view: 'helm',
   sounderOpen: true,
   chartBig: false,
+  chartSpanIdx: 0, // zoom of the enlarged chart: CHART_SPANS[i] (0 = the whole sea)
   carry: 0,
   seenMsg: 0,
   seenEvent: 0,
@@ -676,7 +677,7 @@ function onChartClick(ev) {
   }
   const c = $('chart');
   const rect = c.getBoundingClientRect();
-  const w = chartToWorld(c, v, true, ev.clientX - rect.left, ev.clientY - rect.top);
+  const w = chartToWorld(c, v, true, ev.clientX - rect.left, ev.clientY - rect.top, CHART_SPANS[app.chartSpanIdx]);
   const r = addRoutePoint(v, w);
   const what = isTrolling(v) ? '（曳縄の航路を変更）' : v.method === 'troll' ? '（曳縄の航路。G で移動だけもできる）' : v.method === 'longline' && !lineInWater(v) ? '（縄を張る向き。G で移動だけもできる）' : '（G でこの航路に沿って移動）';
   toast(r.ok ? `経由点${v.plannedRoute.length}を追加${what}` : r.reason);
@@ -1027,6 +1028,17 @@ document.addEventListener('click', (e) => {
     case 'haulConfirm':
       haulConfirm(b.dataset.then);
       break;
+    case 'chartAll':
+      app.chartSpanIdx = 0;
+      break;
+    case 'chartZoomIn':
+      app.chartSpanIdx = Math.min(CHART_SPANS.length - 1, app.chartSpanIdx + 1);
+      toast(`海図：船のまわり約${(CHART_SPANS[app.chartSpanIdx] / 1000).toFixed(1)}km`);
+      break;
+    case 'chartZoomOut':
+      app.chartSpanIdx = Math.max(0, app.chartSpanIdx - 1);
+      toast(app.chartSpanIdx ? `海図：船のまわり約${(CHART_SPANS[app.chartSpanIdx] / 1000).toFixed(1)}km` : '海図：海域全体');
+      break;
     case 'marks':
       marksModal();
       break;
@@ -1189,6 +1201,8 @@ function updateHudStatic() {
   $('sounderPanel').hidden = !app.sounderOpen;
   $('sounderOpen').hidden = app.sounderOpen;
   $('chartPanel').classList.toggle('big', app.chartBig);
+  $('chartFoot').hidden = !app.chartBig;
+  if (!app.chartBig) $('chartTitle').textContent = '海図（GPSプロッター）';
   $('chartToggle').textContent = app.chartBig ? '閉じる' : '拡大';
   $('sounderTitle').textContent = EQUIPMENT[v.equip.sounderId].name;
   $('btnSonar').hidden = !v.sonar;
@@ -1228,12 +1242,26 @@ function layoutHud() {
   hud.classList.toggle('op-mode', opMode);
   hud.classList.toggle('phone-land', land);
   hud.classList.toggle('phone-port', port);
+  hud.classList.toggle('chart-mode', !!app.chartBig);
+  document.body.classList.toggle('chart-open', !!app.chartBig && app.screen === 'sea');
   $('chartPanel').hidden = tuck || (sonarUp && (land || port) && !app.chartBig);
   for (const el of [op, msgs, top]) el.style.top = el.style.bottom = el.style.maxHeight = el.style.left = el.style.width = '';
   const appR = $('app').getBoundingClientRect();
   const ctl = $('controls').getBoundingClientRect();
   const rel = (y) => y - appR.top;
   const aboveControls = appR.bottom - ctl.top + 6;
+  // chart mode: the enlarged chart takes the space between the status chips and the controls
+  const cp = $('chartPanel');
+  if (app.chartBig) {
+    const phone = land || port;
+    const topY = phone ? 4 : rel(top.getBoundingClientRect().bottom) + 6;
+    const sndEl = $('sounderPanel');
+    const right = !phone && !sndEl.hidden ? appR.right - sndEl.getBoundingClientRect().left + 8 : phone ? 4 : 8;
+    cp.style.top = `${topY}px`;
+    cp.style.bottom = `${aboveControls}px`;
+    cp.style.left = phone ? '4px' : '8px';
+    cp.style.right = `${right}px`;
+  } else cp.style.top = cp.style.bottom = cp.style.left = cp.style.right = '';
   $('walkBar').style.bottom = `${aboveControls}px`;
   const snd = ($('sounderPanel').hidden ? $('sounderOpen') : $('sounderPanel')).getBoundingClientRect();
   if (!land && !port) {
@@ -1505,7 +1533,27 @@ function frame(now) {
       bathyAt = now;
       bathyNow = bathyCanvas(ownCells(), v.bathy && v.bathy.cells);
     }
-    drawChart($('chart'), staticMap, v, { big: app.chartBig, dev: DEV, reports: reps, route, hint, line: showLine, lineLabel: showLine ? longlineLabel(showLine, v.op, v.world.time) : '', bathy: bathyNow, saved: app.profile.marks, selected: app.markSel });
+    if (app.chartBig) {
+      // the hint and the route buttons live under the map (not drawn over it)
+      const hEl = $('chartHint');
+      const ph0 = hudMode();
+      // phones: a short hint (no keyboard keys to mention)
+      const hintShown = ph0.land || ph0.port ? (trollSel ? '地図をタップして曳縄の航路' : llPlan ? '地図をタップして縄を張る向き' : '地図をタップして行き先を置く') : hint;
+      if (hEl.textContent !== hintShown) hEl.textContent = hintShown;
+      // the newest message stays readable while the chart covers the message list
+      const last = v.messages[v.messages.length - 1];
+      const mt = last ? `${fmtClock(last.t)} ${last.text}` : '';
+      if ($('chartMsg').textContent !== mt) $('chartMsg').textContent = mt;
+      const canGo = v.plannedRoute.length > 0 && !isTrolling(v) && !isLonglining(v);
+      if ($('chartGo').hidden === canGo) $('chartGo').hidden = !canGo;
+      if ($('chartClear').hidden === (v.plannedRoute.length > 0)) $('chartClear').hidden = !v.plannedRoute.length;
+      $('chartAll').classList.toggle('on', app.chartSpanIdx === 0);
+      // on phones the status chips step aside: the time and depth go in the chart's title
+      const ph = hudMode();
+      const t = ph.land || ph.port ? `海図 ${fmtClock(v.world.time)}・水深${v.obs.cols.length ? v.obs.cols[v.obs.cols.length - 1].bottom.toFixed(0) : '--'}m・${areaNameAt(v.boat.x, v.boat.y)}` : '海図（GPSプロッター）';
+      if ($('chartTitle').textContent !== t) $('chartTitle').textContent = t;
+    }
+    drawChart($('chart'), staticMap, v, { big: app.chartBig, span: CHART_SPANS[app.chartSpanIdx], dev: DEV, reports: reps, route, hint, line: showLine, lineLabel: showLine ? longlineLabel(showLine, v.op, v.world.time) : '', bathy: bathyNow, saved: app.profile.marks, selected: app.markSel });
     if (app.sonarOpen && v.sonar && now - sonarAt > 150) {
       sonarAt = now;
       const marks = [...(app.profile.marks || []), ...v.obs.marks.filter((m) => m.kind !== 'auto')];
@@ -1710,7 +1758,7 @@ function devApi() {
     chartPoint(x, y) {
       const c = $('chart');
       const r = c.getBoundingClientRect();
-      const p = worldToChart(c, app.voyage, app.chartBig, x, y);
+      const p = worldToChart(c, app.voyage, app.chartBig, x, y, app.chartBig ? CHART_SPANS[app.chartSpanIdx] : null);
       return { x: r.left + p.px, y: r.top + p.py };
     },
     cues() {

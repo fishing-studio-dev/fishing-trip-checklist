@@ -104,78 +104,231 @@ export function buildStaticMap() {
   return c;
 }
 
-// ---- the own depth map (デプスマッピング): fine 2 m contours where the player measured
+// ---- the own depth map (デプスマッピング), shown like a plotter's own-chart
+// layer: depth shading in colour (shallow red → yellow → green → cyan → blue →
+// violet deep), contour lines every 2 m and bold every 10 m with the depth.
+// Only cells the player's sounder measured are drawn.
 const MAP_NX = Math.ceil(AREA.W / 10);
 const MAP_NY = Math.ceil(AREA.H / 10);
-let bathyLayer = null;
+const DEPTH_STOPS = [
+  [0, [215, 38, 30]],
+  [5, [245, 115, 25]],
+  [10, [250, 205, 35]],
+  [18, [110, 200, 70]],
+  [28, [35, 190, 185]],
+  [40, [40, 125, 225]],
+  [55, [62, 64, 205]],
+  [75, [100, 45, 160]],
+];
+export const DEPTH_LEGEND = [0, 10, 20, 30, 40, 60, 80];
+
+/** Colour of a depth on the own depth map. */
+export function depthShade(d) {
+  if (d <= DEPTH_STOPS[0][0]) return DEPTH_STOPS[0][1];
+  for (let i = 0; i < DEPTH_STOPS.length - 1; i++) {
+    const [d0, c0] = DEPTH_STOPS[i];
+    const [d1, c1] = DEPTH_STOPS[i + 1];
+    if (d <= d1) {
+      const u = (d - d0) / (d1 - d0);
+      return c0.map((c, k) => Math.round(c + (c1[k] - c) * u));
+    }
+  }
+  return DEPTH_STOPS[DEPTH_STOPS.length - 1][1];
+}
+
+let bathyCache = null;
 let bathyKey = '';
 
-/** Build (when changed) a 10 m-per-pixel layer from measured cells (profile + this voyage). */
+/**
+ * Build (when the measured cells change) the colour layer (10 m per pixel) and
+ * the contour lines (world coordinates, marching squares over the measured
+ * grid). Returns { layer, minor: [x1,y1,x2,y2,...], major: [...], majorLevel: [...] } or null.
+ */
 export function bathyCanvas(baseCells, voyCells) {
   const nV = voyCells ? Object.keys(voyCells).length : 0;
   const nB = baseCells ? Object.keys(baseCells).length : 0;
   const key = `${nB}:${nV}`;
-  if (bathyLayer && key === bathyKey) return bathyLayer;
+  if (bathyCache && key === bathyKey) return bathyCache;
   if (!nB && !nV) return null;
   bathyKey = key;
-  if (!bathyLayer) {
-    bathyLayer = document.createElement('canvas');
-    bathyLayer.width = MAP_NX;
-    bathyLayer.height = MAP_NY;
-  }
-  const ctx = bathyLayer.getContext('2d');
+  const depth = new Float32Array(MAP_NX * MAP_NY).fill(NaN);
+  for (const src of [baseCells, voyCells]) for (const k in src || {}) if (src[k]) depth[Number(k)] = src[k] / 2;
+  const layer = document.createElement('canvas');
+  layer.width = MAP_NX;
+  layer.height = MAP_NY;
+  const ctx = layer.getContext('2d');
   const img = ctx.createImageData(MAP_NX, MAP_NY);
-  const get = (idx) => (voyCells && voyCells[idx]) || (baseCells && baseCells[idx]) || 0;
-  const all = new Set([...Object.keys(baseCells || {}), ...Object.keys(voyCells || {})]);
-  for (const k of all) {
-    const idx = Number(k);
-    const b = get(idx);
-    if (!b) continue;
-    const d = b / 2;
+  const minor = [];
+  const major = [];
+  const majorLevel = [];
+  for (let idx = 0; idx < depth.length; idx++) {
+    const d = depth[idx];
+    if (Number.isNaN(d)) continue;
     const i = idx % MAP_NX;
     const j = Math.floor(idx / MAP_NX);
-    let col = depthColor(d);
-    // hill shade from the north-west: a raised spot is lit on its NW side
-    const nw = get(idx - 1 + MAP_NX) || b;
-    const shade = Math.max(-0.35, Math.min(0.35, (nw - b) / 2 * 0.12));
-    col = col.map((c) => Math.max(0, Math.min(255, c + 255 * shade)));
-    // 2 m contours
-    const band = Math.floor(d / 2);
-    for (const n of [get(idx + 1), get(idx + MAP_NX)]) {
-      if (n && Math.floor(n / 2 / 2) !== band) col = col.map((c) => Math.min(255, c + 70));
-    }
+    const col = depthShade(d);
     const p = ((MAP_NY - 1 - j) * MAP_NX + i) * 4;
     img.data[p] = col[0];
     img.data[p + 1] = col[1];
     img.data[p + 2] = col[2];
-    img.data[p + 3] = 235;
+    img.data[p + 3] = 230;
+    // contours: the square between this cell's centre and its east / north / north-east neighbours
+    if (i + 1 >= MAP_NX || j + 1 >= MAP_NY) continue;
+    const a = d; // (i, j)
+    const b = depth[idx + 1]; // (i+1, j)
+    const c = depth[idx + 1 + MAP_NX]; // (i+1, j+1)
+    const e = depth[idx + MAP_NX]; // (i, j+1)
+    if (Number.isNaN(b) || Number.isNaN(c) || Number.isNaN(e)) continue;
+    const lo = Math.min(a, b, c, e);
+    const hi = Math.max(a, b, c, e);
+    const x0 = i * 10 + 5;
+    const y0 = j * 10 + 5;
+    for (let L = Math.ceil(lo / 2) * 2; L < hi; L += 2) {
+      if (L <= lo) continue;
+      // crossing points on the edges, in order: bottom, right, top, left
+      const pts = [];
+      const cross = (va, vb, xa, ya, xb, yb) => {
+        if ((va < L) !== (vb < L)) {
+          const u = (L - va) / (vb - va);
+          pts.push(xa + (xb - xa) * u, ya + (yb - ya) * u);
+        }
+      };
+      cross(a, b, x0, y0, x0 + 10, y0);
+      cross(b, c, x0 + 10, y0, x0 + 10, y0 + 10);
+      cross(e, c, x0, y0 + 10, x0 + 10, y0 + 10);
+      cross(a, e, x0, y0, x0, y0 + 10);
+      const out = L % 10 === 0 ? major : minor;
+      for (let q = 0; q + 3 < pts.length; q += 4) {
+        out.push(pts[q], pts[q + 1], pts[q + 2], pts[q + 3]);
+        if (out === major) majorLevel.push(L);
+      }
+    }
   }
   ctx.putImageData(img, 0, 0);
-  return bathyLayer;
+  bathyCache = { layer, minor, major, majorLevel };
+  return bathyCache;
+}
+
+/** Draw the own depth map (colour, contours, depth labels) with a world→screen transform. */
+function drawDepthMap(ctx, bathy, toPx, scale, W, H, { labels = true } = {}) {
+  const [ox, oy] = toPx(0, AREA.H);
+  ctx.save();
+  ctx.imageSmoothingEnabled = true;
+  ctx.globalAlpha = 0.92;
+  ctx.drawImage(bathy.layer, ox, oy, AREA.W * scale, AREA.H * scale);
+  ctx.globalAlpha = 1;
+  const seg = (arr, i) => {
+    const [x1, y1] = toPx(arr[i], arr[i + 1]);
+    const [x2, y2] = toPx(arr[i + 2], arr[i + 3]);
+    if ((x1 < -2 && x2 < -2) || (x1 > W + 2 && x2 > W + 2) || (y1 < -2 && y2 < -2) || (y1 > H + 2 && y2 > H + 2)) return null;
+    return [x1, y1, x2, y2];
+  };
+  // fine 2 m lines only when they are far enough apart to read
+  if (scale * 10 >= 1.4) {
+    ctx.strokeStyle = 'rgba(15,20,35,0.42)';
+    ctx.lineWidth = 0.8;
+    ctx.beginPath();
+    for (let i = 0; i < bathy.minor.length; i += 4) {
+      const s = seg(bathy.minor, i);
+      if (!s) continue;
+      ctx.moveTo(s[0], s[1]);
+      ctx.lineTo(s[2], s[3]);
+    }
+    ctx.stroke();
+  }
+  ctx.strokeStyle = 'rgba(8,10,22,0.85)';
+  ctx.lineWidth = scale * 10 >= 1.4 ? 1.6 : 1;
+  ctx.beginPath();
+  for (let i = 0; i < bathy.major.length; i += 4) {
+    const s = seg(bathy.major, i);
+    if (!s) continue;
+    ctx.moveTo(s[0], s[1]);
+    ctx.lineTo(s[2], s[3]);
+  }
+  ctx.stroke();
+  if (labels && scale * 10 >= 0.8) {
+    // depth numbers on the bold lines, spread out
+    const placed = [];
+    ctx.font = 'bold 10px sans-serif';
+    ctx.textAlign = 'center';
+    ctx.lineWidth = 3;
+    for (let i = 0, n = 0; i < bathy.major.length; i += 4, n++) {
+      const s = seg(bathy.major, i);
+      if (!s) continue;
+      const mx = (s[0] + s[2]) / 2;
+      const my = (s[1] + s[3]) / 2;
+      if (mx < 14 || mx > W - 14 || my < 40 || my > H - 20) continue;
+      if (placed.some((p) => Math.hypot(p[0] - mx, p[1] - my) < 90)) continue;
+      placed.push([mx, my]);
+      const t = `${bathy.majorLevel[n]}`;
+      ctx.strokeStyle = 'rgba(8,10,22,0.85)';
+      ctx.strokeText(t, mx, my + 3);
+      ctx.fillStyle = '#ffffff';
+      ctx.fillText(t, mx, my + 3);
+    }
+  }
+  ctx.restore();
+}
+
+/** The colour key for the own depth map (bottom right). */
+function drawDepthLegend(ctx, W, H) {
+  const w = 150;
+  const x = W - w - 10;
+  const y = H - 30;
+  ctx.save();
+  ctx.fillStyle = 'rgba(0,0,0,0.55)';
+  ctx.fillRect(x - 6, y - 15, w + 12, 32);
+  const grad = ctx.createLinearGradient(x, 0, x + w, 0);
+  for (let k = 0; k <= 16; k++) {
+    const d = (k / 16) * 80;
+    const c = depthShade(d);
+    grad.addColorStop(k / 16, `rgb(${c[0]},${c[1]},${c[2]})`);
+  }
+  ctx.fillStyle = grad;
+  ctx.fillRect(x, y, w, 7);
+  ctx.fillStyle = '#ffffff';
+  ctx.font = '9px sans-serif';
+  ctx.textAlign = 'center';
+  for (const d of DEPTH_LEGEND) ctx.fillText(`${d}`, x + (d / 80) * w, y + 16);
+  ctx.textAlign = 'left';
+  ctx.fillText('自分の水深図（m）', x, y - 4);
+  ctx.restore();
 }
 
 /**
  * Draw the chart. view: {big:boolean}. data: {voyage, dev}
  */
-function viewOf(v, big, W, H = W) {
-  // enlarged: the whole sea fitted into the canvas; small: 1.3 km around the boat
-  if (big) return { cx: AREA.W / 2, cy: AREA.H / 2, scale: Math.min(W / AREA.W, H / AREA.H) };
+// zoom steps of the enlarged chart: null = the whole sea, else metres across the shorter side, centred on the boat
+export const CHART_SPANS = [null, 3000, 1500, 600];
+
+function viewOf(v, big, W, H = W, span = null) {
+  // enlarged: the whole sea fitted into the canvas, or a zoom around the boat; small: 1.3 km around the boat
+  if (big && !span) return { cx: AREA.W / 2, cy: AREA.H / 2, scale: Math.min(W / AREA.W, H / AREA.H) };
+  if (big) {
+    // centred on the boat, but kept inside the sea so no screen is wasted past its edge
+    const scale = Math.min(W, H) / span;
+    const hw = W / 2 / scale;
+    const hh = H / 2 / scale;
+    const cx = hw * 2 >= AREA.W ? AREA.W / 2 : Math.max(hw, Math.min(AREA.W - hw, v.boat.x));
+    const cy = hh * 2 >= AREA.H ? AREA.H / 2 : Math.max(hh, Math.min(AREA.H - hh, v.boat.y));
+    return { cx, cy, scale };
+  }
   return { cx: v.boat.x, cy: v.boat.y, scale: W / 1300 };
 }
 
 /** World coordinates of a click on the chart canvas (CSS pixels). */
-export function chartToWorld(canvas, v, big, px, py) {
+export function chartToWorld(canvas, v, big, px, py, span = null) {
   const W = canvas.clientWidth || canvas.width;
   const H = canvas.clientHeight || canvas.height;
-  const { cx, cy, scale } = viewOf(v, big, W, H);
+  const { cx, cy, scale } = viewOf(v, big, W, H, span);
   return { x: (px - W / 2) / scale + cx, y: cy - (py - H / 2) / scale };
 }
 
 /** Canvas position (CSS pixels) of a world point (the inverse of chartToWorld). */
-export function worldToChart(canvas, v, big, x, y) {
+export function worldToChart(canvas, v, big, x, y, span = null) {
   const W = canvas.clientWidth || canvas.width;
   const H = canvas.clientHeight || canvas.height;
-  const { cx, cy, scale } = viewOf(v, big, W, H);
+  const { cx, cy, scale } = viewOf(v, big, W, H, span);
   return { px: (x - cx) * scale + W / 2, py: H / 2 - (y - cy) * scale };
 }
 
@@ -314,7 +467,8 @@ function drawLongline(ctx, line, toPx, label) {
 /**
  * Draw the chart at sea. opts: { big, dev, reports: [{r, label}], route: {points, live}, hint, line, lineLabel }
  */
-export function drawChart(canvas, staticMap, v, { big = false, dev = false, reports = [], route = null, hint = '', line = null, lineLabel = '', bathy = null, saved = [], selected = null } = {}) {
+export function drawChart(canvas, staticMap, v, { big = false, span = null, dev = false, reports = [], route = null, hint = '', line = null, lineLabel = '', bathy = null, saved = [], selected = null } = {}) {
+  if (!canvas.getClientRects().length) return; // not on screen (display:none): its size would read as 0
   const dpr = Math.min(window.devicePixelRatio || 1, 2);
   const cssW = canvas.clientWidth || canvas.width;
   const cssH = canvas.clientHeight || canvas.height;
@@ -326,7 +480,7 @@ export function drawChart(canvas, staticMap, v, { big = false, dev = false, repo
   ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
   const W = cssW;
   const H = cssH;
-  const { cx, cy, scale } = viewOf(v, big, W, H);
+  const { cx, cy, scale } = viewOf(v, big, W, H, span);
   const toPx = (x, y) => [(x - cx) * scale + W / 2, H / 2 - (y - cy) * scale];
   ctx.fillStyle = '#0a244e';
   ctx.fillRect(0, 0, W, H);
@@ -334,11 +488,7 @@ export function drawChart(canvas, staticMap, v, { big = false, dev = false, repo
   const [ox, oy] = toPx(0, AREA.H);
   ctx.imageSmoothingEnabled = true;
   ctx.drawImage(staticMap, ox, oy, AREA.W * scale, AREA.H * scale);
-  if (bathy) {
-    ctx.imageSmoothingEnabled = false;
-    ctx.drawImage(bathy, ox, oy, AREA.W * scale, AREA.H * scale);
-    ctx.imageSmoothingEnabled = true;
-  }
+  if (bathy) drawDepthMap(ctx, bathy, toPx, scale, W, H);
 
   ctx.font = `${big ? 13 : 10}px sans-serif`;
   ctx.textAlign = 'center';
@@ -430,13 +580,16 @@ export function drawChart(canvas, staticMap, v, { big = false, dev = false, repo
     }
     ctx.setLineDash([]);
   }
-  // boat: a bold yellow arrow from the bow shows where it is heading
-  {
+  // boat: the white hull points where the bow is; the bold yellow arrow shows where
+  // the boat is actually moving over the ground (under way or drifting with tide and wind)
+  const sog = Math.hypot(v.boat.vx || 0, v.boat.vy || 0);
+  if (sog >= 0.04) {
     const [px, py] = toPx(v.boat.x, v.boat.y);
     ctx.save();
     ctx.translate(px, py);
-    ctx.rotate(v.boat.heading);
-    const hl = big ? 64 : 52;
+    ctx.rotate(Math.atan2(v.boat.vx, v.boat.vy));
+    // longer when faster (a slow drift still shows clearly)
+    const hl = (big ? 34 : 28) + Math.min(1, sog / 4) * (big ? 34 : 26);
     const shaft = () => {
       ctx.beginPath();
       ctx.moveTo(0, -12);
@@ -464,7 +617,14 @@ export function drawChart(canvas, staticMap, v, { big = false, dev = false, repo
     ctx.fillStyle = '#ffd84d';
     head();
     ctx.fill();
+    ctx.restore();
+  }
+  {
     // the boat itself, bow pointed
+    const [px, py] = toPx(v.boat.x, v.boat.y);
+    ctx.save();
+    ctx.translate(px, py);
+    ctx.rotate(v.boat.heading);
     ctx.fillStyle = '#ffffff';
     ctx.strokeStyle = '#0b2236';
     ctx.lineWidth = 2;
@@ -482,34 +642,23 @@ export function drawChart(canvas, staticMap, v, { big = false, dev = false, repo
   // scale bar
   ctx.fillStyle = 'rgba(255,255,255,0.8)';
   ctx.textAlign = 'left';
-  const bar = big ? 500 : 200;
+  const bar = big ? (span && span <= 1000 ? 100 : span && span <= 2000 ? 200 : 500) : 200;
   ctx.fillRect(8, H - 12, bar * scale, 2);
   ctx.fillText(`${bar}m`, 8, H - 16);
   ctx.textAlign = 'right';
   ctx.fillText('N↑', W - 6, 14);
-  // boat speed, large, top left
-  const kt = Math.abs(v.boat.speed) * 1.944;
-  const drift = Math.hypot(v.boat.vx || 0, v.boat.vy || 0) * 1.944;
-  const sp = `船速 ${kt.toFixed(1)}kt`;
+  if (bathy && big) drawDepthLegend(ctx, W, H);
+  // boat speed, large, top left: how fast the boat moves over the ground, under way or drifting alike
+  const sp = `船速 ${(sog * 1.944).toFixed(1)}kt`;
   ctx.textAlign = 'left';
   ctx.font = `bold ${big ? 20 : 16}px sans-serif`;
   const spW = ctx.measureText(sp).width;
-  const sub = kt < 0.3 && drift >= 0.2 ? `流され ${drift.toFixed(1)}kt` : '';
   ctx.fillStyle = 'rgba(0,0,0,0.6)';
   ctx.fillRect(6, 6, spW + 14, big ? 30 : 25);
   ctx.fillStyle = '#ffffff';
   ctx.fillText(sp, 13, big ? 28 : 24);
-  let hintY = 6 + (big ? 30 : 25) + 4;
-  if (sub) {
-    ctx.font = `${big ? 12 : 10}px sans-serif`;
-    const w2 = ctx.measureText(sub).width;
-    ctx.fillStyle = 'rgba(0,0,0,0.6)';
-    ctx.fillRect(6, hintY, w2 + 12, big ? 18 : 15);
-    ctx.fillStyle = '#ffd9b0';
-    ctx.fillText(sub, 12, hintY + (big ? 13 : 11));
-    hintY += (big ? 18 : 15) + 4;
-  }
-  if (hint) {
+  const hintY = 6 + (big ? 30 : 25) + 4;
+  if (hint && !big) {
     ctx.textAlign = 'left';
     // shrink the hint until it fits the chart's width (narrow phones)
     let fs = big ? 13 : 10;
@@ -528,6 +677,7 @@ export function drawChart(canvas, staticMap, v, { big = false, dev = false, repo
 
 /** Port briefing chart: whole area, candidates, peers' observations and own operation spots. */
 export function drawBriefingChart(canvas, staticMap, { candidates = [], reports = [], boatModel = null, bathy = null, marks = [], selected = null }) {
+  if (!canvas.getClientRects().length) return; // not on screen (display:none): its size would read as 0
   const dpr = Math.min(window.devicePixelRatio || 1, 2);
   const cssW = canvas.clientWidth || canvas.width;
   const cssH = canvas.clientHeight || canvas.height;
@@ -545,7 +695,7 @@ export function drawBriefingChart(canvas, staticMap, { candidates = [], reports 
   ctx.fillStyle = '#0a244e';
   ctx.fillRect(0, 0, W, H);
   ctx.drawImage(staticMap, ox, oy, AREA.W * scale, AREA.H * scale);
-  if (bathy) ctx.drawImage(bathy, ox, oy, AREA.W * scale, AREA.H * scale);
+  if (bathy) drawDepthMap(ctx, bathy, toPx, scale, W, H, { labels: false });
   if (boatModel) drawRangeLimit(ctx, boatModel, toPx, W, true);
   ctx.font = '11px sans-serif';
   ctx.textAlign = 'center';

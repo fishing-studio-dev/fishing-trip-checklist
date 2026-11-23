@@ -32,6 +32,7 @@ export function createSounderView(canvas) {
     return range;
   }
   function draw(obs, opts = {}) {
+    if (!canvas.getClientRects().length) return; // not on screen (display:none): its size would read as 0
     const dpr = Math.min(window.devicePixelRatio || 1, 2);
     const cssW = canvas.clientWidth || canvas.width;
     const cssH = canvas.clientHeight || canvas.height;

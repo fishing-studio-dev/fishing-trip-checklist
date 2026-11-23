@@ -297,3 +297,48 @@ textarea.paste { width: 100%; min-height: 90px; background: var(--panel-solid); 
 .btn.small { padding: 6px 11px; font-size: 13px; min-height: 36px; border-radius: 8px; }
 .msg.sight { border-left-color: #ffe14d; }
 .card.storm { border-color: var(--warn); margin-top: 10px; }
+
+/* ---- chart mode (enlarged chart): fits between the top status and the bottom controls, never over them */
+.chart-wrap { display: contents; }
+.hud-chart.big .chart-wrap { display: block; position: relative; flex: 1 1 auto; min-height: 0; margin: 6px 6px 0; }
+#hud .hud-chart.big, #hud.phone-land .hud-chart.big, #hud.phone-port .hud-chart.big, #hud.phone-land.op-mode .hud-chart.big, #hud.phone-port.op-mode .hud-chart.big {
+  display: flex; flex-direction: column; transform: none; width: auto; z-index: 6;
+}
+#hud .hud-chart.big canvas, #hud.phone-land .hud-chart.big canvas, #hud.phone-port .hud-chart.big canvas, #hud.phone-land.op-mode .hud-chart.big canvas, #hud.phone-port.op-mode .hud-chart.big canvas {
+  position: absolute; inset: 0; width: 100%; height: 100%; margin: 0; aspect-ratio: auto; border-radius: 6px; cursor: crosshair;
+}
+.chart-foot { padding: 6px 8px 8px; }
+.chart-hint { margin: 0 0 6px; font-size: 13px; color: #bff7ea; line-height: 1.35; }
+.chart-tools { display: flex; flex-wrap: wrap; gap: 8px; justify-content: space-between; }
+.chart-tools .seg { display: inline-flex; gap: 6px; }
+.tool { min-height: 40px; min-width: 44px; padding: 6px 12px; font-size: 15px; border-radius: 10px; background: rgba(255,255,255,.1); border: 1px solid var(--line); color: inherit; }
+.tool.primary { background: var(--accent); color: var(--accent-ink); border-color: var(--accent); font-weight: 700; }
+.tool.on { outline: 2px solid var(--accent); }
+.tool[hidden] { display: none; }
+.tool kbd { margin-left: 6px; font-size: 11px; opacity: .7; }
+/* while the chart is open on a phone, the chart has the screen above the controls */
+#hud.chart-mode.phone-port .hud-sounder, #hud.chart-mode.phone-land .hud-sounder,
+#hud.chart-mode.phone-port .sounder-open, #hud.chart-mode.phone-land .sounder-open,
+#hud.chart-mode.phone-port .hud-sonar, #hud.chart-mode.phone-land .hud-sonar,
+#hud.chart-mode.phone-port .hud-op, #hud.chart-mode.phone-land .hud-op,
+#hud.chart-mode.phone-port .hud-msgs, #hud.chart-mode.phone-land .hud-msgs,
+#hud.chart-mode.phone-port .hud-top, #hud.chart-mode.phone-land .hud-top,
+#hud.chart-mode .walk-bar { display: none !important; }
+#hud.chart-mode.phone-port .chart-hint, #hud.chart-mode.phone-land .chart-hint { font-size: 12px; margin-bottom: 4px; }
+#hud.chart-mode.phone-land .chart-foot { padding: 4px 6px 6px; }
+#hud.chart-mode.phone-land .tool { min-height: 34px; font-size: 13px; padding: 4px 9px; }
+#hud.chart-mode.phone-land .tool kbd, #hud.chart-mode.phone-port .tool kbd { display: none; }
+.chart-msg { margin: 0 0 4px; font-size: 13px; color: #e8eef7; line-height: 1.35; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.chart-msg:empty, .chart-hint:empty { display: none; }
+#hud.chart-mode .hud-msgs { display: none; }
+/* notices go to the top while the chart is open (the chart's buttons are at the bottom) */
+body.chart-open .toast { top: 38%; bottom: auto; }
+/* phones in chart mode: one compact toolbar row; the bottom row's route buttons step aside (the chart has them) */
+#hud.chart-mode.phone-port #btnRoute, #hud.chart-mode.phone-port #btnClearRoute,
+#hud.chart-mode.phone-land #btnRoute, #hud.chart-mode.phone-land #btnClearRoute { display: none !important; }
+#hud.chart-mode.phone-port .chart-tools, #hud.chart-mode.phone-land .chart-tools { flex-wrap: nowrap; gap: 4px; }
+#hud.chart-mode.phone-port .chart-tools .seg, #hud.chart-mode.phone-land .chart-tools .seg { gap: 4px; }
+#hud.chart-mode.phone-port .tool { min-height: 38px; min-width: 38px; padding: 4px 9px; font-size: 14px; }
+@media (max-width: 360px) { #hud.chart-mode.phone-port .tool { padding: 4px 7px; font-size: 13px; min-width: 34px; } }
+#hud.chart-mode.phone-port .chart-msg, #hud.chart-mode.phone-land .chart-msg { font-size: 12px; margin-bottom: 2px; }
+@media (max-height: 600px) { #hud.chart-mode.phone-port .chart-msg { display: none; } }

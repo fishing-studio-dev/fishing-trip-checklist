@@ -15,8 +15,16 @@
   <div id="hud" hidden>
     <div class="hud-top" id="hudTop"></div>
     <div class="hud-chart panel" id="chartPanel">
-      <div class="panel-head"><span>海図（GPSプロッター）</span><span><button type="button" class="mini" data-act="marks" title="自分の印の一覧（K）">印</button> <button type="button" class="mini" id="chartToggle" data-act="chart" title="海図の拡大（C）">拡大</button></span></div>
-      <canvas id="chart" width="240" height="240"></canvas>
+      <div class="panel-head"><span id="chartTitle">海図（GPSプロッター）</span><span><button type="button" class="mini" data-act="marks" title="自分の印の一覧（K）">印</button> <button type="button" class="mini" id="chartToggle" data-act="chart" title="海図の拡大（C）">拡大</button></span></div>
+      <div class="chart-wrap"><canvas id="chart" width="240" height="240"></canvas></div>
+      <div class="chart-foot" id="chartFoot" hidden>
+        <p class="chart-msg" id="chartMsg"></p>
+        <p class="chart-hint" id="chartHint"></p>
+        <div class="chart-tools">
+          <span class="seg"><button type="button" class="tool" data-act="chartAll" id="chartAll" title="海域全体">全体</button><button type="button" class="tool" data-act="chartZoomOut" title="縮小（船を中心）">－</button><button type="button" class="tool" data-act="chartZoomIn" title="拡大（船を中心）">＋</button></span>
+          <span class="seg"><button type="button" class="tool primary" data-act="route" id="chartGo">航路で移動<kbd>G</kbd></button><button type="button" class="tool" data-act="clearRoute" id="chartClear">消す<kbd>X</kbd></button></span>
+        </div>
+      </div>
     </div>
     <div class="hud-sounder panel" id="sounderPanel">
       <div class="panel-head"><span id="sounderTitle">魚探</span><span><button type="button" class="mini" id="sideToggle" data-act="sideview" title="真下と左右の表示を切り替え" hidden>左右</button> <button type="button" class="mini" data-act="sounder" title="魚探を閉じる（F）">閉じる</button></span></div>
