@@ -21,6 +21,7 @@ import { createSounderView } from './sounderView.js';
 import { demoObservation } from './sounderDemo.js';
 import * as S from './screens.js';
 import { PLAYTEST_SAVE } from './playtestSave.js';
+import { snapshotVoyage, restoreVoyage } from '../core/voyageSnapshot.js';
 
 const params = new URLSearchParams(location.search);
 const DEV = params.get('dev') === '1';
@@ -223,17 +224,48 @@ function depart(planKey = null) {
   if (!r.ok) toast('出港の記録を保存できませんでした（このまま出港します）');
   let scenario = null;
   if (DEV && params.get('scenario') === 'near') scenario = nearScenario();
-  app.voyage = createVoyage(app.profile, { scenario });
+  enterSea(createVoyage(app.profile, { scenario }));
+  saveVoyageNow();
+}
+
+/** Put a voyage (new or resumed) on screen. */
+function enterSea(v) {
+  app.voyage = v;
   $('msgs').dataset.last = '';
   app.carry = 0;
   app.seenMsg = 0;
-  app.seenEvent = app.voyage.eventSeq - 1;
+  app.seenEvent = v.eventSeq - 1;
   app.notice = '';
   app.paused = false;
   app.lastFeed = '';
   show('sea');
   snapCamera = true;
 }
+
+// ---------------------------------------------------------------- saving at sea
+let lastVoyageSave = 0;
+/** Keep the voyage in progress in storage, so closing the page at sea loses nothing. */
+function saveVoyageNow() {
+  const v = app.voyage;
+  if (!v || v.phase !== 'sea' || storageUnavailable) return;
+  try {
+    store.setItem(KEYS.voyage, JSON.stringify(snapshotVoyage(v)));
+    lastVoyageSave = performance.now();
+  } catch {
+    /* storage full or blocked: the voyage simply is not resumable */
+  }
+}
+function clearVoyageSave() {
+  try {
+    store.removeItem(KEYS.voyage);
+  } catch {
+    /* ignore */
+  }
+}
+window.addEventListener('pagehide', saveVoyageNow);
+document.addEventListener('visibilitychange', () => {
+  if (document.visibilityState === 'hidden') saveVoyageNow();
+});
 
 /** Dev-only scenario: one dense school close to the port for quick checks. */
 function nearScenario() {
@@ -256,7 +288,8 @@ function arriveAndSettle() {
     show('port');
     return;
   }
-  commit(res.profile, '水揚げ・精算');
+  const w = commit(res.profile, '水揚げ・精算');
+  if (w.ok) clearVoyageSave(); // landed and saved: the voyage in progress is no longer needed
   app.receipt = res.receipt;
   app.receiptHold = app.summary.hold;
   app.receiptLogs = app.summary.logs;
@@ -446,7 +479,7 @@ function importConfirm() {
   const r = resolveInterruptedVoyage(p);
   p = r.profile;
   commit(p, 'ファイルから読み込み');
-  app.notice = r.interrupted ? `読み込んだセーブには${r.interrupted.day}日目の航海中の記録がありました。海上の途中経過は保存されないため、この航海は中断扱いにしました。` : 'セーブを読み込みました。';
+  app.notice = r.interrupted ? `読み込んだセーブには${r.interrupted.day}日目の航海中の記録がありました。海上の途中経過はこのブラウザの中にしかないため、この航海は中断扱いにしました。` : 'セーブを読み込みました。';
   show('port');
 }
 
@@ -1241,6 +1274,8 @@ function frame(now) {
     }
     const n = consumeEvents(v);
     if (n) newLandings = [n];
+    // the voyage in progress is saved every few seconds (and when the page is hidden)
+    if (v.phase === 'sea' && now - lastVoyageSave > 5000) saveVoyageNow();
     updateHud(now);
     const trollSel = v.method === 'troll' || isTrolling(v);
     const llPlan = v.method === 'longline' && !isOperating(v) && !lineInWater(v);
@@ -1348,10 +1383,26 @@ async function boot() {
     app.saveStatus = { ok: true, at: res.savedAt, reason: '読み込み' };
     const notes = [];
     if (res.status === 'recovered') notes.push(`最新のセーブが読めなかったため、1つ前のセーブから復元しました（読めなかったデータは「${res.quarantineKey}」に残しています）。`);
-    const ir = resolveInterruptedVoyage(app.profile);
-    if (ir.interrupted) {
+    // a voyage left open: resume it at sea if its snapshot is there and intact
+    if (app.profile.activeVoyage) {
+      let raw = null;
+      try {
+        raw = store.getItem(KEYS.voyage);
+      } catch {
+        raw = null;
+      }
+      const rv = raw ? restoreVoyage(raw, app.profile.activeVoyage) : { ok: false, reason: '海上の保存データがありません' };
+      if (rv.ok) {
+        enterSea(rv.voyage);
+        toast('海上から再開しました');
+        rv.voyage.messages.push({ id: rv.voyage.msgSeq++, t: rv.voyage.world.time, text: '前回の続きから再開しました（海上で保存した時点から）。', level: 'info' });
+        $('loading').hidden = true;
+        finishBoot();
+        return;
+      }
+      const ir = resolveInterruptedVoyage(app.profile);
       commit(ir.profile, '中断した航海の整理');
-      notes.push(`${ir.interrupted.day}日目の航海は海上で中断されたため、漁獲・経費・経験は記録されていません（海上の途中保存は未実装）。`);
+      notes.push(`${ir.interrupted.day}日目の航海は再開できなかったため（${rv.reason}）、漁獲・経費・経験は記録されていません。`);
     }
     app.notice = notes.join(' ');
     show('port');
@@ -1359,6 +1410,10 @@ async function boot() {
     show('saveProblem');
   }
   $('loading').hidden = true;
+  finishBoot();
+}
+
+function finishBoot() {
   if (DEV) {
     const d = document.createElement('div');
     d.className = 'dev-banner';

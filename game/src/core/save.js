@@ -14,6 +14,8 @@ export const KEYS = {
   preMigrationPrefix: 'ryoshi-game:save:pre-migration:v',
   // the player's own progress, kept aside while they try the playtest save
   beforePlaytest: 'ryoshi-game:save:before-playtest',
+  // the voyage in progress (海上での途中保存); cleared once it is landed and settled
+  voyage: 'ryoshi-game:voyage:current',
 };
 
 export function memoryStorage(initial = {}) {

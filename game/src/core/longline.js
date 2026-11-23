@@ -145,9 +145,9 @@ export function createHaulOperation({ id, voyageId, level, set, fromEnd, startT,
     hauled: 0,
     phase: 'haul', // haul | unhook (the fisher stops hauling to unhook)
     timer: 0,
-    current: null,
+    current: null, // index (into set.hooks) of the hook being unhooked by the fisher
     hands,
-    crewJob: null, // with a deckhand: {hook, timer} — he unhooks while the hauling goes on
+    crewJob: null, // with a deckhand: {hook: index, timer} — he unhooks while the hauling goes on
     state: 'running',
     endReason: null,
     startT,
@@ -230,14 +230,14 @@ export function stepLonglineOperation(op, set, ctx, dt) {
   if (op.crewJob) {
     op.crewJob.timer -= dt;
     if (op.crewJob.timer <= 0) {
-      land(op.crewJob.hook);
+      land(set.hooks[op.crewJob.hook]);
       op.crewJob = null;
     }
   }
   if (op.phase === 'unhook') {
     op.timer -= dt;
     if (op.timer <= 0) {
-      land(op.current);
+      land(set.hooks[op.current]);
       op.current = null;
       op.phase = 'haul';
       op.pos += 1;
@@ -250,13 +250,13 @@ export function stepLonglineOperation(op, set, ctx, dt) {
       if (h.fish) {
         if ((op.hands || 1) > 1 && !op.crewJob) {
           // the deckhand takes it off; the line keeps coming
-          op.crewJob = { hook: h, timer: op.skill.unhook };
+          op.crewJob = { hook: op.order[op.pos], timer: op.skill.unhook };
           op.pos += 1;
           continue;
         }
         op.phase = 'unhook';
         op.timer = op.skill.unhook;
-        op.current = h;
+        op.current = op.order[op.pos];
         break;
       }
       op.pos += 1;

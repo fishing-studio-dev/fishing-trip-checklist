@@ -212,7 +212,7 @@ export function portScreen(app) {
       <div class="actions"><button type="button" class="btn" data-act="log">操業日誌</button><button type="button" class="btn" data-act="openSave">セーブ管理</button></div>
       <p class="note">${saveLine(app.saveStatus)}</p></div>
   </div>
-  <p class="note">保存は「帰港して水揚げしたとき」「装備を買ったとき」「港で仲間の話を聞いたとき」に自動で行います。海上の途中経過は保存されません（海上でページを閉じると、その航海は中断扱いになり漁獲は記録されません）。</p>
+  <p class="note">保存は「帰港して水揚げしたとき」「装備を買ったとき」「港で仲間の話を聞いたとき」に自動で行います。海上では数秒ごとに途中経過も保存するので、海上でページを閉じても、次に開いたときに海上から続けられます（別の端末やブラウザでは続けられず、その航海は中断扱いになります）。</p>
 </div>`;
 }
 

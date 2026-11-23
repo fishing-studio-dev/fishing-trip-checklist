@@ -277,16 +277,29 @@ const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
     await shot('12-logbook');
     await page.click('[data-act=toPort]');
 
-    // ---------------------------------------------------------------- closing at sea
+    // ---------------------------------------------------------------- closing at sea: resume (item 1)
     const preDay = (await st()).day;
     const preFunds = (await st()).funds;
     await page.click('[data-act=depart]');
     await waitFor((x) => x.screen === 'sea', 'at sea');
     await ff(1200);
+    await sleep(5600); // the voyage is saved every few seconds
+    const atSea = await st();
+    await page.reload();
+    await page.waitForFunction(() => window.__ryoshi && window.__ryoshi.state().screen === 'sea', null, { timeout: 20000 });
+    s = await st();
+    const dt = s.voyage.time - atSea.voyage.time;
+    check('closing the page at sea and opening it again continues the voyage at sea', s.voyage.id === atSea.voyage.id && dt >= -600 && dt <= 60 && s.day === preDay + 1, `t ${Math.round(atSea.voyage.time)} → ${Math.round(s.voyage.time)}`);
+    await shot('12b-resumed-at-sea');
+    // without the at-sea save (another browser, cleared data): interrupted, no reward, day consumed
+    await page.evaluate(() => {
+      window.__ryoshi.app.voyage = null; // stop saving from this page before removing it
+      localStorage.removeItem('ryoshi-game:voyage:current');
+    });
     await page.reload();
     await page.waitForSelector('#portChart');
     s = await st();
-    check('closing at sea: voyage interrupted, no reward, day consumed', s.day === preDay + 1 && s.funds === preFunds && /中断/.test(await page.textContent('#screen')));
+    check('without the at-sea save: voyage interrupted, no reward, day consumed', s.day === preDay + 1 && s.funds === preFunds && /中断/.test(await page.textContent('#screen')));
   } catch (e) {
     check('playthrough ran to the end', false, e.message);
     await shot('99-failure').catch(() => {});
