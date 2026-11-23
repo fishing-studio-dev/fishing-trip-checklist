@@ -75,6 +75,8 @@ export function schoolCenter(school, t) {
 /** Height of the school's core above the bottom (m) — game setting for マアジ. */
 export function offBottomAt(school, t) {
   if (school.fixedOffBottom != null) return school.fixedOffBottom;
+  // マダイ（本作設定）: hugs the bottom all day
+  if (school.species === 'madai') return Math.max(0.6, 1.1 + school.offBottomBias * 0.3 + 0.3 * noise1(school.noiseSeed, t / 1500));
   const h = t / 3600;
   // early morning higher in the water column, settling near the bottom by day
   const morning = 5.5 * Math.exp(-(((h - 5.5) / 1.4) ** 2));
@@ -116,6 +118,12 @@ export function activityAt(world, school, t) {
     const todS = 0.6 + 0.6 * Math.exp(-(((h - 6) / 1.5) ** 2)) + 0.35 * Math.exp(-(((h - 16.5) / 1.3) ** 2));
     const warm = Math.max(0.6, Math.min(1.2, 0.8 + (world.cond.waterTemp - 18.8) * 0.3));
     return Math.max(0.3, Math.min(1.4, todS * (0.8 + 0.25 * Math.min(1, sp / 0.22)) * warm * wobble));
+  }
+  if (school.species === 'madai') {
+    // マダイ（本作設定）: feeds when the tide moves, better in the morning and evening
+    const todM = 0.7 + 0.35 * Math.exp(-(((h - 6) / 1.6) ** 2)) + 0.3 * Math.exp(-(((h - 16.5) / 1.5) ** 2));
+    const tideM = 0.55 + 0.6 * Math.min(1, sp / 0.22);
+    return Math.max(0.3, Math.min(1.4, todM * tideM * wobble));
   }
   const temp = 1 - 0.06 * Math.abs(world.cond.waterTemp - 19);
   return Math.max(0.3, Math.min(1.4, tod * tide * temp * wobble));

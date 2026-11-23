@@ -158,7 +158,7 @@ export function stepTrollOperation(op, ctx, dt) {
         const sweep = Math.min(1.2, speed / op.gear.towSpeed);
         line.acc += m.biteRateMax * act * sweep * (d.total / (d.total + m.densityHalf)) * dt;
         if (line.acc >= 1) {
-          const room = ctx.capacityKg - ctx.hold.kg - trollInFlightKg(op);
+          const room = ctx.capacityKg - ctx.hold.kg - trollInFlightKg(op) - (ctx.reservedKg || 0);
           if (room < maxFishKg('sawara')) {
             line.acc = 1;
             op.stats.holdBlocked += 1;

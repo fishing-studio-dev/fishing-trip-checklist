@@ -135,7 +135,7 @@ table.data.spec th:first-child { white-space: normal; }
 .card.offer { margin-top: 10px; background: rgba(255,255,255,.03); }
 .toast { position: absolute; left: 50%; bottom: 120px; transform: translateX(-50%); background: var(--panel-solid); border: 1px solid var(--accent); border-radius: 10px; padding: 8px 14px; font-size: 14px; opacity: 0; transition: opacity .25s; pointer-events: none; z-index: 30; }
 .toast.show { opacity: 1; }
-.dev-banner { position: absolute; left: 8px; bottom: 4px; font-size: 11px; color: #ff9b9b; background: rgba(60,0,0,.6); padding: 2px 6px; border-radius: 4px; z-index: 40; }
+.dev-banner { pointer-events: none; position: absolute; left: 8px; bottom: 4px; font-size: 11px; color: #ff9b9b; background: rgba(60,0,0,.6); padding: 2px 6px; border-radius: 4px; z-index: 40; }
 
 @media (max-width: 900px) {
   .panel-head { font-size: 11px; padding: 4px 6px; }
@@ -236,3 +236,9 @@ textarea.paste { width: 100%; min-height: 90px; background: var(--panel-solid); 
 #hud.phone-land .op-big { gap: 4px; }
 #hud.phone-land ol.steps li { font-size: 10px; padding: 2px 0; }
 #hud.phone-port.op-mode .hud-msgs .msg:nth-last-child(n+2) { display: none; }
+
+/* M3: walking the deck, longline note */
+.walk-bar { position: absolute; left: 50%; transform: translateX(-50%); display: flex; flex-wrap: nowrap; overflow-x: auto; gap: 6px; max-width: calc(100vw - 16px); z-index: 6; padding: 5px 6px; background: var(--panel); border: 1px solid var(--line); border-radius: 10px; }
+.walk-bar .mini { font-size: 13px; padding: 5px 9px; min-height: 34px; white-space: nowrap; flex: 0 0 auto; }
+#hud.phone-port .walk-bar .mini, #hud.phone-land .walk-bar .mini { font-size: 12px; padding: 4px 7px; }
+.op-note.ll-note { color: #ffe0a0; }

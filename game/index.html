@@ -4,7 +4,7 @@
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
   <meta name="theme-color" content="#0b2236">
-  <title>漁師ゲーム（試作M1）</title>
+  <title>漁師ゲーム（試作M3）</title>
   <link rel="stylesheet" href="./styles.css">
   <script type="importmap">{ "imports": { "three": "./vendor/three/three.module.js" } }</script>
 </head>
@@ -25,8 +25,9 @@
     <button type="button" class="sounder-open" id="sounderOpen" data-act="sounder" hidden>魚探を開く（F）</button>
     <div class="hud-op panel" id="opPanel" hidden></div>
     <div class="hud-msgs" id="msgs" aria-live="polite"></div>
+    <div class="walk-bar" id="walkBar" hidden aria-label="持ち場へ移動"></div>
     <div class="hud-controls" id="controls">
-      <div class="ctl-group helm">
+      <div class="ctl-group helm" id="helmGroup">
         <button type="button" class="ctl" data-hold="left" aria-label="左へ舵（A）">◀ 舵</button>
         <div class="throttle">
           <button type="button" class="ctl" data-act="throttleUp" aria-label="増速（W）">増速 ▲</button>
@@ -35,11 +36,21 @@
         </div>
         <button type="button" class="ctl" data-hold="right" aria-label="右へ舵（D）">舵 ▶</button>
       </div>
+      <div class="ctl-group helm walkpad" id="walkPad" hidden>
+        <button type="button" class="ctl" data-hold="wl" aria-label="左を向く（A）">◀ 向き</button>
+        <div class="throttle">
+          <button type="button" class="ctl" data-hold="wf" aria-label="前へ歩く（W）">前へ ▲</button>
+          <span>甲板</span>
+          <button type="button" class="ctl" data-hold="wb" aria-label="後ろへ歩く（S）">後ろ ▼</button>
+        </div>
+        <button type="button" class="ctl" data-hold="wr" aria-label="右を向く（D）">向き ▶</button>
+      </div>
       <div class="ctl-group cmds">
         <button type="button" class="ctl primary" id="btnOp" data-act="op">操業開始<kbd>Space</kbd></button>
         <button type="button" class="ctl" id="btnRedrift" data-act="redrift">流し直し<kbd>R</kbd></button>
         <button type="button" class="ctl" id="btnMethod" data-act="method" title="漁法の切替（T）">一本釣り<kbd>T</kbd></button>
         <button type="button" class="ctl" id="btnClearRoute" data-act="clearRoute" hidden>航路を消す<kbd>X</kbd></button>
+        <button type="button" class="ctl" id="btnHaul" data-act="haul" hidden>揚げ縄<kbd>L</kbd></button>
         <button type="button" class="ctl" data-act="mark">印<kbd>M</kbd></button>
         <button type="button" class="ctl" id="btnPort" data-act="port">帰港<kbd>H</kbd></button>
       </div>

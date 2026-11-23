@@ -1,4 +1,4 @@
-// Tunable game data (M0 + M1).
+// Tunable game data (M0 + M1 + M2 + M3).
 // [仮設定] Every number here is a provisional game setting for the prototype,
 // not a real-world value or a user-confirmed balance. Keep balance edits here.
 
@@ -43,6 +43,7 @@ export const SPECIES = {
     },
     sizeOrder: ['s', 'm', 'l'],
     habit: 'bottom',
+    unit: '尾',
   },
   // サワラ（本作設定）: roams in loose schools in the upper/middle layer over
   // open water and slopes, arrives in waves (回遊) when the water is warm
@@ -57,7 +58,25 @@ export const SPECIES = {
     },
     sizeOrder: ['s', 'm', 'l'],
     habit: 'pelagic',
+    unit: '本',
     arriveTemp: 18.8, // ℃: waves only come in at or above this water temperature
+  },
+  // マダイ（本作設定）: scattered thinly over the bottom of the deeper flats and
+  // slope edges (30-60 m), hugging the bottom; stays in an area for many days;
+  // feeds when the tide moves, best in the morning and evening. Too sparse to
+  // fish well by drifting one rig — a longline laid across where they spread
+  // covers the ground. Prototype assumptions only.
+  madai: {
+    id: 'madai',
+    name: 'マダイ',
+    sizes: {
+      s: { label: '小ダイ', kg: 0.5, pricePerKg: 700 },
+      m: { label: 'マダイ', kg: 1.3, pricePerKg: 1000 },
+      l: { label: '大ダイ', kg: 3.0, pricePerKg: 1300 },
+    },
+    sizeOrder: ['s', 'm', 'l'],
+    habit: 'bottom',
+    unit: '枚',
   },
 };
 
@@ -92,6 +111,21 @@ export const METHODS = {
     haulBoatSpeed: 1.5, // m/s: the boat eases off while a fish is hauled
     goodRate: 4,
   },
+  longline: {
+    id: 'longline',
+    name: '延縄',
+    detail: '餌を付けた針を並べた長い縄を海底に沿って張り（投縄）、浸けておいて、あとで揚げる（揚げ縄）。浸けている間は他の漁ができる',
+    target: 'madai',
+    gearType: 'longline',
+    biteRateMax: 0.00015, // bites / s / baited hook at saturation (before activity and bait)
+    densityHalf: 0.0001, // fish / m^3
+    baitLife: 2400, // s: bait on a hook fades with soak time (exp(-t / baitLife))
+    soakEvery: 10, // s: hooks on the bottom are evaluated on this fixed game-time cadence
+    hookAboveBottom: 0.8, // m
+    minDepth: 12, // m: shallower than this the line can't be laid
+    nearBuoy: 70, // m: the boat must be this close to an end buoy to start hauling
+    goodRate: 5, // fish per hour of the whole set-soak-haul cycle regarded as 好調
+  },
 };
 
 // ---- Method progression (漁法の習熟) ----
@@ -115,6 +149,17 @@ export function skillForLevel(level) {
     unhook: lerp(8, 2.5), // s per fish: unhook and stow
     dropSpeed: lerp(1.2, 1.7), // m/s: paying out line
     handRetrieve: lerp(0.7, 1.1), // m/s: hand-hauling speed (hand reel only)
+  };
+}
+
+/** Longline handling skill by level: baiting/paying out, hauling and unhooking. */
+export function longlineSkillForLevel(level) {
+  const t = Math.max(0, Math.min(1, (level - 1) / (PROGRESSION.maxLevel - 1)));
+  const lerp = (a, b) => a + (b - a) * t;
+  return {
+    setSpeed: lerp(1.2, 2.4), // m/s: boat speed while the line is paid out (baiting keeps up)
+    haul: lerp(0.45, 0.9), // m/s: hand-hauling the line
+    unhook: lerp(12, 4), // s per fish
   };
 }
 
@@ -189,6 +234,15 @@ export const EQUIPMENT = {
     desc: '両舷に張り出すアウトリガーで仕掛けを4本、幅広く曳く。取り込みは一人なので、同時に掛かると順番になる。中型の船尾に付ける。',
     troll: { lines: 4, lineLength: 40, lureDepths: [3, 7, 2, 5], spread: [3, 3, 10, 10], towSpeed: 2.6 },
   },
+  longline_ll1: {
+    id: 'longline_ll1',
+    type: 'longline',
+    mount: 'longline',
+    name: '延縄具 LL-1（針100本）',
+    price: 12000,
+    desc: '餌付きの針100本を6m間隔に並べた縄（約600m）と、両端のブイ。海底に張って浸け、あとで揚げる。小型和船では船尾に付けるので、曳縄具とは付け替えになる。',
+    longline: { hooks: 100, spacing: 6, maxDepth: 120 },
+  },
 };
 
 /** Can this item be mounted on this boat slot? */
@@ -220,7 +274,7 @@ export const BOATS = {
     slots: [
       { id: 'helm_sounder', label: '操舵席（魚探）', accepts: ['sounder'] },
       { id: 'starboard_reel', label: '右舷 竿受け', accepts: ['reel'], rig: '右舷' },
-      { id: 'stern_troll', label: '船尾 曳縄竿受け', accepts: ['troll'], optional: true },
+      { id: 'stern_troll', label: '船尾（曳縄・延縄）', accepts: ['troll', 'longline'], optional: true },
     ],
   },
   cruiser_2: {
@@ -241,6 +295,7 @@ export const BOATS = {
       { id: 'starboard_reel', label: '右舷 竿受け', accepts: ['reel'], rig: '右舷' },
       { id: 'port_reel', label: '左舷 竿受け', accepts: ['reel'], optional: true, rig: '左舷' },
       { id: 'stern_troll', label: '船尾 曳縄（アウトリガー可）', accepts: ['troll', 'troll_l'], optional: true },
+      { id: 'deck_longline', label: '後部甲板（延縄）', accepts: ['longline'], optional: true },
     ],
   },
 };
@@ -283,6 +338,7 @@ export const TIDE_PERIOD = 44712; // 12.42 h
 export const PEERS = {
   gen: { id: 'gen', name: '源さん', method: 'handline', areas: ['北の瀬', '西の根'], desc: '一本釣り一筋。瀬と根のアジに詳しい。' },
   hamada: { id: 'hamada', name: '浜田さん', method: 'troll', areas: ['東の駆け上がり', '沖の平場'], desc: '曳縄でサワラを追う。沖と駆け上がりをよく走る。' },
+  matsu: { id: 'matsu', name: '松じい', method: 'longline', areas: ['沖の平場', '東の駆け上がり', '西の根'], desc: '延縄でマダイを獲る古株。序盤の数日は遠くの漁場に出ていて、7日目の朝から港で話が聞ける。', fromDay: 7 },
 };
 
 // Time bands used to tag logs and compare similar conditions.

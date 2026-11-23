@@ -6,7 +6,9 @@ import { loadSave, writeSave, exportSave, checkImport, memoryStorage, KEYS } fro
 import {
   createVoyage, advanceVoyage, isOperating, isTrolling, setHelm, setMethod, startOperation, stopOperation, redrift, returnToPort,
   nearPort, addManualMark, summarizeVoyage, canStartOperation, addRoutePoint, clearRoute, trollRouteFrom,
+  isLonglining, lineInWater, haulLongline, lineRouteFrom,
 } from '../core/voyage.js';
+import { longlineLabel, baitLeft, nearestBuoy, buoys } from '../core/longline.js';
 import { acquireBriefing, buildCandidates, planSummary } from '../core/knowledge.js';
 import { reportLine, peerName } from '../core/reports.js';
 import { trollLineLabel } from '../core/troll.js';
@@ -458,9 +460,16 @@ function cmd(name) {
     case 'throttleDown':
       r = setHelm(v, { throttle: v.boat.throttle - 1 });
       break;
-    case 'method':
-      r = setMethod(v, v.method === 'troll' ? 'handline' : 'troll');
-      if (r.ok) toast(`漁法：${METHODS[v.method].name}${v.method === 'troll' ? '（海図 C をクリックして航路、Spaceで開始）' : ''}`);
+    case 'method': {
+      const avail = availableMethods(v);
+      const next = avail[(avail.indexOf(v.method) + 1) % avail.length];
+      r = setMethod(v, next);
+      const tip = { troll: '（海図 C をクリックして航路、Spaceで開始）', longline: lineInWater(v) ? '（Spaceで揚げ縄）' : '（今の向きか海図 C で張る向きを決めて、Spaceで投縄）' };
+      if (r.ok) toast(`漁法：${METHODS[v.method].name}${tip[v.method] || ''}`);
+      break;
+    }
+    case 'haul':
+      r = haulLongline(v);
       break;
     case 'clearRoute':
       r = clearRoute(v);
@@ -473,7 +482,12 @@ function cmd(name) {
   updateHudStatic();
 }
 
-/** Click on the big chart while trolling is selected: add a route point there. */
+/** Methods whose gear is on board, in the order T cycles through them. */
+function availableMethods(v) {
+  return ['handline', ...(v.equip.troll ? ['troll'] : []), ...(v.equip.longline ? ['longline'] : [])];
+}
+
+/** Click on the big chart while trolling / longline is selected: add a route point there. */
 function onChartClick(ev) {
   const v = app.voyage;
   if (!v || app.screen !== 'sea') return;
@@ -481,15 +495,20 @@ function onChartClick(ev) {
     toggle('chart');
     return;
   }
-  if (v.method !== 'troll' && !isTrolling(v)) {
-    toast('航路の指定は曳縄のとき（T で切替）');
+  if (v.method === 'longline' && !isOperating(v)) {
+    if (lineInWater(v)) {
+      toast('縄は海に入っています。揚げてから次の縄の向きを決めます');
+      return;
+    }
+  } else if (v.method !== 'troll' && !isTrolling(v)) {
+    toast('航路の指定は曳縄・延縄のとき（T で切替）');
     return;
   }
   const c = $('chart');
   const rect = c.getBoundingClientRect();
   const w = chartToWorld(c, v, true, ev.clientX - rect.left, ev.clientY - rect.top);
   const r = addRoutePoint(v, w);
-  toast(r.ok ? `経由点${v.plannedRoute.length}を追加${isTrolling(v) ? '（航路を変更）' : ''}` : r.reason);
+  toast(r.ok ? `経由点${v.plannedRoute.length}を追加${isTrolling(v) ? '（航路を変更）' : v.method === 'longline' ? '（縄を張る向き）' : ''}` : r.reason);
 }
 
 function toggle(name) {
@@ -498,8 +517,9 @@ function toggle(name) {
   } else if (name === 'chart') {
     app.chartBig = !app.chartBig;
   } else if (name === 'view') {
-    app.view = app.view === 'helm' ? 'deck' : 'helm';
-    toast(app.view === 'deck' ? '作業視点' : '操船視点');
+    app.view = { helm: 'deck', deck: 'walk', walk: 'helm' }[app.view] || 'helm';
+    for (const k of ['wf', 'wb', 'wl', 'wr']) held[k] = false;
+    toast({ helm: '操船視点', deck: '作業視点', walk: '甲板を歩く（W/S 前後・A/D 向き、持ち場ボタンで移動）' }[app.view]);
   } else if (name === 'pause') {
     app.paused = !app.paused;
   } else if (name === 'speed') {
@@ -509,7 +529,7 @@ function toggle(name) {
 }
 
 // ---------------------------------------------------------------- input
-const held = { left: false, right: false };
+const held = { left: false, right: false, wf: false, wb: false, wl: false, wr: false };
 let lastRudderInput = 0;
 document.addEventListener('keydown', (e) => {
   if (e.target && (e.target.tagName === 'INPUT' || e.target.tagName === 'TEXTAREA')) return;
@@ -519,6 +539,13 @@ document.addEventListener('keydown', (e) => {
   }
   if (app.screen !== 'sea') return;
   const k = e.key.toLowerCase();
+  const walkKey = { w: 'wf', arrowup: 'wf', s: 'wb', arrowdown: 'wb', a: 'wl', arrowleft: 'wl', d: 'wr', arrowright: 'wr' }[k];
+  if (app.view === 'walk' && walkKey) {
+    held[walkKey] = true;
+    if (!e.repeat) walkBusyNote();
+    e.preventDefault();
+    return;
+  }
   if (k === 'a' || e.key === 'ArrowLeft') held.left = true;
   else if (k === 'd' || e.key === 'ArrowRight') held.right = true;
   if (e.repeat) {
@@ -552,6 +579,9 @@ document.addEventListener('keydown', (e) => {
     case 'x':
       cmd('clearRoute');
       break;
+    case 'l':
+      cmd('haul');
+      break;
     case 'f':
       toggle('sounder');
       break;
@@ -578,18 +608,44 @@ document.addEventListener('keydown', (e) => {
 });
 document.addEventListener('keyup', (e) => {
   const k = e.key.toLowerCase();
+  const walkKey = { w: 'wf', arrowup: 'wf', s: 'wb', arrowdown: 'wb', a: 'wl', arrowleft: 'wl', d: 'wr', arrowright: 'wr' }[k];
+  if (walkKey) held[walkKey] = false;
   if (k === 'a' || e.key === 'ArrowLeft') held.left = false;
   else if (k === 'd' || e.key === 'ArrowRight') held.right = false;
 });
 window.addEventListener('blur', () => {
-  held.left = false;
-  held.right = false;
+  for (const key of Object.keys(held)) held[key] = false;
 });
+
+/** While an operation runs the fisher stays at his work; walking is for the free moments. */
+let walkNoteAt = 0;
+function walkBusyNote() {
+  const v = app.voyage;
+  if (!v || !isOperating(v) || performance.now() - walkNoteAt < 4000) return;
+  walkNoteAt = performance.now();
+  toast('作業中は持ち場で作業しています（甲板を歩けるのは操業していないとき）');
+}
+
+function walkTo(name) {
+  const v = app.voyage;
+  if (!v || !scene) return;
+  if (isOperating(v)) {
+    walkNoteAt = 0;
+    walkBusyNote();
+    return;
+  }
+  if (app.view !== 'walk') {
+    app.view = 'walk';
+    updateHudStatic();
+  }
+  scene.walkTo(name);
+}
 
 document.addEventListener('pointerdown', (e) => {
   const b = e.target.closest('[data-hold]');
   if (!b) return;
   held[b.dataset.hold] = true;
+  if (b.dataset.hold.startsWith('w')) walkBusyNote();
   try {
     b.setPointerCapture?.(e.pointerId); // keep receiving pointerup even if the finger slides off
   } catch {
@@ -723,6 +779,9 @@ document.addEventListener('click', (e) => {
     case 'closeModal':
       modal(null);
       break;
+    case 'walkTo':
+      walkTo(b.dataset.station);
+      break;
     case 'sounder':
     case 'chart':
     case 'view':
@@ -829,24 +888,41 @@ function updateHudStatic() {
   const model = BOATS[v.modelId];
   $('throttleLabel').textContent = model.throttleNames[v.boat.throttle];
   const op = $('btnOp');
-  if (isOperating(v)) {
+  if (isLonglining(v)) {
+    op.innerHTML = v.op.kind === 'set' ? '投縄中…' : '揚げ縄中…';
+    op.disabled = true;
+  } else if (isOperating(v)) {
     op.innerHTML = v.op.state === 'stopping' ? '回収中…' : '回収・終了<kbd>Space</kbd>';
     op.disabled = v.op.state === 'stopping';
+  } else if (v.method === 'longline') {
+    op.innerHTML = lineInWater(v) ? '揚げ縄<kbd>Space</kbd>' : '投縄開始<kbd>Space</kbd>';
+    op.disabled = false;
   } else {
     op.innerHTML = '操業開始<kbd>Space</kbd>';
     op.disabled = false;
   }
   const troll = v.method === 'troll' || isTrolling(v);
-  $('btnRedrift').disabled = troll || !(isOperating(v) || v.logs.length);
+  const ll = v.method === 'longline' || isLonglining(v);
+  $('btnRedrift').disabled = troll || ll || !(isOperating(v) || v.logs.length);
   $('btnMethod').innerHTML = `${METHODS[isOperating(v) ? v.op.methodId : v.method].name}<kbd>T</kbd>`;
-  $('btnMethod').disabled = isOperating(v) || !v.equip.troll;
-  $('btnClearRoute').hidden = !troll;
+  $('btnMethod').disabled = isOperating(v) || availableMethods(v).length < 2;
+  $('btnClearRoute').hidden = !(troll || (ll && !lineInWater(v)));
+  const soaking = !!(v.line && v.line.state === 'soaking');
+  $('btnHaul').hidden = !soaking || (v.method === 'longline' && !isOperating(v));
+  $('btnHaul').innerHTML = v.autopilot && v.autopilot.kind === 'haul' ? 'ブイへ移動中…' : '揚げ縄<kbd>L</kbd>';
+  const walkView = app.view === 'walk';
+  $('helmGroup').hidden = walkView;
+  $('walkPad').hidden = !walkView;
+  $('walkBar').hidden = !walkView;
+  if (walkView && scene && !$('walkBar').childElementCount) {
+    $('walkBar').innerHTML = scene.stationNames().map((st) => `<button type="button" class="mini" data-act="walkTo" data-station="${S.esc(st.name)}">${S.esc(st.label)}</button>`).join('');
+  }
   const bp = $('btnPort');
   bp.innerHTML = v.autopilot && v.autopilot.kind === 'return' ? '帰港中…' : `${nearPort(v) ? '入港' : '帰港'}<kbd>H</kbd>`;
   $('btnSpeed').textContent = `早送り×${TIME.USER_MULT[app.speedIdx]}`;
   $('btnPause').textContent = app.paused ? '再開' : '停止';
   $('btnPause').classList.toggle('active', app.paused);
-  $('btnView').textContent = app.view === 'deck' ? '作業視点' : '操船視点';
+  $('btnView').textContent = { deck: '作業視点', walk: '甲板を歩く', helm: '操船視点' }[app.view];
   $('sounderPanel').hidden = !app.sounderOpen;
   $('sounderOpen').hidden = app.sounderOpen;
   $('chartPanel').classList.toggle('big', app.chartBig);
@@ -884,6 +960,7 @@ function layoutHud() {
   const ctl = $('controls').getBoundingClientRect();
   const rel = (y) => y - appR.top;
   const aboveControls = appR.bottom - ctl.top + 6;
+  $('walkBar').style.bottom = `${aboveControls}px`;
   const snd = ($('sounderPanel').hidden ? $('sounderOpen') : $('sounderPanel')).getBoundingClientRect();
   if (!land && !port) {
     if (opMode || !op.hidden) {
@@ -892,7 +969,9 @@ function layoutHud() {
     }
     return;
   }
-  msgs.style.bottom = `${aboveControls}px`;
+  const wb = $('walkBar');
+  const walkH = wb.hidden ? 0 : wb.getBoundingClientRect().height + 6;
+  msgs.style.bottom = `${aboveControls + walkH}px`;
   if (land) {
     if (opMode) {
       // operation panel: the whole left column; messages next to it
@@ -921,6 +1000,7 @@ function layoutHud() {
 const STEPS = {
   handline: [['prep', '準備'], ['drop', '投入'], ['fish', '誘い'], ['retrieve', '回収'], ['unhook', '取込']],
   troll: [['deploy', '出す'], ['tow', '曳く'], ['fight', '掛かり'], ['haul', '手繰り'], ['unhook', '取込']],
+  longline: [['set', '投縄'], ['soak', '浸け'], ['haul', '揚げ'], ['unhook', '取込']],
 };
 
 /** One row per rig: which step of the cycle it is in, and a short detail. */
@@ -972,14 +1052,29 @@ function updateHud(now) {
   const panel = $('opPanel');
   const clock = (secs) => `${Math.floor(secs / 60)}:${String(Math.floor(secs % 60)).padStart(2, '0')}`;
   const holdNum = [`魚倉`, v.hold.kg.toFixed(0), `/${v.capacityKg}kg`, v.hold.kg > v.capacityKg * 0.9 ? '満杯が近い' : ''];
-  if (isTrolling(v)) {
+  const lineNote = v.line && v.line.state === 'soaking' ? lineSoakNote(v) : '';
+  if (isLonglining(v)) {
+    const op = v.op;
+    const line = v.line;
+    const phase = op.kind === 'set' ? 'set' : op.phase === 'unhook' ? 'unhook' : 'haul';
+    const detail = longlineLabel(line, op, v.world.time);
+    const soakMin = line.setEndT != null ? Math.round(((line.haulStartT || v.world.time) - line.setEndT) / 60) : 0;
+    panel.hidden = false;
+    panel.innerHTML = `<div class="op-head"><span>延縄 <b>Lv${op.level}</b></span><span class="op-clock">${clock(v.world.time - op.startT)}</span></div>
+      ${stepRow('longline', { phase }, op.kind === 'set' ? '船尾' : '揚げ縄機', detail)}
+      ${op.kind === 'set'
+        ? bigNums([['張った針', line.hooks.length, `/${line.gear.hooks}本`, ''], ['速さ', (Math.abs(b.speed) * 1.944).toFixed(1), 'kt', ''], holdNum])
+        : bigNums([['この縄', op.landedCount, '枚', `${op.landedKg.toFixed(1)}kg`], ['浸け', soakMin, '分', `${op.pos}/${line.gear.hooks}本揚げた`], holdNum])}
+      <div class="op-note">${op.kind === 'set' ? '決めた向きに沿って、餌を付けた針を6m間隔で海底に張っています。' : '縄に沿って進みながら揚げています。掛かっていたマダイは1枚ずつ取り込みます。'}</div>
+      <div class="feed">${S.esc(app.lastFeed)}</div>`;
+  } else if (isTrolling(v)) {
     const op = v.op;
     const pace = recentPace(op, v.world.time, 1800);
     panel.hidden = false;
     panel.innerHTML = `<div class="op-head"><span>曳縄 <b>Lv${op.level}</b></span><span class="op-clock">${clock(v.world.time - op.startT)}</span></div>
       ${op.lines.map((l, i) => stepRow('troll', l, l.label || (l.side < 0 ? '左舷' : '右舷') + (op.lines.length > 2 ? `${Math.floor(i / 2) + 1}` : ''), trollLineLabel(l).replace(/^[^：]*：/, ''))).join('')}
       ${bigNums([['この曳縄', op.landedCount, '本', `${op.landedKg.toFixed(1)}kg`], ['直近30分', pace.n, '本', ''], holdNum])}
-      <div class="op-note">航路：経由点${op.route.points.length - 1}・${op.route.dir > 0 ? '往路' : '復路'}${op.route.changes ? `（変更${op.route.changes}回）` : ''}・${(Math.abs(b.speed) * 1.944).toFixed(1)}kt</div>
+      <div class="op-note">航路：経由点${op.route.points.length - 1}・${op.route.dir > 0 ? '往路' : '復路'}${op.route.changes ? `（変更${op.route.changes}回）` : ''}・${(Math.abs(b.speed) * 1.944).toFixed(1)}kt</div>${lineNote}
       <div class="feed">${S.esc(app.lastFeed)}</div>`;
   } else if (isOperating(v)) {
     const op = v.op;
@@ -989,16 +1084,27 @@ function updateHud(now) {
     panel.innerHTML = `<div class="op-head"><span>一本釣り <b>Lv${op.level}</b></span><span class="op-clock">${clock(v.world.time - op.startT)}</span></div>
       ${op.lines.map((l, i) => stepRow('handline', l, l.label || (i === 0 ? '右舷' : '左舷'), linePhaseLabel(l))).join('')}
       ${bigNums([['この流し', op.landedCount, '尾', `${op.landedKg.toFixed(1)}kg`], ['直近10分', pace.perMin.toFixed(1), '尾/分', `${pace.n}尾`], holdNum])}
-      <div class="op-note">タナ ${line.tana != null ? `${line.tana.toFixed(0)}m（${line.tanaSource === 'echo' ? '魚探の反応に合わせる' : '底から少し上'}）` : '—'}・${sog > 0.03 ? `${compass8(b.vx, b.vy)}へ${(sog * 1.944).toFixed(1)}ktで流れている` : 'ほぼ流れていない'}</div>
+      <div class="op-note">タナ ${line.tana != null ? `${line.tana.toFixed(0)}m（${line.tanaSource === 'echo' ? '魚探の反応に合わせる' : '底から少し上'}）` : '—'}・${sog > 0.03 ? `${compass8(b.vx, b.vy)}へ${(sog * 1.944).toFixed(1)}ktで流れている` : 'ほぼ流れていない'}</div>${lineNote}
       <div class="feed">${S.esc(app.lastFeed)}</div>`;
+  } else if (v.method === 'longline' && !lineInWater(v)) {
+    const rt = lineRouteFrom(v);
+    panel.hidden = false;
+    panel.innerHTML = `<h3>延縄の準備（針${v.equip.longline.hooks}本・約${(v.equip.longline.hooks - 1) * v.equip.longline.spacing}m）</h3>
+      <div class="row"><span>張る向き</span><span>${rt.ok ? (rt.planned ? `経由点${v.plannedRoute.length}（海図で指定）` : '今の向きにまっすぐ') : '張れない'}</span></div>
+      <div class="row"><span>水深</span><span>${(v.obs.cols.length ? v.obs.cols[v.obs.cols.length - 1].bottom : 0).toFixed(0)}m（${METHODS.longline.minDepth}m以上に張る）</span></div>
+      <div class="feed">${rt.ok ? 'Spaceで投縄開始（張る間は自動で進みます）。海図（C）で向きを指定できます' : S.esc(rt.reason)}</div>`;
+  } else if (lineNote && !v.logs.length) {
+    panel.hidden = false;
+    panel.innerHTML = `<h3>延縄を浸けています</h3>${lineNote}<div class="feed">浸けている間は自由に動けます（他の漁もできます）。</div>`;
   } else if (v.logs.length) {
     const l = v.logs[v.logs.length - 1];
+    const u = SPECIES[l.species || 'aji'].unit;
     panel.hidden = false;
-    panel.innerHTML = `<h3>前回の流し #${v.logs.length}</h3>
+    panel.innerHTML = `<h3>前回の${l.methodId === 'longline' ? '縄' : '流し'} #${v.logs.length}</h3>
       <div class="row"><span>${fmtClock(l.startT)}〜 ${S.esc(l.area)}</span><span>${Math.round(l.durationS / 60)}分</span></div>
-      <div class="row"><span>漁獲</span><span>${l.count}尾・${l.kg.toFixed(1)}kg</span></div>
-      <div class="row"><span>この航海の合計</span><span>${v.hold.count}尾・${v.hold.kg.toFixed(1)}kg</span></div>
-      <div class="feed">${canStartOperation(v).ok ? (v.method === 'troll' ? 'Spaceで曳縄を開始できます' : '停船中：Spaceで操業開始できます') : ''}</div>`;
+      <div class="row"><span>漁獲</span><span>${l.count}${u}・${l.kg.toFixed(1)}kg</span></div>
+      <div class="row"><span>この航海の合計</span><span>${v.hold.count}匹・${v.hold.kg.toFixed(1)}kg</span></div>${lineNote}
+      <div class="feed">${canStartOperation(v).ok ? ({ troll: 'Spaceで曳縄を開始できます', longline: lineInWater(v) ? 'Spaceで揚げ縄' : 'Spaceで投縄できます' }[v.method] || '停船中：Spaceで操業開始できます') : ''}</div>`;
   } else if (v.method === 'troll') {
     const rt = trollRouteFrom(v);
     panel.hidden = false;
@@ -1017,6 +1123,14 @@ function updateHud(now) {
     box.innerHTML = recent.map((m) => `<div class="msg ${m.level}"><span class="t">${fmtClock(m.t)}</span>${S.esc(m.text)}</div>`).join('');
   }
   layoutHud();
+}
+
+/** One line about the soaking longline (shown whatever else is going on). */
+function lineSoakNote(v) {
+  const line = v.line;
+  const b = nearestBuoy(line, v.boat.x, v.boat.y);
+  const bait = Math.round(baitLeft(line, v.world.time) * 100);
+  return `<div class="op-note ll-note">延縄：${S.esc(longlineLabel(line, null, v.world.time))}・餌の残り目安${bait}%・ブイまで${Math.round(b.dist)}m（揚げ縄 L）</div>`;
 }
 
 function consumeEvents(v) {
@@ -1048,7 +1162,7 @@ function frame(now) {
   let newLandings = [];
   if (app.screen === 'sea' && v) {
     // rudder from held keys / buttons
-    const rIn = (held.right ? 1 : 0) - (held.left ? 1 : 0);
+    const rIn = app.view === 'walk' ? 0 : (held.right ? 1 : 0) - (held.left ? 1 : 0);
     if (rIn !== lastRudderInput) {
       if (rIn !== 0 || !v.autopilot) {
         const r = setHelm(v, { rudder: rIn });
@@ -1065,16 +1179,23 @@ function frame(now) {
     if (n) newLandings = [n];
     updateHud(now);
     const trollSel = v.method === 'troll' || isTrolling(v);
+    const llPlan = v.method === 'longline' && !isOperating(v) && !lineInWater(v);
     let route = null;
     if (isTrolling(v)) route = { points: v.op.route.points, live: true };
     else if (v.method === 'troll') {
       const rt = trollRouteFrom(v);
       if (rt.ok) route = { points: rt.points, live: false };
+    } else if (llPlan) {
+      const rt = lineRouteFrom(v);
+      if (rt.ok) route = { points: rt.points, live: false, color: 'rgba(255,198,92,0.9)' };
     }
-    const hint = trollSel ? (app.chartBig ? 'クリックで曳縄の経由点を追加（最大6）・Xで消去' : '曳縄：クリックで海図を拡大して航路を指定') : '';
+    let hint = '';
+    if (trollSel) hint = app.chartBig ? 'クリックで曳縄の経由点を追加（最大6）・Xで消去' : '曳縄：クリックで海図を拡大して航路を指定';
+    else if (llPlan) hint = app.chartBig ? 'クリックで縄を張る向き（経由点）を指定・Xで消去' : '延縄：クリックで海図を拡大して張る向きを指定';
     const reps = chartReports([...app.profile.knowledge.reports, ...v.heard], v.day);
-    drawChart($('chart'), staticMap, v, { big: app.chartBig, dev: DEV, reports: reps, route, hint });
-    if (app.sounderOpen) sounderView.draw(v.obs, { lines: isOperating(v) ? v.op.lines : null, waterTemp: v.world.cond.waterTemp });
+    const showLine = v.line && v.line.state !== 'aboard' ? v.line : null;
+    drawChart($('chart'), staticMap, v, { big: app.chartBig, dev: DEV, reports: reps, route, hint, line: showLine, lineLabel: showLine ? longlineLabel(showLine, v.op, v.world.time) : '' });
+    if (app.sounderOpen) sounderView.draw(v.obs, { lines: isOperating(v) && v.op.lines ? v.op.lines : null, waterTemp: v.world.cond.waterTemp });
     if (v.phase === 'docked') arriveAndSettle();
   }
   if (scene) {
@@ -1088,6 +1209,15 @@ function frame(now) {
       : { starboard: itemAt('starboard_reel'), port: itemAt('port_reel') };
     const worker = (lines) => lines.find((l, i) => (v.op.worker === i));
     const busy = hl ? worker(hl) : tl ? worker(tl) : null;
+    const llOp = atSea && isLonglining(v) ? v.op : null;
+    let station = 'helm';
+    if (hl) station = (busy || hl[0]).label === '左舷' ? 'port' : 'starboard';
+    else if (tl) station = 'stern';
+    else if (llOp) station = llOp.kind === 'set' ? 'stern' : 'hauler';
+    let working = busy ? ({ haul: 'retrieve', fight: 'retrieve', deploy: 'unhook' }[busy.phase] || busy.phase) : null;
+    if (llOp) working = llOp.kind === 'set' ? 'prep' : llOp.phase === 'unhook' ? 'unhook' : 'retrieve';
+    const lineBuoys = atSea && v.line && v.line.state !== 'aboard' ? buoys(v.line).filter((bu, i) => i === 0 || v.line.state !== 'setting') : null;
+    const longlineId = atSea ? v.equip.longlineId : Object.values(slots).map((x) => x && x.itemId).find((id) => id && EQUIPMENT[id].type === 'longline') || null;
     scene.render({
       mode: atSea ? 'sea' : 'port',
       boat: atSea ? v.boat : { x: PORT.dock.x, y: PORT.dock.y + 20, heading: 0, speed: 0, vx: 0, vy: 0 },
@@ -1095,11 +1225,16 @@ function frame(now) {
       windSpeed: atSea ? v.world.cond.windSpeed : 3,
       boatModel: atSea ? v.modelId : app.profile ? app.profile.boat.model : 'skiff_1',
       reels,
-      trollId: atSea ? v.equip.trollId : itemAt('stern_troll'),
+      trollId: atSea ? v.equip.trollId : Object.values(slots).map((x) => x && x.itemId).find((id) => id && EQUIPMENT[id].type === 'troll') || null,
       hlLines: hl ? hl.map((l) => ({ station: l.label === '左舷' ? 'port' : 'starboard', active: ['drop', 'fish', 'adjust', 'retrieve'].includes(l.phase), depth: l.depth })) : null,
       trollLines: tl ? tl.map((l) => ({ active: l.phase === 'tow' || l.phase === 'fight' || (l.phase === 'haul'), offset: l.offset != null ? l.offset : l.side * 3, len: l.phase === 'haul' ? l.haulLeft : 40 })) : null,
-      working: busy ? ({ haul: 'retrieve', fight: 'retrieve', deploy: 'unhook' }[busy.phase] || busy.phase) : null,
-      view: app.view,
+      working,
+      longlineId,
+      buoys: lineBuoys,
+      llMode: llOp ? llOp.kind : null,
+      station,
+      walkInput: atSea && app.view === 'walk' && !isOperating(v) ? { f: held.wf, b: held.wb, l: held.wl, r: held.wr } : null,
+      view: atSea ? app.view : 'helm',
       realTime,
       realDt,
       snapCamera,
@@ -1155,12 +1290,13 @@ function devApi() {
       const v = app.voyage;
       return {
         screen: app.screen,
+        view: app.view,
         funds: app.profile && app.profile.funds,
         day: app.profile && app.profile.day,
         level: app.profile && levelFromXp(app.profile.methods.handline.xp),
         xp: app.profile && app.profile.methods.handline.xp,
         reel: app.profile && app.profile.boat.slots.starboard_reel.itemId,
-        troll: app.profile && app.profile.boat.slots.stern_troll ? app.profile.boat.slots.stern_troll.itemId : null,
+        troll: app.profile ? Object.values(app.profile.boat.slots).map((x) => x && x.itemId).find((id) => id && EQUIPMENT[id].type === 'troll') || null : null,
         trollXp: app.profile && app.profile.methods.troll.xp,
         boatModel: app.profile && app.profile.boat.model,
         boatUid: app.profile && app.profile.boat.uid,
@@ -1187,7 +1323,8 @@ function devApi() {
           route: isTrolling(v) ? v.op.route.points : v.plannedRoute,
           phase: v.phase,
           boatModel: v.modelId,
-          opLines: v.op ? v.op.lines.map((l) => ({ label: l.label || (l.side < 0 ? '左舷' : '右舷'), phase: l.phase, waiting: !!l.waiting })) : null,
+          opLines: v.op && v.op.lines ? v.op.lines.map((l) => ({ label: l.label || (l.side < 0 ? '左舷' : '右舷'), phase: l.phase, waiting: !!l.waiting })) : null,
+          line: v.line ? { state: v.line.state, hooks: v.line.hooks.length, buoys: buoys(v.line) } : null,
           worker: v.op ? v.op.worker : null,
           pings: v.obs.pingCount,
           schools: v.world.schools.map((s) => ({ id: s.id, counts: { ...s.counts } })),

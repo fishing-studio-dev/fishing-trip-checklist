@@ -25,6 +25,13 @@ export const SAWARA_ZONES = [
   { id: 'kita_oki', area: '北の瀬', x: 2050, y: 2700, spread: 240 },
 ];
 
+// Bottoms where マダイ spread thinly for many days (game setting).
+export const MADAI_GROUNDS = [
+  { id: 'hira', area: '沖の平場', x: 1150, y: 1900, spread: 300, weight: 0.85 },
+  { id: 'kake', area: '東の駆け上がり', x: 2470, y: 1250, spread: 220, weight: 0.8 },
+  { id: 'nishi', area: '西の根', x: 820, y: 1520, spread: 150, weight: 0.6 },
+];
+
 const habIndex = (id) => HABITATS.findIndex((h) => h.id === id);
 const zoneIndex = (id) => SAWARA_ZONES.findIndex((z) => z.id === id);
 
@@ -115,6 +122,59 @@ export function sawaraSchool(seed, d, zoneId, n, k) {
   };
 }
 
+/** Long procedural stay of マダイ on a ground covering day d. */
+function madaiEpisode(seed, gi, d) {
+  let start = 0;
+  for (let i = 0; i < 2000; i++) {
+    const len = 4 + Math.floor(hashFloat(seed, gi, i, 401) * 7);
+    if (d < start + len) return { i, present: hashFloat(seed, gi, i, 402) < MADAI_GROUNDS[gi].weight, last: d === start + len - 1 };
+    start += len;
+  }
+  return { i: 0, present: false, last: false };
+}
+
+/** School spec for the マダイ spread over a ground on day d. */
+export function madaiSchool(seed, d, groundId, n, ep) {
+  const gi = MADAI_GROUNDS.findIndex((g) => g.id === groundId);
+  const g = MADAI_GROUNDS[gi];
+  const r = (k) => hashFloat(seed, gi, ep, k, 7);
+  const day = (k) => hashFloat(seed, gi, d, k, 8);
+  const ax = g.x + (r(1) - 0.5) * g.spread + (day(2) - 0.5) * 80;
+  const ay = g.y + (r(3) - 0.5) * g.spread + (day(4) - 0.5) * 80;
+  const ang = day(5) * Math.PI * 2;
+  const run = 80 + day(6) * 180;
+  return {
+    id: `D${d}-madai-${groundId}`,
+    species: 'madai',
+    habitat: groundId,
+    area: g.area,
+    a: { x: ax, y: ay },
+    b: { x: ax + Math.sin(ang) * run, y: ay + Math.cos(ang) * run },
+    moveStart: (6 + day(7) * 2) * 3600,
+    moveEnd: (13 + day(8) * 3) * 3600,
+    orbitR: 30 + day(9) * 50,
+    orbitPeriod: (60 + day(10) * 60) * 60,
+    orbitPhase: day(11) * Math.PI * 2,
+    sigmaH: 120 + r(12) * 70,
+    sigmaZ: 1.6 + r(13) * 0.6,
+    offBottomBias: r(14) - 0.5,
+    noiseSeed: Math.floor(day(15) * 1e9),
+    counts: splitCounts(n, 0.15, 0.3),
+  };
+}
+
+function madaiSchools(seed, d) {
+  const out = [];
+  MADAI_GROUNDS.forEach((g, gi) => {
+    const ep = madaiEpisode(seed, gi, d);
+    if (!ep.present) return;
+    let n = (70 + hashFloat(seed, gi, ep.i, 403) * 90) * (0.9 + 0.2 * hashFloat(seed, gi, d, 404));
+    if (ep.last) n *= 0.6;
+    out.push(madaiSchool(seed, d, g.id, Math.round(n), ep.i));
+  });
+  return out;
+}
+
 /** All school specs for day d. */
 export function dayPlan(seed, d) {
   const script = SEASON_SCRIPT[d];
@@ -122,6 +182,7 @@ export function dayPlan(seed, d) {
   if (script) {
     for (const [hid, n, big] of script.aji) schools.push(ajiSchool(seed, d, hid, n, big, 'script'));
     script.sawara.forEach(([zid, n], k) => schools.push(sawaraSchool(seed, d, zid, n, k)));
+    schools.push(...madaiSchools(seed, d));
     return { schools, scripted: true };
   }
   HABITATS.forEach((h, hi) => {
@@ -143,5 +204,6 @@ export function dayPlan(seed, d) {
       schools.push(sawaraSchool(seed, d, zone.id, n, j));
     }
   }
+  schools.push(...madaiSchools(seed, d));
   return { schools, scripted: false };
 }

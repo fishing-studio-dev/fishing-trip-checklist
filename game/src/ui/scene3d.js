@@ -66,6 +66,12 @@ export function createScene(canvas) {
   for (const l of hlLines) scene.add(l.obj);
   const trollLines = [buildLine(), buildLine(), buildLine(), buildLine()];
   for (const l of trollLines) scene.add(l.obj);
+  const llLine = buildLine(0xffc65c);
+  scene.add(llLine.obj);
+  const buoyObjs = [buildBuoy(), buildBuoy()];
+  for (const b of buoyObjs) scene.add(b);
+  // walking on deck (a view of the boat; never touches the simulation)
+  const walk = { on: false, x: 0, z: 0, yaw: 0 };
   const wake = buildWake(scene);
   const fishFx = [];
   const fishGeo = new THREE.SphereGeometry(1, 10, 8);
@@ -91,7 +97,10 @@ export function createScene(canvas) {
    * state: { mode: 'port'|'sea', boat:{x,y,heading,speed}, gameTime, windSpeed,
    *          boatModel, reels:{starboard,port}, trollId,
    *          hlLines:[{station, active, depth}], trollLines:[{active, offset, len}],
-   *          working, view: 'helm'|'deck', realTime, newLandings }
+   *          working, view: 'helm'|'deck'|'walk', realTime, newLandings,
+   *          longlineId, buoys:[{x,y}], llMode:'set'|'haul'|null,
+   *          station: where the fisher works now ('helm'|'starboard'|'port'|'stern'|'hauler'),
+   *          walkInput: {f,b,l,r} (walk view, when the fisher is free) }
    */
   function render(st) {
     const rt = st.realTime;
@@ -114,6 +123,7 @@ export function createScene(canvas) {
     }
     boat.setReels(st.reels || { starboard: 'reel_hand' });
     boat.setTroll(st.trollId || null);
+    boat.setLongline(st.longlineId || null);
 
     const amp = Math.min(1.6, 0.35 + (st.windSpeed || 3) / 6);
     // boat pose
@@ -134,6 +144,14 @@ export function createScene(canvas) {
     if (st.mode === 'port') {
       wantPos = new THREE.Vector3(bx + 34, 14, bz - 46);
       wantLook = new THREE.Vector3(bx - 10, 2, bz + 10);
+    } else if (st.view === 'walk') {
+      // third person, behind the fisher walking the deck
+      const wp = boat.workerWorld();
+      const yaw = st.boat.heading + boat.workerYaw();
+      const back = new THREE.Vector3(-Math.sin(yaw), 0, Math.cos(yaw));
+      // high enough to clear the wheelhouse roof, looking down past the fisher's shoulder
+      wantPos = wp.clone().add(back.multiplyScalar(2.4)).add(new THREE.Vector3(0, 3.4, 0));
+      wantLook = wp.clone().add(new THREE.Vector3(Math.sin(yaw) * 2.2, 0.2, -Math.cos(yaw) * 2.2));
     } else if (st.view === 'deck') {
       // over the fisherman's shoulder at the starboard station, looking at the line
       const dc = boat.cam.deck;
@@ -143,13 +161,13 @@ export function createScene(canvas) {
       wantPos = g.position.clone().add(fwd.clone().multiplyScalar(-boat.cam.chase)).add(new THREE.Vector3(0, 10.5, 0)).add(right.clone().multiplyScalar(4));
       wantLook = g.position.clone().add(fwd.clone().multiplyScalar(22));
     }
-    const k = st.snapCamera ? 1 : Math.min(1, (st.realDt || 0.016) * (st.view === 'deck' ? 10 : 4));
+    const k = st.snapCamera ? 1 : Math.min(1, (st.realDt || 0.016) * (st.view === 'deck' || st.view === 'walk' ? 10 : 4));
     camPos.lerp(wantPos, k);
     camLook.lerp(wantLook, k);
     camera.position.copy(camPos);
     camera.lookAt(camLook);
     skyDome.position.copy(camPos);
-    const fov = st.mode === 'sea' && st.view === 'deck' ? 68 : 55;
+    const fov = st.mode === 'sea' && (st.view === 'deck' || st.view === 'walk') ? 68 : 55;
     if (camera.fov !== fov) {
       camera.fov = fov;
       camera.updateProjectionMatrix();
@@ -164,6 +182,25 @@ export function createScene(canvas) {
     seaGeo.attributes.position.needsUpdate = true;
     seaGeo.computeVertexNormals();
     far.position.set(camPos.x, -0.8, camPos.z);
+
+    // the fisher: walks to where the work is, or where the player walks him
+    const dtR = Math.min(0.1, st.realDt || 0.016);
+    if (st.view === 'walk' && st.walkInput && st.mode === 'sea') {
+      if (!walk.on) {
+        const w0 = boat.workerLocal();
+        Object.assign(walk, { on: true, x: w0.x, z: w0.z, yaw: boat.workerYaw() });
+      }
+      const wi = st.walkInput;
+      walk.yaw += ((wi.r ? 1 : 0) - (wi.l ? 1 : 0)) * 2.2 * dtR;
+      const step = ((wi.f ? 1 : 0) - (wi.b ? 1 : 0)) * 1.6 * dtR;
+      const c = boat.clampDeck(walk.x + Math.sin(walk.yaw) * step, walk.z - Math.cos(walk.yaw) * step);
+      walk.x = c.x;
+      walk.z = c.z;
+      boat.placeWorker(walk.x, walk.z, walk.yaw, step !== 0 ? rt : null);
+    } else {
+      walk.on = false;
+      boat.moveWorkerTo(st.mode === 'sea' ? st.station || 'helm' : 'helm', dtR, rt);
+    }
 
     // handlines from the rod tips straight down
     g.updateMatrixWorld(true);
@@ -199,6 +236,30 @@ export function createScene(canvas) {
       p[3] = end.x; p[4] = waveH(end.x, end.z, rt, amp); p[5] = end.z;
       tlObj.obj.geometry.attributes.position.needsUpdate = true;
       tlObj.obj.visible = true;
+    });
+
+    // the longline: paid out over the stern while setting, coming up at the hauler while hauling
+    if (st.llMode && boat.llTip) {
+      const from = (st.llMode === 'haul' ? boat.haulerTip : boat.llTip).getWorldPosition(new THREE.Vector3());
+      const end = st.llMode === 'haul'
+        ? g.position.clone().add(fwd.clone().multiplyScalar(6)).add(right.clone().multiplyScalar(4))
+        : g.position.clone().add(fwd.clone().multiplyScalar(-14));
+      const p = llLine.obj.geometry.attributes.position.array;
+      p[0] = from.x; p[1] = from.y; p[2] = from.z;
+      p[3] = end.x; p[4] = waveH(end.x, end.z, rt, amp) - 0.3; p[5] = end.z;
+      llLine.obj.geometry.attributes.position.needsUpdate = true;
+      llLine.obj.visible = true;
+    } else llLine.obj.visible = false;
+    boat.spinHauler(st.llMode === 'haul' && st.working !== 'unhook' ? rt : null);
+    buoyObjs.forEach((b, i) => {
+      const spec = st.mode === 'sea' && st.buoys && st.buoys[i];
+      b.visible = !!spec;
+      if (!spec) return;
+      const x = spec.x;
+      const z = -spec.y;
+      b.position.set(x, waveH(x, z, rt, amp) * 0.9, z);
+      b.rotation.z = 0.12 * Math.sin(rt * 1.4 + i);
+      b.rotation.x = 0.1 * Math.sin(rt * 1.1 + i * 2);
     });
 
     // landed fish: arc from the water by the rod to the fish box
@@ -241,7 +302,37 @@ export function createScene(canvas) {
   }
 
   resize();
-  return { render, resize, renderer };
+  return {
+    render,
+    resize,
+    renderer,
+    /** Walk view shortcut: put the fisher at a work position (view only). */
+    walkTo(name) {
+      const p = boat.stationPos(name);
+      if (!p) return false;
+      Object.assign(walk, { on: true, x: p.x, z: p.z, yaw: p.yaw });
+      boat.placeWorker(p.x, p.z, p.yaw, null);
+      return true;
+    },
+    stationNames() {
+      return boat.stationNames();
+    },
+  };
+}
+
+function buildBuoy() {
+  const g = new THREE.Group();
+  const flt = new THREE.Mesh(new THREE.SphereGeometry(0.45, 12, 10), new THREE.MeshStandardMaterial({ color: 0xff7a1a, roughness: 0.5 }));
+  flt.position.y = 0.15;
+  g.add(flt);
+  const pole = new THREE.Mesh(new THREE.CylinderGeometry(0.035, 0.04, 2.6), new THREE.MeshStandardMaterial({ color: 0x333333 }));
+  pole.position.y = 1.4;
+  g.add(pole);
+  const flag = new THREE.Mesh(new THREE.PlaneGeometry(0.6, 0.4), new THREE.MeshStandardMaterial({ color: 0xffd400, side: THREE.DoubleSide }));
+  flag.position.set(0.3, 2.45, 0);
+  g.add(flag);
+  g.visible = false;
+  return g;
 }
 
 function buildLand() {
@@ -391,6 +482,36 @@ function buildBoat(modelId = 'skiff_1') {
     stations[name] = { rod, tip, handReel, eReel, side };
   }
 
+  // longline gear: tubs of baited line at the stern and a small line hauler (揚げ縄機) forward on starboard
+  const llGroup = new THREE.Group();
+  const tubMat = new THREE.MeshStandardMaterial({ color: 0x2f6b4f, roughness: 0.8 });
+  for (const [x, z] of [[0.55 * sx, 3.05 * sz], [0.55 * sx, 2.55 * sz]]) {
+    const tub = new THREE.Mesh(new THREE.CylinderGeometry(0.28, 0.24, 0.32, 14), tubMat);
+    tub.position.set(x, deckY + 0.17, z);
+    llGroup.add(tub);
+    const coil = new THREE.Mesh(new THREE.TorusGeometry(0.17, 0.04, 6, 16), new THREE.MeshStandardMaterial({ color: 0xffc65c }));
+    coil.rotation.x = Math.PI / 2;
+    coil.position.set(x, deckY + 0.34, z);
+    llGroup.add(coil);
+  }
+  const llTip = new THREE.Object3D();
+  llTip.position.set(0.3 * sx, deckY + 0.4, 3.6 * sz);
+  llGroup.add(llTip);
+  const hauler = new THREE.Group();
+  hauler.position.set((H.beam - 0.22) * 1, deckY + 0.55, -1.8 * sz);
+  const hBase = new THREE.Mesh(new THREE.BoxGeometry(0.22, 0.5, 0.22), new THREE.MeshStandardMaterial({ color: 0x5a6670, metalness: 0.4 }));
+  hauler.add(hBase);
+  const hDrum = new THREE.Mesh(new THREE.CylinderGeometry(0.2, 0.2, 0.1, 16), new THREE.MeshStandardMaterial({ color: 0xd0d4d6, metalness: 0.7 }));
+  hDrum.rotation.z = Math.PI / 2;
+  hDrum.position.set(0.12, 0.3, 0);
+  hauler.add(hDrum);
+  const haulerTip = new THREE.Object3D();
+  haulerTip.position.set(0.25, 0.3, 0);
+  hauler.add(haulerTip);
+  llGroup.add(hauler);
+  llGroup.visible = false;
+  group.add(llGroup);
+
   // the fisherman (player character) between the stations
   const worker = new THREE.Group();
   const body = new THREE.Mesh(new THREE.CylinderGeometry(0.2, 0.25, 0.95, 10), new THREE.MeshStandardMaterial({ color: 0x3e6b8c }));
@@ -405,8 +526,86 @@ function buildBoat(modelId = 'skiff_1') {
   const arm = new THREE.Mesh(new THREE.BoxGeometry(0.1, 0.1, 0.55), new THREE.MeshStandardMaterial({ color: 0x3e6b8c }));
   arm.position.set(0.18, 0.7, -0.22);
   worker.add(arm);
+  worker.rotation.order = 'YXZ'; // yaw first, then the working lean
   worker.position.set(modelId === 'cruiser_2' ? 0.2 : 0.45, deckY, -0.55 * sz);
   group.add(worker);
+  // legs swing while walking
+  const legMat = new THREE.MeshStandardMaterial({ color: 0x2b3f52 });
+  const legs = [-1, 1].map((sd) => {
+    const leg = new THREE.Mesh(new THREE.BoxGeometry(0.11, 0.42, 0.12), legMat);
+    leg.position.set(sd * 0.09, 0.05, 0);
+    worker.add(leg);
+    return leg;
+  });
+
+  // where the fisher stands for each job (boat-local x, z; yaw 0 = facing the bow)
+  const [hw0, , hd0] = H.house;
+  const posts = {
+    helm: { x: 0, z: H.houseZ + hd0 / 2 + 0.4, yaw: 0, label: '操舵席' },
+    starboard: { x: H.beam - 0.62, z: -0.55 * sz, yaw: Math.PI / 2, label: '右舷' },
+    port: { x: -(H.beam - 0.62), z: -0.55 * sz, yaw: -Math.PI / 2, label: '左舷' },
+    stern: { x: 0, z: 3.15 * sz, yaw: Math.PI, label: '船尾' },
+    hauler: { x: H.beam - 0.62, z: -1.55 * sz, yaw: Math.PI / 2, label: '揚げ縄機' },
+    fishbox: { x: 0.5, z: 2.25 * sz, yaw: -Math.PI * 0.7, label: '魚倉' },
+  };
+  const hullW = [[-3.75, 1.05], [-0.5, 1.15], [1.9, 0.85], [3.25, 0.35], [3.75, 0]]; // (shape y, half-width)
+  function halfWidthAt(z) {
+    const y = -z / sz;
+    for (let i = 0; i < hullW.length - 1; i++) {
+      const [y0, w0] = hullW[i];
+      const [y1, w1] = hullW[i + 1];
+      if (y >= y0 && y <= y1) return (w0 + ((w1 - w0) * (y - y0)) / (y1 - y0)) * sx;
+    }
+    return 0;
+  }
+  /** Keep a walking position on the deck and out of the wheelhouse. */
+  function clampDeck(x, z) {
+    const zz = Math.max(-3.0 * sz, Math.min(3.55 * sz, z));
+    const lim = Math.max(0.1, halfWidthAt(zz) * 0.92 - 0.28);
+    let xx = Math.max(-lim, Math.min(lim, x));
+    const hx = hw0 / 2 + 0.28;
+    const z0 = H.houseZ - hd0 / 2 - 0.28;
+    const z1 = H.houseZ + hd0 / 2 + 0.28;
+    if (Math.abs(xx) < hx && zz > z0 && zz < z1) {
+      // pushed out of the house to the nearest side
+      const dx = hx - Math.abs(xx);
+      const dzF = zz - z0;
+      const dzA = z1 - zz;
+      const m = Math.min(dx, dzF, dzA);
+      if (m === dx) xx = Math.sign(xx || 1) * hx;
+      else if (m === dzF) return { x: xx, z: z0 };
+      else return { x: xx, z: z1 };
+    }
+    return { x: xx, z: zz };
+  }
+  let wYaw = 0;
+  function placeWorker(x, z, yaw, walkingAt) {
+    worker.position.x = x;
+    worker.position.z = z;
+    wYaw = yaw;
+    worker.rotation.y = -yaw;
+    const sw = walkingAt != null ? 0.5 * Math.sin(walkingAt * 9) : 0;
+    legs[0].rotation.x = sw;
+    legs[1].rotation.x = -sw;
+  }
+  /** Walk toward a work position at a walking pace (a view of where the work is). */
+  function moveWorkerTo(name, dt, rt) {
+    const p = posts[name] || posts.helm;
+    const dx = p.x - worker.position.x;
+    const dz = p.z - worker.position.z;
+    const d = Math.hypot(dx, dz);
+    if (d < 0.03) {
+      placeWorker(p.x, p.z, p.yaw, null);
+      return;
+    }
+    const stepLen = Math.min(d, 1.4 * dt);
+    // go round the wheelhouse rather than through it
+    const nx = worker.position.x + (dx / d) * stepLen;
+    const nz = worker.position.z + (dz / d) * stepLen;
+    let c = clampDeck(nx, nz);
+    if (Math.hypot(c.x - nx, c.z - nz) > 1e-3) c = clampDeck(worker.position.x + Math.sign(p.x - worker.position.x || 1) * stepLen, worker.position.z + (dz / d) * stepLen * 0.3);
+    placeWorker(c.x, c.z, Math.atan2(dx, -dz), rt);
+  }
 
   // stern trolling rods, plus outriggers for the four-line gear
   const trollGroup = new THREE.Group();
@@ -449,6 +648,12 @@ function buildBoat(modelId = 'skiff_1') {
     trollGroup.visible = !!itemId;
     outGroup.visible = itemId === 'troll_tr2';
   }
+  function setLongline(itemId) {
+    llGroup.visible = !!itemId;
+  }
+  function spinHauler(rt) {
+    if (rt != null) hDrum.rotation.x = rt * 6;
+  }
   /** reels: { starboard: itemId|null, port: itemId|null } */
   function setReels(reels) {
     for (const [name, st] of Object.entries(stations)) {
@@ -472,13 +677,38 @@ function buildBoat(modelId = 'skiff_1') {
   }
   setTroll(null);
   setReels({ starboard: 'reel_hand' });
-  return { group, modelId, stations, fishBox, setReels, animateWorker, setTroll, trollTips, cam: H };
+  const stationList = Object.entries(posts)
+    .filter(([name]) => name !== 'port' || stations.port)
+    .map(([name, p]) => ({ name, label: p.label }));
+  return {
+    group,
+    modelId,
+    stations,
+    fishBox,
+    setReels,
+    animateWorker,
+    setTroll,
+    setLongline,
+    spinHauler,
+    trollTips,
+    llTip,
+    haulerTip,
+    cam: H,
+    clampDeck,
+    placeWorker,
+    moveWorkerTo,
+    workerLocal: () => ({ x: worker.position.x, z: worker.position.z }),
+    workerYaw: () => wYaw,
+    workerWorld: () => worker.getWorldPosition(new THREE.Vector3()),
+    stationPos: (name) => (posts[name] && (name !== 'port' || stations.port) ? { ...posts[name] } : null),
+    stationNames: () => stationList,
+  };
 }
 
-function buildLine() {
+function buildLine(color = 0xf5f5f5) {
   const geo = new THREE.BufferGeometry();
   geo.setAttribute('position', new THREE.BufferAttribute(new Float32Array(6), 3));
-  const obj = new THREE.Line(geo, new THREE.LineBasicMaterial({ color: 0xf5f5f5, transparent: true, opacity: 0.85 }));
+  const obj = new THREE.Line(geo, new THREE.LineBasicMaterial({ color, transparent: true, opacity: 0.85 }));
   obj.frustumCulled = false;
   obj.visible = false;
   return { obj };

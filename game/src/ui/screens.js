@@ -1,15 +1,15 @@
 // HTML for the menu screens. Pure functions of state -> markup.
-import { EQUIPMENT, BOATS, ECONOMY, METHODS, SPECIES, PEERS, skillForLevel, trollSkillForLevel, TIME, fits, sellValue } from '../core/data.js';
+import { EQUIPMENT, BOATS, ECONOMY, METHODS, SPECIES, PEERS, skillForLevel, trollSkillForLevel, longlineSkillForLevel, TIME, fits, sellValue } from '../core/data.js';
 import { xpProgress, cycleEstimate, trollCycleEstimate, levelFromXp } from '../core/progress.js';
 import { purchasePreview, boatOffers, planBoatPurchase } from '../core/economy.js';
 import { forecastText, fmtClock } from '../core/sea.js';
 import { reportLine, KIND_LABEL } from '../core/reports.js';
-import { similarLogs, todaysReports, timeBandLabel, logTags, opRate, gearOfType } from '../core/knowledge.js';
+import { similarLogs, todaysReports, timeBandLabel, logTags, opRate, gearOfType, logGearItems } from '../core/knowledge.js';
 
 export const esc = (s) => String(s ?? '').replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
 const money = (n) => `${Math.round(n).toLocaleString('ja-JP')}${ECONOMY.currency}`;
 const sec = (s) => `${Math.round(s)}秒`;
-const unitOf = (methodId) => (methodId === 'troll' ? '本' : '尾');
+const unitOf = (methodId) => SPECIES[METHODS[methodId || 'handline'].target].unit;
 
 function saveLine(st) {
   if (!st) return '<span class="note">まだ保存していません</span>';
@@ -37,7 +37,7 @@ const labelHtml = (l) => `<span class="tag ${LABEL_CLASS[l] || ''}">${esc(l)}</s
 
 export function titleScreen({ storageNote }) {
   return `<div class="sheet">
-  <h1>漁師ゲーム <span class="tag">試作 M2</span></h1>
+  <h1>漁師ゲーム <span class="tag">試作 M3</span></h1>
   <p class="lead">仲間の話・自分の日誌・今日の海況から狙いを決め、魚探を頼りに自分で群れとポイントを探す。操業は自動。漁を重ねて手際が上がり、設備で同じ時間により多く獲れるようになる——その核を確かめる試作です。</p>
   <div class="grid">
     <div class="card"><h2>この試作でできること</h2><ul>
@@ -46,9 +46,11 @@ export function titleScreen({ storageNote }) {
       <li>曳縄（サワラ）：航路を決めれば航行と仕掛けの作業は自動（曳縄具の購入が必要）</li>
       <li>漁法ごとのレベル（手際）、電動リール・曳縄具、帰港で自動保存</li>
       <li>船の買い替え（新艇・中古）、装備の付け替え・倉庫・売却、2本仕掛け</li>
+      <li>延縄（マダイ）：縄を張って浸け、その間に他の漁もできる。揚げる時機は自分で決める（延縄具の購入が必要）</li>
+      <li>甲板を歩いて見て回る（視点切替 V）。持ち場へのショートカット</li>
     </ul></div>
     <div class="card"><h2>まだ無いもの</h2><ul>
-      <li>甲板の自由移動、追加の漁法・魚種（M3予定）</li>
+      <li>追加の海域・季節の移り変わり、乗組員を雇う仕組み</li>
       <li>海上での途中保存（帰港時のみ保存）</li>
     </ul></div>
   </div>
@@ -143,14 +145,19 @@ function skillCard(profile) {
   const sk = skillForLevel(hx.level);
   const cyc = cycleEstimate(hx.level, reel.id, 30);
   const ts = trollSkillForLevel(tx.level);
-  const tc = trollCycleEstimate(tx.level, troll ? troll.troll : undefined);
+  const tc = trollCycleEstimate(tx.level, troll && troll.troll ? troll.troll : undefined);
+  const lx = xpProgress(profile.methods.longline.xp);
+  const ls = longlineSkillForLevel(lx.level);
+  const lineM = 99 * 6;
   const bar = (x) => `<div class="bar"><i style="width:${x.max ? 100 : Math.round((x.into / x.need) * 100)}%"></i></div><p class="note" style="margin:0 0 8px">${x.max ? '最大レベル' : `次のレベルまで ${x.need - x.into} 経験`}</p>`;
   return `<div class="card"><h2>漁師の腕前</h2>
     <dl class="kv"><dt>${esc(METHODS.handline.name)}</dt><dd><b>Lv ${hx.level}</b></dd></dl>${bar(hx)}
     <dl class="kv"><dt>餌付け・準備</dt><dd>${sk.rebait.toFixed(1)}秒</dd><dt>取り込み</dt><dd>${sk.unhook.toFixed(1)}秒/尾</dd><dt>巻上げ</dt><dd>${cyc.retrieveSpeed.toFixed(2)}m/秒</dd><dt>手返し目安</dt><dd>${sec(cyc.total)}/回</dd></dl>
     <dl class="kv" style="margin-top:10px"><dt>${esc(METHODS.troll.name)}</dt><dd><b>Lv ${tx.level}</b></dd></dl>${bar(tx)}
     <dl class="kv"><dt>仕掛けの投入</dt><dd>${ts.deploy.toFixed(0)}秒</dd><dt>やり取り</dt><dd>${ts.fight.toFixed(0)}秒</dd><dt>手繰り</dt><dd>${ts.haul.toFixed(2)}m/秒</dd><dt>1本あたりの手返し</dt><dd>${sec(tc.total)}</dd></dl>
-    <p class="note">手返し目安：一本釣りは水深30mで3本針すべてに掛かったとき、曳縄は1本掛かってから仕掛けを出し直すまで。魚が少ない場所では待ち時間が増え、腕前の差は小さくなります。</p></div>`;
+    <dl class="kv" style="margin-top:10px"><dt>${esc(METHODS.longline.name)}</dt><dd><b>Lv ${lx.level}</b></dd></dl>${bar(lx)}
+    <dl class="kv"><dt>投縄（約${lineM}m）</dt><dd>${sec(lineM / ls.setSpeed)}</dd><dt>揚げ縄（魚なし）</dt><dd>${sec(lineM / ls.haul)}</dd><dt>取り込み</dt><dd>${ls.unhook.toFixed(0)}秒/枚</dd></dl>
+    <p class="note">手返し目安：一本釣りは水深30mで3本針すべてに掛かったとき、曳縄は1本掛かってから仕掛けを出し直すまで。延縄は張る・揚げるのが速いほど、同じ時間に多く浸けられます。魚が少ない場所では腕前の差は小さくなります。</p></div>`;
 }
 
 function boatCard(profile) {
@@ -158,7 +165,8 @@ function boatCard(profile) {
   const slots = model.slots.map((sl) => `<dt>${esc(sl.label)}</dt><dd>${esc(itemOf(profile, sl.id) ? itemOf(profile, sl.id).name : '（空き）')}</dd>`).join('');
   const next = [];
   if (!gearOfType(profile, 'reel').includes('reel_electric')) next.push(EQUIPMENT.reel_electric);
-  if (!itemOf(profile, 'stern_troll')) next.push(EQUIPMENT.troll_tr1);
+  if (!gearOfType(profile, 'troll').length) next.push(EQUIPMENT.troll_tr1);
+  if (!gearOfType(profile, 'longline').length) next.push(EQUIPMENT.longline_ll1);
   const goal = next.map((it) => `<p class="note">次の設備：${esc(it.name)}（${money(it.price)}）${profile.funds >= it.price ? '<span class="tag good">購入可能</span>' : ` まであと${money(it.price - profile.funds)}`}</p>`).join('');
   const cheapest = boatOffers(profile).map((o) => o.price - model.tradeIn).sort((a, b) => a - b)[0];
   const boatGoal = cheapest != null ? `<p class="note">船の買い替え：下取り後 ${money(cheapest)} から${profile.funds >= cheapest ? '<span class="tag good">検討できる</span>' : ''}</p>` : '';
@@ -200,7 +208,7 @@ export function portScreen(app) {
 
 export function receiptScreen(app) {
   const r = app.receipt;
-  const rows = r.lines.map((l) => `<tr><td>${esc(SPECIES[l.species].name)}／${esc(l.label)}</td><td class="num">${l.count}尾</td><td class="num">${l.kg.toFixed(2)}kg</td><td class="num">${l.unitPrice}${ECONOMY.currency}/kg</td><td class="num">${money(l.amount)}</td></tr>`).join('') || '<tr><td colspan="5" class="note">水揚げなし</td></tr>';
+  const rows = r.lines.map((l) => `<tr><td>${esc(SPECIES[l.species].name)}／${esc(l.label)}</td><td class="num">${l.count}${SPECIES[l.species].unit}</td><td class="num">${l.kg.toFixed(2)}kg</td><td class="num">${l.unitPrice}${ECONOMY.currency}/kg</td><td class="num">${money(l.amount)}</td></tr>`).join('') || '<tr><td colspan="5" class="note">水揚げなし</td></tr>';
   const xpBlocks = Object.entries(r.xp)
     .map(([mId, x]) => {
       const lvUp = x.levelAfter > x.levelBefore;
@@ -221,6 +229,13 @@ export function receiptScreen(app) {
         <tr><td>仕掛けの投入</td><td class="num">${a.deploy.toFixed(0)}秒</td><td class="num up">${b.deploy.toFixed(0)}秒</td></tr>
         <tr><td>やり取り</td><td class="num">${a.fight.toFixed(0)}秒</td><td class="num up">${b.fight.toFixed(0)}秒</td></tr>
         <tr><td>1本あたりの手返し</td><td class="num">${sec(trollCycleEstimate(x.levelBefore).total)}</td><td class="num up">${sec(trollCycleEstimate(x.levelAfter).total)}</td></tr></table>`;
+      } else if (lvUp && mId === 'longline') {
+        const a = longlineSkillForLevel(x.levelBefore);
+        const b = longlineSkillForLevel(x.levelAfter);
+        growth = `<table class="data"><tr><th>項目</th><th class="num">前</th><th class="num">後</th></tr>
+        <tr><td>投縄（約594m）</td><td class="num">${sec(594 / a.setSpeed)}</td><td class="num up">${sec(594 / b.setSpeed)}</td></tr>
+        <tr><td>揚げ縄（魚なし）</td><td class="num">${sec(594 / a.haul)}</td><td class="num up">${sec(594 / b.haul)}</td></tr>
+        <tr><td>取り込み</td><td class="num">${a.unhook.toFixed(0)}秒/枚</td><td class="num up">${b.unhook.toFixed(0)}秒/枚</td></tr></table>`;
       }
       return `<h3>${esc(METHODS[mId].name)}</h3><dl class="kv"><dt>漁獲 ${x.fish}${unitOf(mId)}</dt><dd>+${x.fishXp}</dd><dt>操業時間（上限あり）</dt><dd>+${x.opXp}</dd></dl>
       <div class="bar"><i style="width:${after.max ? 100 : Math.round((after.into / after.need) * 100)}%"></i></div>
@@ -241,7 +256,7 @@ export function receiptScreen(app) {
   <p class="lead">魚倉の魚を一括で水揚げし、出漁経費を精算しました（自動）。${r.heardCount ? `海上で無線で聞いた話${r.heardCount}件も記録しました。` : ''}</p>
   <div class="grid">
     ${planHtml}
-    <div class="card full"><h2>売上</h2><div class="table-wrap"><table class="data"><tr><th>区分</th><th class="num">尾数</th><th class="num">重量</th><th class="num">単価</th><th class="num">金額</th></tr>${rows}
+    <div class="card full"><h2>売上</h2><div class="table-wrap"><table class="data"><tr><th>区分</th><th class="num">数</th><th class="num">重量</th><th class="num">単価</th><th class="num">金額</th></tr>${rows}
       <tr><th colspan="4">売上合計</th><th class="num">${money(r.sales)}</th></tr></table></div>
       <dl class="kv" style="margin-top:8px"><dt>氷・餌（定額）</dt><dd>−${money(r.costs.base)}</dd><dt>燃料（${(r.distanceM / 1000).toFixed(1)}km）</dt><dd>−${money(r.costs.fuel)}</dd>
       ${r.costs.waived ? `<dt>経費の免除</dt><dd>+${money(r.costs.waived)}</dd>` : ''}
@@ -278,6 +293,15 @@ function trollEffect(item) {
   <tr><td>曳く速さ</td><td class="num">約${(t.towSpeed * 1.944).toFixed(0)}ノット</td></tr></table></div>`;
 }
 
+function longlineEffect(item) {
+  const l = item.longline;
+  return `<div class="table-wrap"><table class="data wrap"><tr><th>効果</th><th class="num">取り付け後</th></tr>
+  <tr><td>できる漁</td><td class="num up">延縄（マダイ）</td></tr>
+  <tr><td>針の数</td><td class="num">${l.hooks}本（${l.spacing}m間隔）</td></tr>
+  <tr><td>縄の長さ</td><td class="num">約${(l.hooks - 1) * l.spacing}m</td></tr>
+  <tr><td>張れる水深</td><td class="num">${METHODS.longline.minDepth}〜${l.maxDepth}m</td></tr></table></div>`;
+}
+
 function sounderEffect(cur, item) {
   const a = cur.sounder;
   const b = item.sounder;
@@ -307,7 +331,7 @@ export function equipScreen(app) {
       const offerHtml = offers
         .map((it) => {
           const pv = purchasePreview(p, it.id, slot.id);
-          const cmp = it.type === 'reel' ? reelCompare(level, cur ? cur.id : 'reel_hand', it.id) : it.type === 'troll' ? trollEffect(it) : it.type === 'sounder' && cur ? sounderEffect(cur, it) : '';
+          const cmp = it.type === 'reel' ? reelCompare(level, cur ? cur.id : 'reel_hand', it.id) : it.type === 'troll' ? trollEffect(it) : it.type === 'longline' ? longlineEffect(it) : it.type === 'sounder' && cur ? sounderEffect(cur, it) : '';
           return `<div class="card offer"><h2>${esc(it.name)} <span class="tag">${money(it.price)}</span></h2><p class="note">${esc(it.desc)}</p>${cmp}
           <dl class="kv" style="margin-top:8px"><dt>支払総額</dt><dd>${money(it.price)}</dd><dt>購入後の資金</dt><dd>${money(Math.max(0, pv.fundsAfter))}</dd><dt>外す装備</dt><dd>${cur ? `${esc(cur.name)} → 倉庫` : 'なし（空きの取付位置）'}</dd></dl>
           <div class="actions"><button type="button" class="btn primary" data-act="buy" data-item="${esc(it.id)}" data-slot="${esc(slot.id)}" ${pv.ok ? '' : 'disabled'}>購入して取り付ける</button>${pv.ok ? '' : `<span class="note">${esc(pv.reason)}</span>`}</div></div>`;
@@ -408,13 +432,13 @@ export function logScreen(app) {
   const f = app.logFilter || { method: '', area: '' };
   const areas = [...new Set(p.logs.map((l) => l.area))];
   const gearSig = (boat, items) => `${boat}:${items.join('+')}`;
-  const nowSig = (m) => gearSig(p.boat.model, gearOfType(p, m === 'troll' ? 'troll' : 'reel'));
+  const nowSig = (m) => gearSig(p.boat.model, gearOfType(p, METHODS[m].gearType));
   const logs = p.logs.filter((l) => (!f.method || (l.methodId || 'handline') === f.method) && (!f.area || l.area === f.area)).slice().reverse();
   const rows = logs
     .map((l) => {
       const m = l.methodId || 'handline';
       const g = logTags(l);
-      const thenItems = m === 'troll' ? [l.gear.troll].filter(Boolean) : l.gear.reels || [l.gear.reel].filter(Boolean);
+      const thenItems = logGearItems({ ...l, methodId: m });
       const thenBoat = l.gear.boat || 'skiff_1';
       const lvNow = levelFromXp(p.methods[m].xp);
       const marks = [];
@@ -422,7 +446,7 @@ export function logScreen(app) {
       if (Math.abs(lvNow - l.level) >= 2) marks.push(`当時Lv${l.level}`);
       return `<tr><td>${l.day}日目</td><td>${fmtClock(l.startT)}–${fmtClock(l.endT)}<div class="note">${esc(timeBandLabel(g.timeBand))}</div></td><td>${esc(METHODS[m].name)}</td><td>${esc(l.area)}</td><td class="num">${Math.round(l.durationS / 60)}分</td>
       <td class="num">${l.count === 0 ? '<span class="tag">この時間に漁獲なし</span>' : `${l.count}${unitOf(m)}`}</td><td class="num">${l.kg.toFixed(1)}kg</td><td class="num">${opRate(l).toFixed(0)}${unitOf(m)}/時</td>
-      <td class="num">${l.tana.min != null ? `${l.tana.min.toFixed(0)}–${l.tana.max.toFixed(0)}m` : '—'}</td><td class="num">${Math.round(l.sounder.echoRatio * 100)}%</td><td>${esc(l.conditions.tideName)}・風${esc(g.windBand)}・潮${l.conditions.current.speed.toFixed(2)}m/s</td>
+      <td class="num">${l.tana.min != null ? `${l.tana.min.toFixed(0)}–${l.tana.max.toFixed(0)}m` : '—'}${l.longline ? `<div class="note">浸け${l.longline.soakMin}分</div>` : ''}</td><td class="num">${Math.round(l.sounder.echoRatio * 100)}%</td><td>${esc(l.conditions.tideName)}・風${esc(g.windBand)}・潮${l.conditions.current.speed.toFixed(2)}m/s</td>
       <td>Lv${l.level}・${esc(BOATS[thenBoat] ? BOATS[thenBoat].name : thenBoat)}・${esc(thenItems.map((id) => (EQUIPMENT[id] ? EQUIPMENT[id].name : id)).join('＋') || '—')}${marks.map((x) => `<span class="tag warn">${esc(x)}</span>`).join('')}</td><td>${l.plan ? esc(l.plan.label) : '—'}</td><td>${esc(END_TEXT[l.endReason] || l.endReason)}</td></tr>`;
     })
     .join('');
@@ -459,7 +483,7 @@ export function saveScreen(app) {
     : '<button type="button" class="btn" data-act="export">セーブを書き出す（JSON）</button><button type="button" class="btn" data-act="copySave">文字列としてコピー</button>';
   return `<div class="sheet"><h1>セーブ管理</h1>
   <div class="grid"><div class="card"><h2>現在のセーブ</h2>
-    ${p ? `<dl class="kv"><dt>日数</dt><dd>${p.day}日目まで</dd><dt>資金</dt><dd>${money(p.funds)}</dd><dt>一本釣り</dt><dd>Lv ${levelFromXp(p.methods.handline.xp)}</dd><dt>曳縄</dt><dd>Lv ${levelFromXp(p.methods.troll.xp)}</dd><dt>操業記録</dt><dd>${p.logs.length}件</dd><dt>聞いた話</dt><dd>${p.knowledge.reports.length}件</dd><dt>保存回数</dt><dd>${app.revision}</dd></dl>` : '<p class="note">プロフィールがありません。</p>'}
+    ${p ? `<dl class="kv"><dt>日数</dt><dd>${p.day}日目まで</dd><dt>資金</dt><dd>${money(p.funds)}</dd><dt>一本釣り</dt><dd>Lv ${levelFromXp(p.methods.handline.xp)}</dd><dt>曳縄</dt><dd>Lv ${levelFromXp(p.methods.troll.xp)}</dd><dt>延縄</dt><dd>Lv ${levelFromXp(p.methods.longline.xp)}</dd><dt>操業記録</dt><dd>${p.logs.length}件</dd><dt>聞いた話</dt><dd>${p.knowledge.reports.length}件</dd><dt>保存回数</dt><dd>${app.revision}</dd></dl>` : '<p class="note">プロフィールがありません。</p>'}
     <p class="note">${saveLine(app.saveStatus)}</p>
     <p class="note">このブラウザの保存領域（localStorage）に保存しています。直前のセーブを1つバックアップとして残します。以前の版（M0）のセーブを読み込んだときは、元のデータも別に残しています。ブラウザのデータ消去で消えるため、大事な進行は書き出して保管してください。</p>
     ${app.hosted ? '<p class="note">この公開ページではファイルのダウンロードができないため、セーブは文字列としてコピーして保管してください（メモアプリなどに貼り付け）。</p>' : ''}
@@ -483,7 +507,9 @@ export function helpModal() {
   <li><b>R</b> 流し直し（一本釣り：回収→流し始めの地点へ自動で戻って再開）</li>
   <li><b>C</b> 海図の拡大。曳縄のときは拡大した海図をクリックすると航路の経由点を追加、<b>X</b> で航路を消去（操業中でも変更できます）</li>
   <li><b>H</b> 帰港（港まで移動補助。操船すると取り消し）</li>
-  <li><b>M</b> 海図に印、<b>F</b> 魚探の表示切替、<b>V</b> 視点切替、<b>1 / 2 / 3</b> 時間の早さ、<b>P</b> 一時停止</li>
+  <li><b>L</b> 揚げ縄（延縄：縄を浸けているとき。遠ければブイまで移動補助で向かってから揚げる）</li>
+  <li><b>M</b> 海図に印、<b>F</b> 魚探の表示切替、<b>V</b> 視点切替（操船 → 作業 → 甲板を歩く）、<b>1 / 2 / 3</b> 時間の早さ、<b>P</b> 一時停止</li>
+  <li><b>甲板を歩く</b>：W/S で前後、A/D で向き。画面の持ち場ボタン（操舵席・右舷・船尾・魚倉など）で移動。操業中は釣り人が持ち場で作業するので歩けません。歩いても海や漁獲は変わりません。</li>
   <li><b>スマホ</b>：画面下のボタンで同じ操作ができます。舵のボタンは押している間だけ効きます。曳縄の航路は、海図の「拡大」を押してから海図をタップ。</li></ul>
   <p class="note">探す・決めるのはあなた、作業は自動。一本釣りは魚探の反応の潮上で止まって流す。曳縄は群れがいそうな場所を通る航路を決める（自動航行は決めた航路を走るだけで、魚を探しに行くことはありません）。表示の切替で海や魚が変わることはありません。</p>
   <div class="actions"><button type="button" class="btn primary" data-act="closeModal">閉じる</button></div></div>`;

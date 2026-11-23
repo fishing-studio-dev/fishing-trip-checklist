@@ -101,6 +101,23 @@ async function layout(page) {
       for (const [a, b] of [['chart', 'sounder'], ['chart', 'top'], ['sounder', 'top'], ['controls', 'top'], ['controls', 'chart'], ['controls', 'sounder']]) if (overlap(ls[a], ls[b])) clashes.push(`${a}/${b}`);
       check(`${name}: HUD panels and controls don't overlap; controls on screen`, !clashes.length && ls.controls && ls.controls.bottom <= ls.vh + 1 && ls.scrollW <= ls.vw, clashes.join(', ') || `controls bottom ${ls.controls && Math.round(ls.controls.bottom)}/${ls.vh}`);
       await page.screenshot({ path: path.join(outDir, `${slug}-2-sea.png`) });
+      // walking the deck by touch: view button twice, the walk pad and the work-position bar
+      await page.tap('#btnView');
+      await page.tap('#btnView');
+      await sleep(300);
+      const wbox = await page.evaluate(() => {
+        const r = (id) => { const e = document.getElementById(id); if (!e || e.hidden) return null; const b = e.getBoundingClientRect(); return { left: b.left, top: b.top, right: b.right, bottom: b.bottom }; };
+        return { bar: r('walkBar'), pad: r('walkPad'), controls: r('controls'), vw: window.innerWidth, vh: window.innerHeight, view: window.__ryoshi.state().view };
+      });
+      const wb = page.locator('[data-hold=wf]');
+      await wb.dispatchEvent('pointerdown', { pointerId: 8, pointerType: 'touch', isPrimary: true, bubbles: true });
+      await sleep(600);
+      await wb.dispatchEvent('pointerup', { pointerId: 8, pointerType: 'touch', isPrimary: true, bubbles: true });
+      await page.tap('[data-act=walkTo][data-station=stern]');
+      await sleep(500);
+      check(`${name}: 甲板を歩く by touch: walk pad and work-position bar on screen, not covering the controls`, wbox.view === 'walk' && wbox.bar && wbox.pad && wbox.bar.left >= 0 && wbox.bar.right <= wbox.vw + 1 && wbox.bar.top >= 0 && !overlap(wbox.bar, wbox.controls), JSON.stringify(wbox));
+      await page.screenshot({ path: path.join(outDir, `${slug}-2b-walk.png`) });
+      await page.tap('#btnView');
       // run on out of the harbour (fishing is refused within 300 m of the dock), then stop with taps
       await page.evaluate(() => window.__ryoshi.fastForward(150));
       for (let i = 0; i < 4; i++) await page.tap('[data-act=throttleDown]');

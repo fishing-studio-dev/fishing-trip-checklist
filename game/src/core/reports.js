@@ -6,7 +6,7 @@
 // from observations (handover §7.2).
 import { PEERS, SPECIES, TIME, BRIEFING_T, METHODS } from './data.js';
 import { createWorld, schoolPose, schoolTotal, activityAt, offBottomAt } from './world.js';
-import { HABITATS, SAWARA_ZONES } from './season.js';
+import { HABITATS, SAWARA_ZONES, MADAI_GROUNDS } from './season.js';
 import { areaNameAt, fmtClock, makeDayConditions, forecastOf, tideClass, compass8, CHART_LABELS } from './sea.js';
 import { hashFloat } from './rng.js';
 
@@ -45,6 +45,7 @@ function sizeLabel(school) {
 
 function layerText(school, t, pose) {
   if (school.species === 'sawara') return `表層から${Math.max(1, Math.round(pose.z))}mくらい`;
+  if (school.species === 'madai') return '底べったり';
   return `底から${Math.max(1, Math.round(offBottomAt(school, t)))}mくらい`;
 }
 
@@ -149,6 +150,38 @@ function hamadaTrolling(seed, od, t0, idBase, stepS = 2700) {
   });
 }
 
+/** Which ground 松じい lays his line on, on day od (his own habit; not a fish lookup). */
+function matsuGround(seed, od) {
+  return MADAI_GROUNDS[Math.floor(hashFloat(seed, od, 501) * MADAI_GROUNDS.length)];
+}
+
+/** 松じい's longline on day od, hauled at time t: what it caught where it lay. */
+function matsuLongline(seed, od, t, idBase) {
+  const w = worldFor(seed, od);
+  const g = matsuGround(seed, od);
+  const originId = `O${od}-matsu-${idBase}`;
+  const hit = nearest(w, 'madai', g.x, g.y, t, 380);
+  if (!hit) {
+    return report({
+      originId, speaker: 'matsu', kind: 'none', species: 'madai', methodId: 'longline',
+      area: g.area, place: placeLabel(g.x, g.y), spot: roundPt(g), obsDay: od, obsT: t,
+      text: `${placeLabel(g.x, g.y)}に縄を入れたが、マダイは掛からなかった。`,
+      opinion: 'あそこからは離れたようだ。', opinionKind: '予想',
+    });
+  }
+  const act = activityAt(w, hit.school, t);
+  const count = Math.max(1, Math.min(15, Math.round((schoolTotal(hit.school) * act) / 14)));
+  const place = placeLabel(hit.pose.x, hit.pose.y);
+  return report({
+    originId, speaker: 'matsu', kind: 'catch', species: 'madai', methodId: 'longline',
+    area: hit.school.area, place, spot: roundPt(hit.pose), obsDay: od, obsT: t, count,
+    layer: '底べったり', sizeLabel: sizeLabel(hit.school),
+    text: `${place}に縄を入れて、マダイを${count}枚（${sizeLabel(hit.school)}）。`,
+    opinion: count >= 6 ? 'あの辺りの底にはしばらく居着いている。' : '数は薄い。広く散っているようだ。',
+    opinionKind: '予想',
+  });
+}
+
 /** Morning passes on the way out: sounder echo or surface signs (with an estimate, not a catch). */
 function morningPass(seed, d, who, x, y, t, label, idBase) {
   const w = worldFor(seed, d);
@@ -189,6 +222,13 @@ function rules(seed, d, hadSawara) {
   if (fc.windSpeed >= 6) {
     out.push(report({ originId: `O${d}-gen-rule-wind`, speaker: 'gen', kind: 'rule', methodId: 'handline', obsDay: d, obsT: BRIEFING_T, text: '今日みたいに風が強い日は、船が流されて瀬の上に留まりにくい。' }));
   }
+  if (d >= PEERS.matsu.fromDay) {
+    if (tideClass(fc.tideName) === '小潮系') {
+      out.push(report({ originId: `O${d}-matsu-rule-tide`, speaker: 'matsu', kind: 'rule', species: 'madai', methodId: 'longline', obsDay: d, obsT: BRIEFING_T, text: '潮の緩い日のマダイは、潮が動き出すころにならんと食わん。' }));
+    } else if (hashFloat(seed, d, 502) < 0.5) {
+      out.push(report({ originId: `O${d}-matsu-rule-soak`, speaker: 'matsu', kind: 'rule', species: 'madai', methodId: 'longline', obsDay: d, obsT: BRIEFING_T, text: '延縄は餌が持つうちに揚げるもんだ。浸けて1時間前後が目安だな。' }));
+    }
+  }
   if (!hadSawara && fc.waterTemp >= SPECIES.sawara.arriveTemp - 0.3) {
     out.push(report({ originId: `O${d}-hamada-rule-temp`, speaker: 'hamada', kind: 'rule', species: 'sawara', methodId: 'troll', obsDay: d, obsT: BRIEFING_T, text: `水温が${SPECIES.sawara.arriveTemp.toFixed(0)}℃近くまで上がってくると、サワラが沖に入ってくる。` }));
   }
@@ -204,6 +244,10 @@ export function briefingReports(seed, d) {
     out.push(genFishing(seed, d - 1, spot, tGen, 'y'));
     const tHam = (6 + hashFloat(seed, d, 302) * 0.8) * 3600;
     out.push(hamadaTrolling(seed, d - 1, tHam, 'y'));
+  }
+  if (d >= PEERS.matsu.fromDay) {
+    const tMat = round10min((9 + hashFloat(seed, d, 503) * 1.5) * 3600);
+    out.push(matsuLongline(seed, d - 1, tMat, 'y'));
   }
   // this morning: 源さん passes another reef, 浜田さん the slope on the way out
   const reefs = REEF_HABITATS.filter((id) => id !== genSpot(seed, d));
@@ -233,6 +277,10 @@ export function radioReports(seed, d) {
   const spot = genSpot(seed, d + 1); // today's choice: where he did well yesterday
   const tG = round10min((6.8 + hashFloat(seed, d, 312) * 1.2) * 3600);
   out.push(genFishing(seed, d, spot, tG, 'r'));
+  if (d >= PEERS.matsu.fromDay) {
+    const tM = round10min((7.6 + hashFloat(seed, d, 504) * 1.0) * 3600);
+    out.push(matsuLongline(seed, d, tM, 'r'));
+  }
   return out.map((r, i) => ({ ...r, via: 'radio', id: `W${d}-${i}-${r.speaker}`, deliverAt: r.obsT + 600 }));
 }
 

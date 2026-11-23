@@ -1,4 +1,4 @@
-// End-to-end playthrough in headless Chromium (M0 + M1 + M2).
+// End-to-end playthrough in headless Chromium (M0 + M1 + M2 + M3).
 // Steering, stopping, choosing a plan, switching method, setting a trolling
 // route on the chart, starting/stopping operations, returning, buying and
 // departing are all done with the game's own keys/buttons/clicks.
@@ -433,6 +433,96 @@ const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
     check('after reload the own progress is still there', (await st3()).funds === own.funds);
   } catch (e) {
     check('M2 boat purchase playthrough', false, e.message);
+  }
+
+  // ---------------------------------------------------------------- M3: 延縄 (longline) and walking the deck
+  try {
+    const pg = page;
+    await pg.goto(`http://localhost:${port}/?dev=1&seed=77`);
+    await pg.waitForSelector('#portChart');
+    const own = await st();
+    await pg.click('[data-act=market]');
+    await pg.click('[data-act=playtestLoad]');
+    await pg.click('[data-act=playtestLoadConfirm]');
+    await pg.waitForSelector('[data-act=playtestRestore]');
+    await pg.click('[data-act=equip]');
+    await pg.waitForSelector('[data-act=buy][data-item=longline_ll1]');
+    const eqText = await pg.textContent('#screen');
+    check('M3: the longline gear is offered for the small boat\'s stern (instead of the trolling gear)', /延縄具 LL-1/.test(eqText) && /船尾（曳縄・延縄）/.test(eqText));
+    await pg.click('[data-act=buy][data-item=longline_ll1][data-slot=stern_troll]');
+    await pg.click('[data-act=buyConfirm]');
+    await sleep(200);
+    let s4 = await st();
+    check('bought the longline: on the stern, the trolling gear kept in storage, saved', s4.troll === null && s4.slots.stern_troll.startsWith('longline_ll1') && s4.storage.some((x) => x.startsWith('troll_tr1')) && s4.saveStatus.ok, JSON.stringify({ slots: s4.slots, storage: s4.storage }));
+    await pg.click('[data-act=toPort]');
+    await pg.waitForSelector('#portChart');
+    await pg.click('[data-act=depart]');
+    await waitFor((x) => x.screen === 'sea', 'at sea (M3)');
+    await press('t');
+    s4 = await st();
+    check('T switches to 延縄 (the gear on board)', s4.voyage.method === 'longline', s4.voyage.method);
+    // run to the south side of the マダイ, then lay the line north through them (chart click = where the line goes)
+    const md = (await pg.evaluate(() => window.__ryoshi.schoolCenters())).filter((x) => x.id.includes('madai')).sort((a, b) => b.total - a.total)[0];
+    await driveTo({ x: md.x, y: md.y - 330 }, 'longline approach');
+    await press('c');
+    await sleep(200);
+    await clickChart(md.x, md.y + 360);
+    await press('c');
+    await press('Space');
+    s4 = await waitFor((x) => x.voyage.line && x.voyage.line.state === 'setting', 'setting the line');
+    await ff(900);
+    s4 = await st();
+    check('the line is laid automatically (100 hooks) and soaks with two end buoys; the boat is free again', s4.voyage.line.state === 'soaking' && s4.voyage.line.hooks === 100 && s4.voyage.line.buoys.length === 2 && !s4.voyage.operating, JSON.stringify(s4.voyage.line && s4.voyage.line.state));
+    await shot('20-longline-soaking');
+    // walking the deck while the line soaks: paused, nothing in the sea changes
+    await press('p');
+    await sleep(200);
+    const frozen = JSON.stringify((await st()).voyage);
+    await press('v');
+    await press('v');
+    s4 = await st();
+    await pg.keyboard.down('w');
+    await sleep(700);
+    await pg.keyboard.up('w');
+    await pg.keyboard.down('d');
+    await sleep(400);
+    await pg.keyboard.up('d');
+    await pg.click('[data-act=walkTo][data-station=fishbox]');
+    await sleep(400);
+    await shot('21-walk-deck');
+    const walkBar = await pg.textContent('#walkBar');
+    check('甲板を歩く: walk view with work-position shortcuts; walking changes nothing in the sea, boat or catch', s4.view === 'walk' && /操舵席/.test(walkBar) && /魚倉/.test(walkBar) && frozen === JSON.stringify((await st()).voyage), walkBar);
+    await pg.click('[data-act=walkTo][data-station=helm]');
+    await press('v');
+    await press('p');
+    await ff(1500);
+    // 揚げ縄: L runs to the nearer buoy and hauls
+    await press('l');
+    s4 = await waitFor((x) => (x.voyage.line && x.voyage.line.state === 'hauling') || x.voyage.autopilot === 'haul', 'haul started');
+    await ff(400);
+    await shot('22-longline-hauling');
+    await ff(3000);
+    s4 = await st();
+    const madaiN = s4.voyage.hold.counts.madai.s + s4.voyage.hold.counts.madai.m + s4.voyage.hold.counts.madai.l;
+    check('L hauls the line (going to the buoy first); マダイ come aboard', s4.voyage.line.state === 'aboard' && madaiN > 0, `${madaiN} madai`);
+    s4 = await returnAndLand('M3');
+    const rc = await pg.textContent('#screen');
+    check('landing: マダイ sold, 延縄 experience', /マダイ/.test(rc) && /延縄/.test(rc) && s4.saveStatus.ok);
+    await shot('23-longline-receipt');
+    await pg.click('[data-act=toPort]');
+    await pg.click('[data-act=log]');
+    await pg.waitForSelector('table.data');
+    const lg4 = await pg.textContent('#screen');
+    check('logbook: the longline with its soak time and gear', /延縄/.test(lg4) && /浸け\d+分/.test(lg4) && /延縄具 LL-1/.test(lg4));
+    await pg.click('[data-act=toPort]');
+    await pg.click('[data-act=openSave]');
+    await pg.click('[data-act=playtestRestore]');
+    await pg.click('[data-act=playtestRestoreConfirm]');
+    await pg.waitForSelector('#portChart');
+    check('back to the own progress after the M3 playtest', (await st()).funds === own.funds);
+  } catch (e) {
+    check('M3 longline playthrough', false, e.message);
+    await shot('99-m3-failure').catch(() => {});
   }
 
   check('no page errors or console errors', errors.length === 0, errors.slice(0, 5).join(' | '));

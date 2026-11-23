@@ -211,7 +211,7 @@ export function stepOperation(op, ctx, dt) {
           const lambda = method.biteRateMax * act * (d.total / (d.total + method.densityHalf));
           h.acc += lambda * dt;
           if (h.acc >= 1) {
-            const room = ctx.capacityKg - ctx.hold.kg - inFlightKg(op);
+            const room = ctx.capacityKg - ctx.hold.kg - inFlightKg(op) - (ctx.reservedKg || 0);
             if (room < MAX_FISH_KG) {
               h.acc = 1;
               op.stats.holdBlocked += 1;

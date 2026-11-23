@@ -31,6 +31,7 @@ function cruiserProfile({ reels = ['reel_hand'], troll = null, sounder = 'sounde
     starboard_reel: { uid: 'x2', itemId: reels[0] },
     port_reel: reels[1] ? { uid: 'x3', itemId: reels[1] } : null,
     stern_troll: troll ? { uid: 'x4', itemId: troll } : null,
+    deck_longline: null,
   };
   assert.deepEqual(validateProfile(p), []);
   return p;
@@ -245,7 +246,7 @@ test('the logbook marks records made with a different boat or rigs', () => {
   assert.ok(s.lines.some((l) => /小型和船/.test(l) && /中型漁船/.test(l)), s.lines.join(' / '));
 });
 
-test('an M1 save (format 2) opens in M2 with everything kept, and the original is kept aside', () => {
+test('an M1 save (format 2) opens in the current format with everything kept, and the original is kept aside', () => {
   const raw = readFileSync(new URL('./e2e/fixtures/m1-save.json', import.meta.url), 'utf8');
   const st = memoryStorage({ [KEYS.main]: raw });
   const r = loadSave(st);
@@ -255,7 +256,7 @@ test('an M1 save (format 2) opens in M2 with everything kept, and the original i
   const orig = JSON.parse(raw).data;
   assert.equal(p.schema, PROFILE_SCHEMA);
   assert.equal(p.funds, orig.funds);
-  assert.deepEqual(p.methods, orig.methods);
+  assert.deepEqual(p.methods, { ...orig.methods, longline: { xp: 0 } });
   assert.deepEqual(p.boat, orig.boat);
   assert.deepEqual(p.logs, orig.logs);
   assert.deepEqual(p.knowledge, orig.knowledge);

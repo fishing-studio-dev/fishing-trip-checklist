@@ -86,10 +86,16 @@ function currentGearSig(profile, methodId) {
   return gearSig(profile.boat.model, gearOfType(profile, METHODS[methodId].gearType));
 }
 
-function logGearSig(log) {
+/** The items a logged operation used for its method (old logs: one reel). */
+export function logGearItems(log) {
   const g = log.gear || {};
-  const items = log.methodId === 'troll' ? [g.troll].filter(Boolean) : g.reels || [g.reel].filter(Boolean);
-  return gearSig(g.boat || 'skiff_1', items);
+  if (log.methodId === 'troll') return [g.troll].filter(Boolean);
+  if (log.methodId === 'longline') return [g.longline].filter(Boolean);
+  return g.reels || [g.reel].filter(Boolean);
+}
+
+function logGearSig(log) {
+  return gearSig((log.gear && log.gear.boat) || 'skiff_1', logGearItems(log));
 }
 
 function gearText(boatId, items) {
@@ -116,7 +122,7 @@ export function similarLogs(logs, { methodId, area, forecast, profile }) {
   if (!same.length) lines.push('自分の記録なし（未経験）');
   else if (!similar.length) lines.push(`この場所の記録${same.length}回（漁獲あり${withCatch}回）。今日と同じ潮・風（${tc}・風${wb}）の記録はなし`);
   else if (similar.length === 1) lines.push(`似た条件（${tc}・風${wb}）の記録は1回だけ：${good ? '好調' : '振るわず'}（1回の実績で、傾向とまでは言えない）`);
-  else lines.push(`似た条件（${tc}・風${wb}）で${similar.length}回操業し、${good}回は好調（${m.goodRate}${methodId === 'troll' ? '本' : '尾'}/時以上）`);
+  else lines.push(`似た条件（${tc}・風${wb}）で${similar.length}回操業し、${good}回は好調（${m.goodRate}${SPECIES[m.target].unit}/時以上）`);
   const ref = similar[similar.length - 1] || same[same.length - 1];
   if (ref && profile) {
     const cur = currentGearSig(profile, methodId);
@@ -139,11 +145,15 @@ export function similarLogs(logs, { methodId, area, forecast, profile }) {
 const GROUNDS = {
   handline: ['北の瀬', '西の根', '東の駆け上がり'],
   troll: ['東の駆け上がり', '沖の平場', '北の瀬'],
+  longline: ['沖の平場', '東の駆け上がり', '西の根'],
 };
 const GENERAL = {
   handline: 'アジは瀬・根・駆け上がりなど起伏のある場所に付きやすい（一般的な目安）',
   troll: 'サワラは水温が上がると沖や駆け上がりに回ってくる（一般的な目安）',
+  longline: 'マダイは水深30〜60mの平場や駆け上がりの底に、広く散って付く（一般的な目安）',
 };
+// a peer's catch count regarded as good / poor for the method (for weighting only)
+const REPORT_COUNTS = { handline: [25, 15], troll: [3, 2], longline: [6, 3] };
 const KIND_W = { catch: 3, echo: 2, sighting: 2 };
 
 function freshW(obsDay, today) {
@@ -177,7 +187,7 @@ function anchor(area) {
 }
 
 /**
- * Build 2-3 candidates (target fish × method × area) from knowledge only.
+ * Build 2-4 candidates (target fish × method × area) from knowledge only.
  * Inputs: { knowledge, logs, today, forecast, profile }.
  */
 export function buildCandidates({ knowledge, logs, today, forecast, profile }) {
@@ -218,7 +228,8 @@ export function buildCandidates({ knowledge, logs, today, forecast, profile }) {
         continue;
       }
       let w = (KIND_W[r.kind] || 1) * freshW(r.obsDay, today);
-      if (r.kind === 'catch' && r.count != null) w *= r.count >= (c.methodId === 'troll' ? 3 : 25) ? 1.2 : r.count < (c.methodId === 'troll' ? 2 : 15) ? 0.6 : 1;
+      const [good, poor] = REPORT_COUNTS[c.methodId];
+      if (r.kind === 'catch' && r.count != null) w *= r.count >= good ? 1.2 : r.count < poor ? 0.6 : 1;
       score += w;
       evidence.push(e);
     }
@@ -290,8 +301,11 @@ function pickCandidates(all) {
     const fresh = sorted.find((c) => !c.own.same.length && c.evidence.some((e) => !e.superseded));
     if (fresh) replaceLast(fresh);
   }
+  // with three methods, a third one somebody reported is added as a fourth candidate
+  const third = sorted.find((c) => c.evidence.some((e) => !e.superseded) && !has((p) => p.methodId === c.methodId));
+  if (third) picked.push(third);
   const result = picked.sort((a, b) => b.score - a.score || a.key.localeCompare(b.key));
-  return result.map((c, i) => ({ ...c, letter: 'ABC'[i] }));
+  return result.map((c, i) => ({ ...c, letter: 'ABCD'[i] }));
 }
 
 function conditionNotes(methodId, fc) {
@@ -302,6 +316,10 @@ function conditionNotes(methodId, fc) {
     else if (tc === '小潮系') notes.push(`${fc.tideName}：潮がゆるく流しやすいが、潮が動かない時間は食いが落ちやすい`);
     else notes.push('中潮：ほどよく潮が動く');
     if (fc.windSpeed >= 6) notes.push(`風${fc.windSpeed}m/s（予報）：船が流されやすい`);
+  } else if (methodId === 'longline') {
+    if (tc === '大潮') notes.push('大潮：潮がよく動き、マダイの食いが立ちやすい');
+    else if (tc === '小潮系') notes.push(`${fc.tideName}：潮が緩い。潮が動く時間に浸けたい`);
+    else notes.push('中潮：ほどよく潮が動く');
   } else {
     const t = fc.waterTemp;
     notes.push(t >= SPECIES.sawara.arriveTemp ? `水温${t}℃（予報）：サワラが回ってくる水温` : `水温${t}℃（予報）：サワラにはまだ低め`);

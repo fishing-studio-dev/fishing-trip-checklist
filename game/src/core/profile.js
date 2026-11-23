@@ -2,7 +2,7 @@
 // The live sea (WorldState) is NOT part of this; it is regenerated per voyage.
 import { ECONOMY, START_PROFILE, BOATS, EQUIPMENT, METHODS, fits } from './data.js';
 
-export const PROFILE_SCHEMA = 3;
+export const PROFILE_SCHEMA = 4;
 
 export function createProfile({ worldSeed, now = new Date().toISOString() } = {}) {
   const seed = worldSeed != null ? worldSeed >>> 0 : (Math.floor(Math.random() * 0xffffffff) >>> 0);
@@ -16,7 +16,7 @@ export function createProfile({ worldSeed, now = new Date().toISOString() } = {}
     worldSeed: seed,
     funds: ECONOMY.startFunds,
     day: 0, // number of days started
-    methods: { handline: { xp: 0 }, troll: { xp: 0 } },
+    methods: { handline: { xp: 0 }, troll: { xp: 0 }, longline: { xp: 0 } },
     boat: { uid: 'boat1', model: START_PROFILE.boatModel, name: START_PROFILE.boatName, slots },
     storage: [],
     equipSeq: seq,
@@ -29,6 +29,18 @@ export function createProfile({ worldSeed, now = new Date().toISOString() } = {}
     boatSeq: 1,
     boatHistory: [], // boats traded in: {uid, model, name, tradeIn, day}
   };
+}
+
+/**
+ * Schema 3 (M2) -> 4 (M3): the longline method (XP 0) and, on the medium boat,
+ * the new optional deck slot for the longline gear (empty). Nothing else changes.
+ */
+export function migrateProfile3to4(p3) {
+  const p = clone(p3);
+  p.schema = 4;
+  p.methods = { longline: { xp: 0 }, ...p.methods };
+  if (p.boat.model === 'cruiser_2' && !('deck_longline' in p.boat.slots)) p.boat.slots.deck_longline = null;
+  return p;
 }
 
 /** Schema 2 (M1) -> 3 (M2): boat ownership history; nothing else changes. */

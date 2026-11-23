@@ -1,7 +1,7 @@
 // 2D chart (GPS plotter). Shows fixed geography and what the player has
 // observed (track, marks, operation spots). Fish are only drawn in dev mode,
 // clearly labelled, and never in normal play.
-import { AREA, PORT } from '../core/data.js';
+import { AREA, PORT, SPECIES } from '../core/data.js';
 import { depthAt, isLand, CHART_LABELS, fmtClock } from '../core/sea.js';
 import { schoolCenter, schoolTotal } from '../core/world.js';
 
@@ -71,7 +71,7 @@ export function chartToWorld(canvas, v, big, px, py) {
   return { x: (px - W / 2) / scale + cx, y: cy - (py - H / 2) / scale };
 }
 
-const SPECIES_COLOR = { aji: '#ffd84d', sawara: '#ff8a5c' };
+const SPECIES_COLOR = { aji: '#ffd84d', sawara: '#ff8a5c', madai: '#ff6f91' };
 
 /** Marker for an observation report: where and when it was seen (not where fish are now). */
 export function drawReportMarker(ctx, r, px, py, label, small = false) {
@@ -136,10 +136,55 @@ function drawRoute(ctx, pts, toPx, style) {
   ctx.restore();
 }
 
+/** The longline lying on the bottom: the hooks laid so far and the two end buoys. */
+function drawLongline(ctx, line, toPx, label) {
+  if (!line || !line.hooks.length) return;
+  const down = line.hooks.filter((h) => !h.up);
+  if (!down.length) return;
+  line = { ...line, hooks: down };
+  ctx.save();
+  ctx.strokeStyle = '#ffc65c';
+  ctx.lineWidth = 2.2;
+  ctx.setLineDash([2, 3]);
+  ctx.beginPath();
+  line.hooks.forEach((h, i) => {
+    const [x, y] = toPx(h.x, h.y);
+    if (i === 0) ctx.moveTo(x, y);
+    else ctx.lineTo(x, y);
+  });
+  ctx.stroke();
+  ctx.setLineDash([]);
+  const ends = [line.hooks[0], line.hooks[line.hooks.length - 1]];
+  ends.forEach((h, i) => {
+    if (i === 1 && line.hooks.length < 2) return;
+    const [x, y] = toPx(h.x, h.y);
+    ctx.fillStyle = '#ff7a1a';
+    ctx.beginPath();
+    ctx.arc(x, y, 4.5, 0, Math.PI * 2);
+    ctx.fill();
+    ctx.strokeStyle = '#ffd400';
+    ctx.lineWidth = 1.5;
+    ctx.beginPath();
+    ctx.moveTo(x, y);
+    ctx.lineTo(x, y - 11);
+    ctx.stroke();
+    ctx.fillStyle = '#ffd400';
+    ctx.fillRect(x, y - 11, 6, 4);
+  });
+  if (label) {
+    const [x, y] = toPx(ends[0].x, ends[0].y);
+    ctx.font = '11px sans-serif';
+    ctx.textAlign = 'left';
+    ctx.fillStyle = '#ffe0a0';
+    ctx.fillText(label, x + 8, y + 12);
+  }
+  ctx.restore();
+}
+
 /**
- * Draw the chart at sea. opts: { big, dev, reports: [{r, label}], route: {points, live}, hint }
+ * Draw the chart at sea. opts: { big, dev, reports: [{r, label}], route: {points, live}, hint, line, lineLabel }
  */
-export function drawChart(canvas, staticMap, v, { big = false, dev = false, reports = [], route = null, hint = '' } = {}) {
+export function drawChart(canvas, staticMap, v, { big = false, dev = false, reports = [], route = null, hint = '', line = null, lineLabel = '' } = {}) {
   const dpr = Math.min(window.devicePixelRatio || 1, 2);
   const cssW = canvas.clientWidth || canvas.width;
   const cssH = canvas.clientHeight || canvas.height;
@@ -190,8 +235,9 @@ export function drawChart(canvas, staticMap, v, { big = false, dev = false, repo
     ctx.stroke();
   }
   // operation spots of this voyage
-  const ops = v.logs.map((l) => ({ x: l.start.x, y: l.start.y, ex: l.end.x, ey: l.end.y, n: l.count }));
-  if (v.op) ops.push({ x: v.op.start.x, y: v.op.start.y, ex: v.boat.x, ey: v.boat.y, n: v.op.landedCount, live: true });
+  const unitOf = (sp) => (SPECIES[sp] ? SPECIES[sp].unit : '尾');
+  const ops = v.logs.map((l) => ({ x: l.start.x, y: l.start.y, ex: l.end.x, ey: l.end.y, n: l.count, u: unitOf(l.species) }));
+  if (v.op && v.op.methodId !== 'longline') ops.push({ x: v.op.start.x, y: v.op.start.y, ex: v.boat.x, ey: v.boat.y, n: v.op.landedCount, u: unitOf(v.op.species), live: true });
   ctx.lineWidth = 2;
   ops.forEach((o, i) => {
     const [px, py] = toPx(o.x, o.y);
@@ -207,7 +253,7 @@ export function drawChart(canvas, staticMap, v, { big = false, dev = false, repo
     ctx.fill();
     ctx.fillStyle = '#d9fff9';
     ctx.textAlign = 'left';
-    ctx.fillText(`#${i + 1} ${o.n}尾`, px + 6, py - 5);
+    ctx.fillText(`#${i + 1} ${o.n}${o.u}`, px + 6, py - 5);
   });
   // marks: observation points with their time (not current fish positions)
   ctx.textAlign = 'left';
@@ -233,8 +279,9 @@ export function drawChart(canvas, staticMap, v, { big = false, dev = false, repo
     if (px < -40 || py < -20 || px > W + 40 || py > H + 20) continue;
     drawReportMarker(ctx, r, px, py, big ? label : '', !big);
   }
-  // trolling route (planned or being run)
-  if (route) drawRoute(ctx, route.points, toPx, route.live ? { color: '#7cf2d6', width: 2.5 } : { color: 'rgba(124,242,214,0.85)', dash: [6, 4] });
+  // trolling route / where the longline would be laid (planned or being run)
+  if (route) drawRoute(ctx, route.points, toPx, route.live ? { color: '#7cf2d6', width: 2.5 } : { color: route.color || 'rgba(124,242,214,0.85)', dash: [6, 4] });
+  if (line) drawLongline(ctx, line, toPx, lineLabel);
   // dev overlay
   if (dev) {
     ctx.setLineDash([4, 3]);
