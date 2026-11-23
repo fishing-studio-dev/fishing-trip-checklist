@@ -474,7 +474,7 @@ const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
     await pg.click('[data-act=depart]');
     await waitFor((x) => x.screen === 'sea', 'at sea (M3)');
     check('M4: the deckhand is on board (HUD)', (await st()).voyage.crew === 1 && /2人（甲板員）/.test(await pg.textContent("#hudTop")));
-    await press('t');
+    for (let i = 0; i < 4 && (await st()).voyage.method !== 'longline'; i++) await press('t'); // 一本釣り → 根魚釣り → 延縄
     s4 = await st();
     check('T switches to 延縄 (the gear on board)', s4.voyage.method === 'longline', s4.voyage.method);
     // run to the south side of the マダイ, then lay the line north through them (chart click = where the line goes)
@@ -613,7 +613,7 @@ const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
     check('M5: the medium boat runs out to 沖の瀬 (beyond the small boat\'s zone)', s5.voyage.boat.y > 3500 && /沖の瀬/.test(area5), `y ${Math.round(s5.voyage.boat.y)}`);
     await shot('24-okinose');
     // lay the longline northward over the reef and haul it with the machine
-    for (let i = 0; i < 3 && (await st()).voyage.method !== 'longline'; i++) await press('t');
+    for (let i = 0; i < 5 && (await st()).voyage.method !== 'longline'; i++) await press('t');
     await pg.evaluate(() => {
       // face north for a straight line over the reef (a test convenience: the player would steer)
       window.__ryoshi.app.voyage.boat.heading = 0;
@@ -762,6 +762,74 @@ const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
   } catch (e) {
     check('search tools playthrough', false, e.message);
     await shot('99-search-failure').catch(() => {});
+  }
+
+  // ---------------------------------------------------------------- 根魚釣り (item 6): pinpoint fishing over a 漁礁
+  try {
+    const pg = page;
+    await pg.goto(`http://localhost:${port}/?dev=1&seed=77`);
+    await pg.waitForSelector('#portChart');
+    await pg.click('[data-act=depart]');
+    await waitFor((x) => x.screen === 'sea', 'at sea (根魚)');
+    await press('c');
+    await sleep(200);
+    await clickChart(1300, 1040);
+    await press('c');
+    await press('g');
+    await waitFor((x) => x.voyage.autopilot === 'route', 'route to the 漁礁');
+    for (let i = 0; i < 40 && (await st()).voyage.autopilot; i++) await ff(20);
+    await ff(10);
+    // watch which way the boat drifts, then set up 25 m up-current of the 漁礁 (the rig reaches the bottom before the pinpoint)
+    const p0 = (await st()).voyage.boat;
+    await ff(20);
+    const p1 = (await st()).voyage.boat;
+    const dl = Math.hypot(p1.x - p0.x, p1.y - p0.y) || 1;
+    await press('c');
+    await sleep(200);
+    await clickChart(1300 - ((p1.x - p0.x) / dl) * 25, 1050 - ((p1.y - p0.y) / dl) * 25);
+    await press('c');
+    await press('g');
+    for (let i = 0; i < 20 && (await st()).voyage.autopilot; i++) await ff(10);
+    for (let i = 0; i < 4 && (await st()).voyage.method !== 'negyo'; i++) await press('t');
+    check('根魚: T switches to 根魚釣り (no extra gear needed)', (await st()).voyage.method === 'negyo');
+    await press('Space');
+    await waitFor((x) => x.voyage.operating, 'negyo started');
+    // drift across the 漁礁; when the boat has drifted off, 流し直し (R) back up — as a player would
+    const caught = () => pg.evaluate(() => {
+      const v = window.__ryoshi.app.voyage;
+      return [...new Set([...(v.op ? Object.keys(v.op.landedBy) : []), ...v.logs.filter((l) => l.bySpecies).flatMap((l) => Object.keys(l.bySpecies))])];
+    });
+    let opN = '';
+    for (let i = 0; i < 8 && !(await caught()).length; i++) {
+      for (let k = 0; k < 8 && !(await caught()).length; k++) {
+        await ff(20);
+        if ((await st()).voyage.operating) opN = await pg.textContent('#opPanel');
+      }
+      if ((await caught()).length) break;
+      await press('r');
+      await waitFor((x) => x.voyage.operating, 'drifting again after 流し直し', 60000);
+    }
+    if ((await st()).voyage.operating) opN = await pg.textContent('#opPanel');
+    const landedN = await caught();
+    check('根魚: over the 漁礁 the rig is kept just off the bottom and rockfish come up', /根魚釣り/.test(opN) && /底を切/.test(opN) && landedN.some((sp) => ['kasago', 'kijihata', 'ara'].includes(sp)), `${landedN} | ${opN.slice(0, 80)}`);
+    await shot('30-negyo');
+    await press('r');
+    await waitFor((x) => !x.voyage.operating, 'retrieved for the redrift');
+    await waitFor((x) => x.voyage.autopilot === null, 'back up for the redrift', 60000).catch(() => {});
+    const logN = await pg.evaluate(() => window.__ryoshi.app.voyage.logs.at(-1));
+    check('根魚: the log keeps what came up of each species', logN.methodId === 'negyo' && !!logN.bySpecies, JSON.stringify(logN.bySpecies));
+    const sN = await returnAndLand('根魚');
+    const rcN = await pg.textContent('#screen');
+    check('根魚: rockfish are sold at landing and 根魚釣り gains experience', /カサゴ|キジハタ|アラ/.test(rcN) && /根魚釣り/.test(rcN), rcN.slice(0, 80));
+    void sN;
+    await pg.click('[data-act=toPort]');
+    await pg.click('[data-act=log]');
+    await pg.waitForSelector('table.data');
+    check('根魚: the logbook shows 根魚釣り with the species', /根魚釣り/.test(await pg.textContent('#screen')) && /カサゴ|キジハタ|アラ/.test(await pg.textContent('#screen')));
+    await pg.click('[data-act=toPort]');
+  } catch (e) {
+    check('根魚 playthrough', false, e.message);
+    await shot('99-negyo-failure').catch(() => {});
   }
 
   check('no page errors or console errors', errors.length === 0, errors.slice(0, 5).join(' | '));

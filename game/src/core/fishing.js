@@ -10,16 +10,31 @@
 //   - Hold: a bite is only accepted if hold + fish already on hooks fits.
 // => landed <= min(candidates, capacity, school remaining, hold space).
 import { METHODS, skillForLevel, SPECIES } from './data.js';
-import { densityAt, posesAt, takeFish, activityAt } from './world.js';
-import { depthAt } from './sea.js';
+import { densityAt, posesAt, takeFish, returnFish, activityAt } from './world.js';
+import { depthAt, bottomIsRocky } from './sea.js';
 import { readTana } from './sounder.js';
 import { rngNext } from './rng.js';
 import { initHands, fillHands, takeHands, releaseHands } from './hands.js';
 
 export function maxFishKg(species) {
+  if (Array.isArray(species)) return Math.max(...species.map(maxFishKg));
   return Math.max(...Object.values(SPECIES[species].sizes).map((s) => s.kg));
 }
-const MAX_FISH_KG = maxFishKg('aji');
+
+/** The species a hook-and-line method fishes for (one, or the 根魚 group). */
+export function methodSpecies(method) {
+  return method.targets || method.target;
+}
+
+/** Depth of hook k for a sinker at `tana` (hooks above the sinker). */
+function hookDepthOf(method, tana, k) {
+  return tana - (method.firstHook != null ? method.firstHook : 1.0) - k * method.hookSpacing;
+}
+
+/** Where the sinker sits when it is kept just off the bottom (根魚釣り). */
+function bottomTana(method, bottom, maxDepth) {
+  return Math.max(1, Math.min(maxDepth, bottom - method.bottomLift));
+}
 
 /**
  * rigs: one per fitted reel, e.g. [{label:'右舷', reelId, reel}, {label:'左舷', ...}].
@@ -49,6 +64,7 @@ export function createOperation({ id, voyageId, methodId, level, rigs, startT, x
     end: null,
     lines,
     landed: { s: 0, m: 0, l: 0 },
+    landedBy: {}, // per species when the method fishes several (根魚): {kasago: {s, m, l}}
     landedKg: 0,
     landedCount: 0,
     landings: [], // {t, n, kg}
@@ -65,6 +81,8 @@ export function createOperation({ id, voyageId, methodId, level, rigs, startT, x
       cycles: 0,
       holdBlocked: 0,
       lastTanaSource: null,
+      snags: 0,
+      lostFish: 0,
     },
   };
   initHands(op, hands);
@@ -77,6 +95,8 @@ function newLine(method, skill, rig) {
     label: rig.label,
     reelId: rig.reelId,
     handReel: hand,
+    bottomMode: !!method.bottomMode,
+    snagAcc: 0,
     retrieveSpeed: hand ? skill.handRetrieve : rig.reel.retrieve,
     maxDepth: rig.reel.maxDepth,
     waiting: false,
@@ -94,7 +114,7 @@ function newLine(method, skill, rig) {
 
 /** Steps that need the fisher's hands (others run on their own). */
 export function handlineNeedsHands(line) {
-  return line.phase === 'prep' || line.phase === 'unhook' || (line.phase === 'retrieve' && line.handReel);
+  return line.phase === 'prep' || line.phase === 'unhook' || line.phase === 'snag' || (line.phase === 'retrieve' && line.handReel);
 }
 
 export function fishOnLine(line) {
@@ -120,6 +140,8 @@ export function requestStop(op, reason) {
 export function stepOperation(op, ctx, dt) {
   if (op.state === 'ended') return;
   const method = METHODS[op.methodId];
+  const targets = methodSpecies(method);
+  const maxKg = maxFishKg(targets);
   const { world, boat } = ctx;
   const t = world.time;
   const bottom = depthAt(boat.x, boat.y);
@@ -146,10 +168,28 @@ export function stepOperation(op, ctx, dt) {
           break;
         }
         if (line.timer <= 0) {
+          if (method.bottomMode) {
+            // 根魚釣り: down to the bottom, then the sinker is kept just off it
+            setTana(op, line, { tana: bottomTana(method, bottom, line.maxDepth), source: 'bottom' });
+            line.phase = 'drop';
+            break;
+          }
           const r = readTana(ctx.obs, method, line.maxDepth);
           if (r.tana == null) break; // no sounder reading yet
           setTana(op, line, r);
           line.phase = 'drop';
+        }
+        break;
+      }
+      case 'snag': {
+        // 根掛かり: the line is cut and a new rig tied on (hands needed)
+        line.timer -= dt;
+        if (line.timer <= 0) {
+          if (stopping) line.phase = 'idle';
+          else {
+            line.phase = 'prep';
+            line.timer = op.skill.rebait;
+          }
         }
         break;
       }
@@ -158,13 +198,18 @@ export function stepOperation(op, ctx, dt) {
           line.phase = 'retrieve';
           break;
         }
-        line.tana = Math.min(line.tana, bottom - 0.5, line.maxDepth);
+        line.tana = method.bottomMode ? bottomTana(method, bottom, line.maxDepth) : Math.min(line.tana, bottom - 0.5, line.maxDepth);
         line.depth += op.skill.dropSpeed * dt;
         if (line.depth >= line.tana) {
           line.depth = line.tana;
           line.phase = 'fish';
           line.sinceRetune = 0;
           for (const h of line.hooks) h.acc = rngNext(world.rng) * 0.6;
+          if (method.bottomMode && !line.snagSeeded) {
+            // where in the snag cycle this rig starts (once; it carries over between drops)
+            line.snagAcc = rngNext(world.rng) * 0.6;
+            line.snagSeeded = true;
+          }
         }
         break;
       }
@@ -184,8 +229,33 @@ export function stepOperation(op, ctx, dt) {
         break;
       }
       case 'fish': {
-        // the sinker follows the bottom when the boat drifts over shallower ground
-        if (line.tana > bottom - 0.5) {
+        if (method.bottomMode) {
+          // 底取り: the rig follows the bottom up and down as the boat drifts over the rocks
+          line.tana = bottomTana(method, bottom, line.maxDepth);
+          line.depth = line.tana;
+          trackTana(op, line.tana, 'bottom');
+          // 根掛かり on hard bottom (only when the sinker is down near it)
+          if (!stopping && line.tana >= bottom - method.bottomLift - 0.05 && bottomIsRocky(boat.x, boat.y)) {
+            line.snagAcc = (line.snagAcc || 0) + method.snagRate * op.skill.snagMul * dt;
+            if (line.snagAcc >= 1) {
+              line.snagAcc = 0;
+              for (const h of line.hooks) {
+                if (h.fish) {
+                  returnFish(world, h.fish); // the fish on the hooks are lost with the rig
+                  op.stats.lostFish += 1;
+                  h.fish = null;
+                }
+              }
+              line.firstBiteT = null;
+              op.stats.snags += 1;
+              line.depth = 0;
+              line.phase = 'snag';
+              line.timer = op.skill.rerig;
+              break;
+            }
+          }
+        } else if (line.tana > bottom - 0.5) {
+          // the sinker follows the bottom when the boat drifts over shallower ground
           line.tana = Math.max(1, bottom - 0.5);
           line.depth = line.tana;
         }
@@ -200,16 +270,16 @@ export function stepOperation(op, ctx, dt) {
           }
           allFull = false;
           if (stopping) continue;
-          const hookDepth = line.tana - 1.0 - k * method.hookSpacing;
+          const hookDepth = hookDepthOf(method, line.tana, k);
           if (hookDepth < 0.5) continue;
-          const d = densityAt(world, boat.x, boat.y, hookDepth, poses, 'aji');
+          const d = densityAt(world, boat.x, boat.y, hookDepth, poses, targets);
           if (d.total <= 0 || d.best == null) continue;
           const act = activityAt(world, world.schools[d.best], t);
           const lambda = method.biteRateMax * act * (d.total / (d.total + method.densityHalf));
           h.acc += lambda * dt;
           if (h.acc >= 1) {
             const room = ctx.capacityKg - ctx.hold.kg - inFlightKg(op) - (ctx.reservedKg || 0);
-            if (room < MAX_FISH_KG) {
+            if (room < maxKg) {
               h.acc = 1;
               op.stats.holdBlocked += 1;
               continue;
@@ -263,6 +333,8 @@ export function stepOperation(op, ctx, dt) {
             let kg = 0;
             for (const f of fish) {
               op.landed[f.size] += 1;
+              if (!op.landedBy[f.species]) op.landedBy[f.species] = { s: 0, m: 0, l: 0 };
+              op.landedBy[f.species][f.size] += 1;
               kg += f.kg;
             }
             op.landedKg += kg;
@@ -329,7 +401,7 @@ export function recentPace(op, t, window = 600) {
 
 /** Human label for the current state of a line (for the HUD). */
 export function linePhaseLabel(line) {
-  if (line.waiting) return `手が空くのを待っている（${{ prep: '餌付け', unhook: '取り込み', retrieve: '巻上げ' }[line.phase] || line.phase}）`;
+  if (line.waiting) return `手が空くのを待っている（${{ prep: '餌付け', unhook: '取り込み', retrieve: '巻上げ', snag: '仕掛けの付け直し' }[line.phase] || line.phase}）`;
   switch (line.phase) {
     case 'prep':
       return '餌付け・準備';
@@ -339,8 +411,11 @@ export function linePhaseLabel(line) {
       return `タナ調整 ${line.depth.toFixed(0)}m → ${line.target.toFixed(0)}m`;
     case 'fish': {
       const n = fishOnLine(line).length;
+      if (line.bottomMode) return n ? `掛かった！根から引き離す（${n}尾）` : `底を切って待つ 水深${line.tana.toFixed(0)}m`;
       return n ? `アタリ！追い食い待ち（${n}尾）` : `誘い中 タナ${line.tana.toFixed(0)}m`;
     }
+    case 'snag':
+      return '根掛かり：糸を切って仕掛けを付け直し';
     case 'retrieve':
       return `回収中 ${line.depth.toFixed(0)}m（${fishOnLine(line).length}尾）`;
     case 'unhook':

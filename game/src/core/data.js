@@ -80,6 +80,48 @@ export const SPECIES = {
     habit: 'bottom',
     unit: '枚',
   },
+  // 根魚（本作設定）: live tight on hard structures — 漁礁, こぼれ瀬, 大きな根 and
+  // the rocky tops of the reefs — right on the bottom, and stay there (居着き).
+  // A structure holds only a few; they are fished pinpoint, over the structure.
+  kasago: {
+    id: 'kasago',
+    name: 'カサゴ',
+    sizes: {
+      s: { label: '小カサゴ', kg: 0.15, pricePerKg: 1000 },
+      m: { label: 'カサゴ', kg: 0.25, pricePerKg: 1400 },
+      l: { label: '大カサゴ', kg: 0.4, pricePerKg: 1800 },
+    },
+    sizeOrder: ['s', 'm', 'l'],
+    habit: 'reef',
+    unit: '尾',
+    group: 'negyo',
+  },
+  kijihata: {
+    id: 'kijihata',
+    name: 'キジハタ',
+    sizes: {
+      s: { label: '小キジハタ', kg: 0.4, pricePerKg: 2000 },
+      m: { label: 'キジハタ', kg: 0.8, pricePerKg: 2800 },
+      l: { label: '大キジハタ', kg: 1.4, pricePerKg: 3500 },
+    },
+    sizeOrder: ['s', 'm', 'l'],
+    habit: 'reef',
+    unit: '尾',
+    group: 'negyo',
+  },
+  ara: {
+    id: 'ara',
+    name: 'アラ',
+    sizes: {
+      s: { label: '小アラ', kg: 1.5, pricePerKg: 2600 },
+      m: { label: 'アラ', kg: 3.5, pricePerKg: 3400 },
+      l: { label: '大アラ', kg: 7.0, pricePerKg: 4200 },
+    },
+    sizeOrder: ['s', 'm', 'l'],
+    habit: 'reef',
+    unit: '尾',
+    group: 'negyo',
+  },
 };
 
 // ---- Fishing methods ----
@@ -99,7 +141,36 @@ export const METHODS = {
     echoThreshold: 0.3,
     maxStartSpeed: 0.6, // m/s: boat must be (almost) stopped to start
     gearType: 'reel',
+    drift: true, // fished from the drifting boat
     goodRate: 25, // fish per hour regarded as 好調 in the logbook (目安)
+  },
+  // 根魚釣り（本作設定）: a short two-hook rig with the sinker kept just off the
+  // bottom (底を切る) right over a structure. The rig follows the bottom by
+  // itself; a fish is wound up at once before it dives into the rocks. Over
+  // rock the rig sometimes snags (根掛かり): the line is cut and re-rigged —
+  // time lost, less often with skill. Fished by drifting across the pinpoint.
+  negyo: {
+    id: 'negyo',
+    name: '根魚釣り',
+    detail: '2本針の短い仕掛けを、オモリが底から少し上になるように保ち、根・漁礁の真上を流して根魚（カサゴ・キジハタ・アラ）を狙う',
+    target: 'kasago',
+    targets: ['kasago', 'kijihata', 'ara'],
+    hooks: 2,
+    hookSpacing: 0.6,
+    firstHook: 0.4, // m above the sinker for the lowest hook
+    bottomMode: true, // the sinker follows the bottom (0.3 m off)
+    bottomLift: 0.3,
+    biteRateMax: 0.03,
+    densityHalf: 0.002,
+    oiWait: 2, // wound up almost at once (no waiting for more bites)
+    retuneAfter: Infinity,
+    defaultOffBottom: 0.3,
+    echoThreshold: 0.3,
+    snagRate: 0.0035, // snags / s on hard bottom at level 1 (fewer with skill)
+    maxStartSpeed: 0.6,
+    gearType: 'reel',
+    drift: true,
+    goodRate: 8,
   },
   troll: {
     id: 'troll',
@@ -148,6 +219,8 @@ export function skillForLevel(level) {
   const lerp = (a, b) => a + (b - a) * t;
   return {
     rebait: lerp(15, 5), // s per cycle: bait & ready the rig
+    rerig: lerp(45, 15), // s: cut a snagged line and tie a new rig (根掛かり)
+    snagMul: lerp(1, 0.4), // how often the rig snags on rock (keeping it just off the bottom)
     unhook: lerp(8, 2.5), // s per fish: unhook and stow
     dropSpeed: lerp(1.2, 1.7), // m/s: paying out line
     handRetrieve: lerp(0.7, 1.1), // m/s: hand-hauling speed (hand reel only)

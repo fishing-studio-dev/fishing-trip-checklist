@@ -152,6 +152,7 @@ const GROUNDS = {
   handline: ['北の瀬', '西の根', '東の駆け上がり', '沖の瀬'],
   troll: ['東の駆け上がり', '沖の平場', '北の瀬'],
   longline: ['沖の平場', '東の駆け上がり', '西の根', '北の瀬', '沖の瀬'],
+  negyo: ['西の根', '北の瀬', '沖の瀬'],
 };
 // grounds outside the coastal zone (general knowledge: geography, not fish)
 const FAR_NOTE = { 沖の瀬: '沖の瀬：港から約4km。遠くて人が少なく、群れが大きく大型が多いと言われる（一般的な目安）。中型漁船でないと行けない' };
@@ -159,9 +160,10 @@ const GENERAL = {
   handline: 'アジは瀬・根・駆け上がりなど起伏のある場所に付きやすい（一般的な目安）',
   troll: 'サワラは水温が上がると沖や駆け上がりに回ってくる（一般的な目安）',
   longline: 'マダイは水深30〜60mの平場や駆け上がりの底に、広く散って付く（一般的な目安）',
+  negyo: 'カサゴ・キジハタは岩礁・根・漁礁の際の底に居着く。海図にない小さな根や漁礁は、魚探・ソナー・サイドビューで探して印を付ける（一般的な目安）',
 };
 // a peer's catch count regarded as good / poor for the method (for weighting only)
-const REPORT_COUNTS = { handline: [25, 15], troll: [3, 2], longline: [6, 3] };
+const REPORT_COUNTS = { handline: [25, 15], troll: [3, 2], longline: [6, 3], negyo: [8, 4] };
 const KIND_W = { catch: 3, echo: 2, sighting: 2 };
 
 function freshW(obsDay, today) {
@@ -203,11 +205,13 @@ export function buildCandidates({ knowledge, logs, today, forecast, profile }) {
   const get = (methodId, area) => {
     const key = `${methodId}:${area}`;
     if (!byKey.has(key)) {
-      byKey.set(key, { key, methodId, species: METHODS[methodId].target, area, positives: new Map(), negatives: new Map(), rules: [], spots: [] });
+      byKey.set(key, { key, methodId, species: METHODS[methodId].target, area, positives: new Map(), negatives: new Map(), rules: [], spots: [], ownSpots: [] });
     }
     return byKey.get(key);
   };
   for (const m of Object.keys(GROUNDS)) for (const a of GROUNDS[m]) get(m, a);
+  // 根魚 are pinpoint fish: wherever the player has caught them is a place to try again
+  for (const l of logs) if (l.methodId === 'negyo' && l.count > 0 && l.area) get('negyo', l.area).ownSpots.push({ x: l.start.x, y: l.start.y, count: l.count });
   // reports the player has actually heard (acquired), grouped by original observation
   for (const r of knowledge.reports) {
     if (r.acqDay == null || r.acqDay > today) continue;
@@ -246,6 +250,7 @@ export function buildCandidates({ knowledge, logs, today, forecast, profile }) {
     score += Math.min(3, own.similar.filter(isGood).length * 1.5);
     score -= Math.min(1.5, (own.similar.length - own.good) * 0.5);
     if (own.withCatch) score += 0.8;
+    if (c.methodId === 'negyo' && !own.same.length) score -= 0.05; // without an own spot it is a long shot
     const ruleNotes = c.rules.map((r) => r);
     if (ruleNotes.length) score += 0.4;
     // feasibility with the current boat & gear
@@ -276,7 +281,8 @@ export function buildCandidates({ knowledge, logs, today, forecast, profile }) {
     if (!feasible.ok) labels.push(/航行区域/.test(feasible.reason) ? '船の買い替えが必要' : '装備が必要');
     const notes = conditionNotes(c.methodId, forecast);
     if (FAR_NOTE[c.area]) notes.push(FAR_NOTE[c.area]);
-    const spot = c.spots.length ? { x: c.spots.reduce((a, p) => a + p.x, 0) / c.spots.length, y: c.spots.reduce((a, p) => a + p.y, 0) / c.spots.length } : anchor(c.area);
+    const best = c.ownSpots.slice().sort((a, b) => b.count - a.count)[0];
+    const spot = c.spots.length ? { x: c.spots.reduce((a, p) => a + p.x, 0) / c.spots.length, y: c.spots.reduce((a, p) => a + p.y, 0) / c.spots.length } : best ? { x: best.x, y: best.y } : anchor(c.area);
     out.push({
       key: c.key,
       methodId: c.methodId,
@@ -329,6 +335,11 @@ function conditionNotes(methodId, fc) {
     else if (tc === '小潮系') notes.push(`${fc.tideName}：潮がゆるく流しやすいが、潮が動かない時間は食いが落ちやすい`);
     else notes.push('中潮：ほどよく潮が動く');
     if (fc.windSpeed >= 6) notes.push(`風${fc.windSpeed}m/s（予報）：船が流されやすい`);
+  } else if (methodId === 'negyo') {
+    if (tc === '大潮') notes.push('大潮：流れが速く、根の真上を一瞬で通り過ぎやすい。潮上から何度も流し直す');
+    else if (tc === '小潮系') notes.push(`${fc.tideName}：流れが緩く、根の上に長く留まれる`);
+    else notes.push('中潮：ほどよく流れる');
+    notes.push('根魚は朝夕の薄暗い時間によく食う（一般的な目安）');
   } else if (methodId === 'longline') {
     if (fc.season && fc.season.nokkomi) notes.push('水温が上がる時期：マダイが瀬の肩に寄る「乗っ込み」の頃（一般的な目安）');
     if (tc === '大潮') notes.push('大潮：潮がよく動き、マダイの食いが立ちやすい');

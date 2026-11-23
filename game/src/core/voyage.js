@@ -25,7 +25,7 @@ import {
   longlineTargetSpeed,
   longlineHelmTarget,
 } from './longline.js';
-import { depthAt, areaNameAt, currentAt, windAt, fmtClock } from './sea.js';
+import { depthAt, areaNameAt, currentAt, windAt, fmtClock, bottomIsRocky } from './sea.js';
 import { levelFromXp } from './progress.js';
 import { radioReports, peerName } from './reports.js';
 import { logTags } from './knowledge.js';
@@ -78,11 +78,7 @@ export function createVoyage(profile, opts = {}) {
       sonarId,
     },
     sonar: sonarId ? createSonar(EQUIPMENT[sonarId].sonar) : null,
-    levels: {
-      handline: levelFromXp(profile.methods.handline.xp),
-      troll: levelFromXp(profile.methods.troll.xp),
-      longline: levelFromXp((profile.methods.longline || { xp: 0 }).xp),
-    },
+    levels: Object.fromEntries(Object.keys(METHODS).map((m) => [m, levelFromXp((profile.methods[m] || { xp: 0 }).xp)])),
     method: opts.method || planMethod(av.plan, { troll: trollId, longline: longlineId }),
     plan: av.plan || null,
     plannedRoute: [],
@@ -119,6 +115,7 @@ function planMethod(plan, gear) {
   const m = plan && plan.methodId;
   if (m === 'troll' && gear.troll) return 'troll';
   if (m === 'longline' && gear.longline) return 'longline';
+  if (m === 'negyo') return 'negyo'; // the reels and a bottom rig are always on board
   return 'handline';
 }
 
@@ -157,7 +154,7 @@ export function lineInWater(v) {
 export function roomKg(v) {
   let busy = hookedKg(v.line);
   if (isOperating(v)) {
-    if (v.op.methodId === 'handline') busy += inFlightKg(v.op);
+    if (METHODS[v.op.methodId].drift) busy += inFlightKg(v.op);
     else if (v.op.methodId === 'troll') busy += trollInFlightKg(v.op);
   }
   return v.capacityKg - v.hold.kg - busy;
@@ -200,7 +197,7 @@ export function stepVoyage(v) {
     if (v.autopilot && !isOperating(v)) runAutopilot(v, model);
   }
 
-  const mode = isOperating(v) && v.op.methodId === 'handline' ? 'drift' : 'manual';
+  const mode = isOperating(v) && METHODS[v.op.methodId].drift ? 'drift' : 'manual';
   stepBoat(v.boat, model, w.cond, w.time, dt, mode);
 
   // the sonar turns one bearing per step (display only; it reads the world, never changes it)
@@ -249,6 +246,15 @@ export function stepVoyage(v) {
       else if (v.op.methodId === 'longline') stepLonglineOperation(v.op, v.line, ctx, dt);
       else stepOperation(v.op, ctx, dt);
       v.opSeconds += dt;
+      // 根魚釣り: tell once per drift when the boat has drifted off the rocks (the sounder's bottom echo thins)
+      if (v.op.methodId === 'negyo' && v.op.state === 'running' && w.step % 10 === 0) {
+        const rock = bottomIsRocky(v.boat.x, v.boat.y);
+        if (rock) v.op.wasOnRock = true;
+        else if (v.op.wasOnRock && !v.op.offRockSaid) {
+          v.op.offRockSaid = true;
+          say(v, '底が岩から砂地に変わりました（魚探の底の反応が薄くなった）。根から外れたら R で流し直し。');
+        }
+      }
     }
     if (v.op.state === 'ended') finishOperation(v);
   }
@@ -496,9 +502,10 @@ export function canStartOperation(v) {
     if (!route.ok) return route;
     return { ok: true };
   }
-  if (Math.abs(v.boat.speed) > METHODS.handline.maxStartSpeed) return { ok: false, reason: '船を止めてから操業を始めます（停止まで減速）。' };
+  const m = METHODS[v.method] && METHODS[v.method].drift ? METHODS[v.method] : METHODS.handline;
+  if (Math.abs(v.boat.speed) > m.maxStartSpeed) return { ok: false, reason: '船を止めてから操業を始めます（停止まで減速）。' };
   if (!v.obs.cols.length) return { ok: false, reason: '魚探の反応を待っています。' };
-  if (depth < 6) return { ok: false, reason: '浅すぎて一本釣りの仕掛けを流せません。' };
+  if (depth < 6) return { ok: false, reason: `浅すぎて${m.name}の仕掛けを流せません。` };
   return { ok: true };
 }
 
@@ -568,11 +575,12 @@ export function startOperation(v) {
   }
   v.boat.throttle = boatModel(v).steps.stop;
   v.boat.rudder = 0;
+  const hookMethod = METHODS[v.method] && METHODS[v.method].drift ? v.method : 'handline';
   v.op = createOperation({
     id: `${v.id}-op${v.opSeq}`,
     voyageId: v.id,
-    methodId: 'handline',
-    level: v.levels.handline,
+    methodId: hookMethod,
+    level: v.levels[hookMethod],
     rigs: v.equip.rigs,
     startT: v.world.time,
     x: v.boat.x,
@@ -581,7 +589,8 @@ export function startOperation(v) {
   });
   v.op.startConditions = conditionsSnapshot(v);
   if (depth > v.equip.reel.maxDepth) say(v, `水深${depth.toFixed(0)}mはリールの対応水深${v.equip.reel.maxDepth}mを超えています。届く深さまでで操業します。`, 'warn');
-  say(v, `操業開始（${areaNameAt(v.boat.x, v.boat.y)}・水深${depth.toFixed(0)}m）。投入から回収まで自動で行います。`);
+  if (hookMethod === 'negyo') say(v, `根魚釣り開始（${areaNameAt(v.boat.x, v.boat.y)}・水深${depth.toFixed(0)}m）。底を切って流します。根の真上を通るように流し直し（R）を使ってください。`);
+  else say(v, `操業開始（${areaNameAt(v.boat.x, v.boat.y)}・水深${depth.toFixed(0)}m）。投入から回収まで自動で行います。`);
   return { ok: true };
 }
 
@@ -724,7 +733,7 @@ export function redrift(v) {
     say(v, '回収して、流し始めた地点へ戻ります。');
     return { ok: true };
   }
-  const last = [...v.logs].reverse().find((l) => l.methodId === 'handline');
+  const last = [...v.logs].reverse().find((l) => l.methodId === v.method) || [...v.logs].reverse().find((l) => METHODS[l.methodId] && METHODS[l.methodId].drift);
   if (!last) return { ok: false, reason: 'まだ流した地点がありません。' };
   v.autopilot = { kind: 'redrift', route: [{ ...last.start }], leg: 0 };
   say(v, '前回流し始めた地点へ戻ります。');
@@ -862,6 +871,12 @@ function makeOperationLog(v, op) {
   };
   if (op.methodId === 'troll') {
     log.troll = { routeLength: Math.round(routeLength(op.route.points)), routeChanges: op.route.changes, towDistance: Math.round(st.towDistance) };
+  }
+  if (METHODS[op.methodId].targets) {
+    // several species on one method (根魚): what came up of each, and the snags
+    log.bySpecies = Object.fromEntries(Object.entries(op.landedBy || {}).map(([sp, c]) => [sp, { ...c }]));
+    log.snags = st.snags || 0;
+    log.lostFish = st.lostFish || 0;
   }
   log.tags = logTags(log);
   return log;

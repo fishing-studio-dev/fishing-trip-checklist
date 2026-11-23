@@ -4,8 +4,8 @@
 // Days covered by SEASON_SCRIPT use scripted fish; later days are procedural.
 // Everything is a pure function of (worldSeed, day) — no stored world state.
 import { SEASON_SCRIPT, SPECIES } from './data.js';
-import { hashFloat } from './rng.js';
-import { makeDayConditions } from './sea.js';
+import { hashFloat, hashString } from './rng.js';
+import { makeDayConditions, STRUCTURES, areaNameAt } from './sea.js';
 
 // Places where マアジ schools tend to hold in this fictional sea (game setting).
 export const HABITATS = [
@@ -37,6 +37,65 @@ export const MADAI_GROUNDS = [
   // 沖の瀬 (M5): around the far reef, more large fish
   { id: 'okise', area: '沖の瀬', x: 1560, y: 3930, spread: 260, weight: 0.9, big: 0.3, far: true },
 ];
+
+// 根魚（本作設定）: how many live on each kind of small structure (a range; the
+// day's number varies a little around the structure's own level), and the
+// rocky tops of the named reefs where they are spread more thinly.
+export const REEF_STOCK = {
+  gyosho: { kasago: [8, 18], kijihata: [2, 6], ara: [0, 0] },
+  koboreze: { kasago: [5, 12], kijihata: [3, 8], ara: [0, 0] },
+  ne: { kasago: [2, 6], kijihata: [4, 9], ara: [0, 3] },
+};
+export const ROCK_GROUNDS = [
+  { id: 'nishi_rock', area: '西の根', x: 650, y: 1350, sigmaH: 70, stock: { kasago: [10, 22], kijihata: [2, 6] } },
+  { id: 'kita_rock', area: '北の瀬', x: 2000, y: 2250, sigmaH: 90, stock: { kasago: [8, 18], kijihata: [3, 7] } },
+  { id: 'okise_rock', area: '沖の瀬', x: 1650, y: 4050, sigmaH: 90, stock: { kasago: [6, 14], kijihata: [4, 9], ara: [0, 2] } },
+];
+const REEF_BIG = { kasago: 0.2, kijihata: 0.2, ara: 0.3 };
+const keyOf = (str) => parseInt(hashString(str), 16); // a stable integer per place and species
+
+function reefSchool(seed, d, place, species, n, sigmaH) {
+  const k = keyOf(`${place.id}:${species}`);
+  return {
+    id: `D${d}-reef-${place.id}-${species}`,
+    species,
+    habitat: place.id,
+    area: place.area || areaNameAt(place.x, place.y),
+    a: { x: place.x, y: place.y },
+    b: { x: place.x, y: place.y },
+    orbitR: 0,
+    sigmaH,
+    sigmaZ: 1.0,
+    noiseSeed: Math.floor(hashFloat(seed, k, 31) * 1e9),
+    counts: splitCounts(n, REEF_BIG[species], 0.35),
+  };
+}
+
+/** The 根魚 of day d: resident on every structure and reef top (a pure function of seed and day). */
+export function reefSchools(seed, d) {
+  const out = [];
+  const count = (place, species, [lo, hi]) => {
+    if (hi <= 0) return 0;
+    const k = keyOf(`${place.id}:${species}`);
+    const own = hashFloat(seed, k, 41); // the structure's own level
+    const day = hashFloat(seed, k, d, 42); // a little change from day to day
+    return Math.round(lo + (hi - lo) * (0.65 * own + 0.35 * day));
+  };
+  for (const st of STRUCTURES) {
+    const stock = REEF_STOCK[st.kind];
+    for (const sp of Object.keys(stock)) {
+      const n = count(st, sp, stock[sp]);
+      if (n > 0) out.push(reefSchool(seed, d, st, sp, n, Math.max(10, st.r * 0.7 + 4)));
+    }
+  }
+  for (const g of ROCK_GROUNDS) {
+    for (const [sp, range] of Object.entries(g.stock)) {
+      const n = count(g, sp, range);
+      if (n > 0) out.push(reefSchool(seed, d, g, sp, n, g.sigmaH));
+    }
+  }
+  return out;
+}
 
 const habIndex = (id) => HABITATS.findIndex((h) => h.id === id);
 const zoneIndex = (id) => SAWARA_ZONES.findIndex((z) => z.id === id);
@@ -218,6 +277,7 @@ export function dayPlan(seed, d) {
     });
     script.sawara.forEach(([zid, n], k) => schools.push(sawaraSchool(seed, d, zid, n, k)));
     schools.push(...madaiSchools(seed, d));
+    schools.push(...reefSchools(seed, d));
     return { schools, scripted: true };
   }
   HABITATS.forEach((h, hi) => schools.push(...ajiFromEpisode(seed, d, h, hi)));
@@ -232,5 +292,6 @@ export function dayPlan(seed, d) {
     }
   }
   schools.push(...madaiSchools(seed, d));
+  schools.push(...reefSchools(seed, d));
   return { schools, scripted: false };
 }

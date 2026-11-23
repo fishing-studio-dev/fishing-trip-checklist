@@ -54,6 +54,7 @@ function normalizeSchool(s) {
     b,
     counts,
     initial: { ...counts },
+    reef: SPECIES[s.species || 'aji'].habit === 'reef', // 根魚: depth follows the local bottom
   };
 }
 
@@ -75,6 +76,8 @@ export function schoolCenter(school, t) {
 /** Height of the school's core above the bottom (m) — game setting for マアジ. */
 export function offBottomAt(school, t) {
   if (school.fixedOffBottom != null) return school.fixedOffBottom;
+  // 根魚（本作設定）: right on the rocks all day
+  if (school.reef) return Math.max(0.4, 0.7 + 0.15 * noise1(school.noiseSeed, t / 1800));
   // マダイ（本作設定）: hugs the bottom all day
   if (school.species === 'madai') return Math.max(0.6, 1.1 + school.offBottomBias * 0.3 + 0.3 * noise1(school.noiseSeed, t / 1500));
   const h = t / 3600;
@@ -100,8 +103,9 @@ export function schoolPose(school, t) {
     const z = Math.min(pelagicDepthAt(school, t), Math.max(2, bottom - 3));
     return { x: c.x, y: c.y, z, bottom };
   }
-  const z = Math.max(3, bottom - offBottomAt(school, t));
-  return { x: c.x, y: c.y, z, bottom };
+  const off = offBottomAt(school, t);
+  const z = Math.max(school.reef ? 1 : 3, bottom - off);
+  return { x: c.x, y: c.y, z, bottom, off };
 }
 
 /** Feeding activity 0.3..1.4 (game setting): time of day, moving water, temperature. */
@@ -119,6 +123,13 @@ export function activityAt(world, school, t) {
     const warm = Math.max(0.6, Math.min(1.2, 0.8 + (world.cond.waterTemp - 18.8) * 0.3));
     return Math.max(0.3, Math.min(1.4, todS * (0.8 + 0.25 * Math.min(1, sp / 0.22)) * warm * wobble));
   }
+  if (school.reef) {
+    // 根魚（本作設定）: feed best in low light (dawn, dusk); a moderate tide helps.
+    // アラ wants moving water; カサゴ・キジハタ turn off when it runs too hard.
+    const todR = 0.7 + 0.45 * Math.exp(-(((h - 5.5) / 1.3) ** 2)) + 0.45 * Math.exp(-(((h - 17) / 1.3) ** 2));
+    const tideR = school.species === 'ara' ? 0.6 + 0.6 * Math.min(1, sp / 0.22) : 0.85 + 0.3 * Math.min(1, sp / 0.2) - 0.35 * Math.max(0, (sp - 0.25) / 0.1);
+    return Math.max(0.3, Math.min(1.4, todR * Math.max(0.4, tideR) * wobble));
+  }
   if (school.species === 'madai') {
     // マダイ（本作設定）: feeds when the tide moves, better in the morning and evening
     const todM = 0.7 + 0.35 * Math.exp(-(((h - 6) / 1.6) ** 2)) + 0.3 * Math.exp(-(((h - 16.5) / 1.5) ** 2));
@@ -130,17 +141,19 @@ export function activityAt(world, school, t) {
 }
 
 /**
- * Fish density (fish / m^3) at (x, y, depth z), optionally for one species.
- * Truncated at 3 sigma so that empty water is exactly empty (A04).
- * `poses` may be precomputed for time t.
+ * Fish density (fish / m^3) at (x, y, depth z), optionally for one species
+ * (or a list of species). Truncated at 3 sigma so that empty water is exactly
+ * empty (A04). `poses` may be precomputed for time t. 根魚 sit at a height
+ * above the local bottom, wherever on the structure that is.
  */
 export function densityAt(world, x, y, z, poses, species = null) {
   let total = 0;
   let best = null;
   let bestRho = 0;
+  const many = Array.isArray(species);
   for (let i = 0; i < world.schools.length; i++) {
     const s = world.schools[i];
-    if (species && s.species !== species) continue;
+    if (species && (many ? !species.includes(s.species) : s.species !== species)) continue;
     const n = schoolTotal(s);
     if (n <= 0) continue;
     const p = poses ? poses[i] : schoolPose(s, world.time);
@@ -148,7 +161,8 @@ export function densityAt(world, x, y, z, poses, species = null) {
     const dy = y - p.y;
     const dh2 = (dx * dx + dy * dy) / (s.sigmaH * s.sigmaH);
     if (dh2 > 9) continue;
-    const dz = (z - p.z) / s.sigmaZ;
+    const pz = s.reef ? Math.max(1, depthAt(x, y) - p.off) : p.z;
+    const dz = (z - pz) / s.sigmaZ;
     if (dz * dz > 9) continue;
     const rho = (n / (SQRT2PI3 * s.sigmaH * s.sigmaH * s.sigmaZ)) * Math.exp(-0.5 * (dh2 + dz * dz));
     total += rho;

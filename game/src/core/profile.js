@@ -3,7 +3,7 @@
 import { ECONOMY, START_PROFILE, BOATS, EQUIPMENT, METHODS, fits } from './data.js';
 import { emptyBathy } from './bathy.js';
 
-export const PROFILE_SCHEMA = 6;
+export const PROFILE_SCHEMA = 7;
 
 export function createProfile({ worldSeed, now = new Date().toISOString() } = {}) {
   const seed = worldSeed != null ? worldSeed >>> 0 : (Math.floor(Math.random() * 0xffffffff) >>> 0);
@@ -17,7 +17,7 @@ export function createProfile({ worldSeed, now = new Date().toISOString() } = {}
     worldSeed: seed,
     funds: ECONOMY.startFunds,
     day: 0, // number of days started
-    methods: { handline: { xp: 0 }, troll: { xp: 0 }, longline: { xp: 0 } },
+    methods: { handline: { xp: 0 }, troll: { xp: 0 }, longline: { xp: 0 }, negyo: { xp: 0 }, oyogase: { xp: 0 }, ika: { xp: 0 } },
     boat: { uid: 'boat1', model: START_PROFILE.boatModel, name: START_PROFILE.boatName, slots },
     storage: [],
     equipSeq: seq,
@@ -33,6 +33,14 @@ export function createProfile({ worldSeed, now = new Date().toISOString() } = {}
     marks: [], // the player's own marks, kept across days: {id, x, y, name, memo, day, t, kind, depth}
     markSeq: 0,
   };
+}
+
+/** Schema 6 -> 7: experience for the new methods (根魚釣り・泳がせ釣り・イカ釣り), all from 0. */
+export function migrateProfile6to7(p6) {
+  const p = clone(p6);
+  p.schema = 7;
+  p.methods = { negyo: { xp: 0 }, oyogase: { xp: 0 }, ika: { xp: 0 }, ...p.methods };
+  return p;
 }
 
 /** Schema 5 (M5) -> 6: the own depth map and marks kept across days (both empty). */
