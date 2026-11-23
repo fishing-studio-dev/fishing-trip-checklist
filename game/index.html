@@ -1,0 +1,61 @@
+<!doctype html>
+<html lang="ja">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+  <meta name="theme-color" content="#0b2236">
+  <title>漁師ゲーム（試作M0）</title>
+  <link rel="stylesheet" href="./styles.css">
+  <script type="importmap">{ "imports": { "three": "./vendor/three/three.module.js" } }</script>
+</head>
+<body>
+<div id="app">
+  <canvas id="view3d" aria-label="海と船の表示"></canvas>
+
+  <div id="hud" hidden>
+    <div class="hud-top" id="hudTop"></div>
+    <div class="hud-chart panel" id="chartPanel">
+      <div class="panel-head"><span>海図（GPSプロッター）</span><button type="button" class="mini" data-act="chart" title="海図の拡大（C）">拡大</button></div>
+      <canvas id="chart" width="240" height="240"></canvas>
+    </div>
+    <div class="hud-sounder panel" id="sounderPanel">
+      <div class="panel-head"><span id="sounderTitle">魚探</span><button type="button" class="mini" data-act="sounder" title="魚探を閉じる（F）">閉じる</button></div>
+      <canvas id="sounder" width="260" height="300"></canvas>
+    </div>
+    <button type="button" class="sounder-open" id="sounderOpen" data-act="sounder" hidden>魚探を開く（F）</button>
+    <div class="hud-op panel" id="opPanel" hidden></div>
+    <div class="hud-msgs" id="msgs" aria-live="polite"></div>
+    <div class="hud-controls" id="controls">
+      <div class="ctl-group helm">
+        <button type="button" class="ctl" data-hold="left" aria-label="左へ舵（A）">◀ 舵</button>
+        <div class="throttle">
+          <button type="button" class="ctl" data-act="throttleUp" aria-label="増速（W）">増速 ▲</button>
+          <span id="throttleLabel">停止</span>
+          <button type="button" class="ctl" data-act="throttleDown" aria-label="減速（S）">減速 ▼</button>
+        </div>
+        <button type="button" class="ctl" data-hold="right" aria-label="右へ舵（D）">舵 ▶</button>
+      </div>
+      <div class="ctl-group cmds">
+        <button type="button" class="ctl primary" id="btnOp" data-act="op">操業開始<kbd>Space</kbd></button>
+        <button type="button" class="ctl" id="btnRedrift" data-act="redrift">流し直し<kbd>R</kbd></button>
+        <button type="button" class="ctl" data-act="mark">印を付ける<kbd>M</kbd></button>
+        <button type="button" class="ctl" id="btnPort" data-act="port">帰港<kbd>H</kbd></button>
+      </div>
+      <div class="ctl-group sys">
+        <button type="button" class="ctl small" id="btnSpeed" data-act="speed" title="時間の早さ（1/2/3）">×1</button>
+        <button type="button" class="ctl small" id="btnView" data-act="view" title="視点切替（V）">視点</button>
+        <button type="button" class="ctl small" id="btnPause" data-act="pause" title="一時停止（P）">停止</button>
+        <button type="button" class="ctl small" data-act="help" title="操作説明">？</button>
+      </div>
+    </div>
+  </div>
+
+  <section id="screen" class="screen" hidden></section>
+  <div id="modal" class="modal" hidden></div>
+  <div id="toast" class="toast" role="status" aria-live="polite"></div>
+  <div id="loading" class="loading">読み込み中…</div>
+</div>
+<noscript><p style="padding:20px">このゲームの実行にはJavaScriptが必要です。</p></noscript>
+<script type="module" src="./src/ui/main.js"></script>
+</body>
+</html>

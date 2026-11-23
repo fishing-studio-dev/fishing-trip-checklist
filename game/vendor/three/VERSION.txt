@@ -1,0 +1,4 @@
+three.js r186 (npm three@0.186.1)
+Source: https://registry.npmjs.org/three/-/three-0.186.1.tgz
+Files: build/three.module.js, build/three.core.js (unmodified)
+License: MIT (see LICENSE)

@@ -1,0 +1,14 @@
+{
+  "name": "ryoshi-game",
+  "private": true,
+  "version": "0.1.0",
+  "description": "漁師ゲーム（作業名） M0 prototype",
+  "type": "module",
+  "scripts": {
+    "start": "node tools/serve.mjs",
+    "test": "node --test tests/*.test.js",
+    "e2e": "node tests/e2e/playthrough.cjs",
+    "lint": "eslint ."
+  },
+  "license": "UNLICENSED"
+}
