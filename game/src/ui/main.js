@@ -20,6 +20,8 @@ import * as S from './screens.js';
 
 const params = new URLSearchParams(location.search);
 const DEV = params.get('dev') === '1';
+// set by tools/build-artifact.mjs when the game is published as a claude.ai page
+const BUILD = window.__RYOSHI_BUILD__ || { hosted: false };
 const $ = (id) => document.getElementById(id);
 
 // ---------------------------------------------------------------- storage
@@ -58,6 +60,7 @@ const app = {
   seenMsg: 0,
   seenEvent: 0,
   lastFeed: '',
+  hosted: !!BUILD.hosted,
 };
 
 function commit(profile, reason) {
@@ -202,6 +205,7 @@ function depart(planKey = null) {
   let scenario = null;
   if (DEV && params.get('scenario') === 'near') scenario = nearScenario();
   app.voyage = createVoyage(app.profile, { scenario });
+  $('msgs').dataset.last = '';
   app.carry = 0;
   app.seenMsg = 0;
   app.seenEvent = app.voyage.eventSeq - 1;
@@ -275,7 +279,15 @@ function equipStored(uid, slotId) {
   show('equip');
 }
 
+/**
+ * Save a text file. The published page cannot download files, so that build
+ * (esbuild --define:globalThis.RYOSHI_HOSTED=true) compiles this to copyText only.
+ */
 function download(name, text) {
+  if (globalThis.RYOSHI_HOSTED) {
+    copyText(text);
+    return;
+  }
   const blob = new Blob([text], { type: 'application/json' });
   const a = document.createElement('a');
   a.href = URL.createObjectURL(blob);
@@ -296,23 +308,52 @@ function exportCurrent() {
 }
 
 let pendingImport = null;
+
+/** Copy the save as text (downloads are not available on the hosted page). */
+/** Put text on the clipboard and show it selectable, so it can be kept even if the clipboard is refused. */
+async function copyText(text) {
+  let ok = false;
+  try {
+    await navigator.clipboard.writeText(text);
+    ok = true;
+  } catch {
+    ok = false;
+  }
+  modal(`<div class="card"><h2>セーブの文字列</h2><p class="note">${ok ? 'コピーしました。' : 'コピーできなかったので、下の文字列を選択してコピーしてください。'}メモアプリなどに貼り付けて保管し、読み込むときは「セーブ管理」の貼り付け欄に戻します。</p>
+  <textarea class="paste" id="copyArea" readonly></textarea>
+  <div class="actions"><button type="button" class="btn primary" data-act="closeModal">閉じる</button></div></div>`);
+  const area = $('copyArea');
+  area.value = text;
+  if (!ok) {
+    area.focus();
+    area.select();
+  }
+  toast(ok ? 'セーブをコピーしました' : '文字列を選択してコピーしてください');
+}
+
+function copySave() {
+  copyText(exportSave(app.profile, app.revision));
+}
+
+function importText(text) {
+  const res = checkImport(String(text || '').trim());
+  const out = $('importResult');
+  if (!res.ok) {
+    if (out) out.textContent = `読み込めません：${res.error}`;
+    return;
+  }
+  pendingImport = res.profile;
+  const p = res.profile;
+  modal(`<div class="card"><h2>セーブの読み込み</h2><p>次の内容で現在の進行を置き換えます。現在のセーブはバックアップに残ります。</p>
+  <dl class="kv"><dt>日数</dt><dd>${p.day}日目まで</dd><dt>資金</dt><dd>${p.funds.toLocaleString()}G</dd><dt>一本釣り</dt><dd>Lv ${levelFromXp(p.methods.handline.xp)}</dd><dt>操業記録</dt><dd>${p.logs.length}件</dd></dl>
+  <div class="actions"><button type="button" class="btn primary" data-act="importConfirm">読み込む</button><button type="button" class="btn" data-act="closeModal">やめる</button></div></div>`);
+}
+
 function onImportFile(ev) {
   const file = ev.target.files && ev.target.files[0];
   if (!file) return;
   const reader = new FileReader();
-  reader.onload = () => {
-    const res = checkImport(String(reader.result));
-    const out = $('importResult');
-    if (!res.ok) {
-      if (out) out.textContent = `読み込めません：${res.error}`;
-      return;
-    }
-    pendingImport = res.profile;
-    const p = res.profile;
-    modal(`<div class="card"><h2>セーブの読み込み</h2><p>次の内容で現在の進行を置き換えます。現在のセーブはバックアップに残ります。</p>
-    <dl class="kv"><dt>日数</dt><dd>${p.day}日目まで</dd><dt>資金</dt><dd>${p.funds.toLocaleString()}G</dd><dt>一本釣り</dt><dd>Lv ${levelFromXp(p.methods.handline.xp)}</dd><dt>操業記録</dt><dd>${p.logs.length}件</dd></dl>
-    <div class="actions"><button type="button" class="btn primary" data-act="importConfirm">読み込む</button><button type="button" class="btn" data-act="closeModal">やめる</button></div></div>`);
-  };
+  reader.onload = () => importText(reader.result);
   reader.readAsText(file);
 }
 
@@ -485,7 +526,11 @@ document.addEventListener('pointerdown', (e) => {
   const b = e.target.closest('[data-hold]');
   if (!b) return;
   held[b.dataset.hold] = true;
-  b.setPointerCapture?.(e.pointerId);
+  try {
+    b.setPointerCapture?.(e.pointerId); // keep receiving pointerup even if the finger slides off
+  } catch {
+    /* not capturable (synthetic event) — release still works via pointerup/cancel */
+  }
   e.preventDefault();
 });
 const releaseHold = (e) => {
@@ -493,6 +538,10 @@ const releaseHold = (e) => {
   if (b) held[b.dataset.hold] = false;
 };
 document.addEventListener('pointerup', releaseHold);
+// long-press on a control must not open the phone's text/context menu
+document.addEventListener('contextmenu', (e) => {
+  if (e.target.closest && e.target.closest('.ctl, #view3d, #chart')) e.preventDefault();
+});
 document.addEventListener('pointercancel', releaseHold);
 
 $('chart').addEventListener('click', onChartClick);
@@ -543,6 +592,12 @@ document.addEventListener('click', (e) => {
       break;
     case 'export':
       exportCurrent();
+      break;
+    case 'copySave':
+      copySave();
+      break;
+    case 'importPaste':
+      importText($('pasteArea') ? $('pasteArea').value : '');
       break;
     case 'exportQuarantine': {
       const key = app.loadResult && app.loadResult.quarantineKey;
@@ -633,6 +688,40 @@ function updateHudStatic() {
   $('sounderTitle').textContent = EQUIPMENT[v.equip.sounderId].name;
 }
 
+/**
+ * On phones, fit the operation panel into the free band so it never covers
+ * the controls: portrait — below the status chips, above the messages;
+ * landscape — bottom right, above the controls, below the sounder.
+ */
+function layoutHud() {
+  const op = $('opPanel');
+  const msgs = $('msgs');
+  const W = window.innerWidth;
+  const H = window.innerHeight;
+  const landscapePhone = H <= 520 && W > H;
+  const portraitPhone = W <= 900 && H >= W;
+  if (!landscapePhone && !portraitPhone) {
+    op.style.top = op.style.bottom = op.style.maxHeight = msgs.style.bottom = '';
+    return;
+  }
+  const appR = $('app').getBoundingClientRect();
+  const ctl = $('controls').getBoundingClientRect();
+  const gapAboveControls = appR.bottom - ctl.top + 6;
+  msgs.style.bottom = `${gapAboveControls}px`;
+  if (landscapePhone) {
+    const snd = ($('sounderPanel').hidden ? $('sounderOpen') : $('sounderPanel')).getBoundingClientRect();
+    op.style.top = 'auto';
+    op.style.bottom = `${gapAboveControls}px`;
+    op.style.maxHeight = `${Math.max(50, ctl.top - snd.bottom - 12)}px`;
+  } else {
+    const top = $('hudTop').getBoundingClientRect();
+    const msgTop = msgs.childElementCount ? msgs.getBoundingClientRect().top : ctl.top;
+    op.style.bottom = 'auto';
+    op.style.top = `${top.bottom - appR.top + 6}px`;
+    op.style.maxHeight = `${Math.max(50, msgTop - top.bottom - 12)}px`;
+  }
+}
+
 let hudAt = 0;
 function updateHud(now) {
   const v = app.voyage;
@@ -707,7 +796,13 @@ function updateHud(now) {
   // messages
   const box = $('msgs');
   const recent = v.messages.slice(-4);
-  box.innerHTML = recent.map((m) => `<div class="msg ${m.level}"><span class="t">${fmtClock(m.t)}</span>${S.esc(m.text)}</div>`).join('');
+  // rebuild only when a new message arrives (rebuilding restarts the fade-in)
+  const lastId = recent.length ? recent[recent.length - 1].id : 0;
+  if (box.dataset.last !== String(lastId)) {
+    box.dataset.last = String(lastId);
+    box.innerHTML = recent.map((m) => `<div class="msg ${m.level}"><span class="t">${fmtClock(m.t)}</span>${S.esc(m.text)}</div>`).join('');
+  }
+  layoutHud();
 }
 
 function consumeEvents(v) {

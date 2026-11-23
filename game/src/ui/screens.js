@@ -53,6 +53,7 @@ export function titleScreen({ storageNote }) {
     </ul></div>
   </div>
   ${storageNote ? `<p class="save-bad">${esc(storageNote)}</p>` : ''}
+  <p class="note">進行はこのブラウザに保存されます（端末・ブラウザごとに別の進行）。スマホでは画面下のボタンで操作します。横持ちにも対応しています。</p>
   <div class="actions"><button type="button" class="btn primary" data-act="newGame">新しく始める</button>
   <button type="button" class="btn" data-act="openSave">セーブを読み込む</button></div>
 </div>`;
@@ -341,14 +342,21 @@ export function logScreen(app) {
 
 export function saveScreen(app) {
   const p = app.profile;
+  const exportBtn = app.hosted
+    ? '<button type="button" class="btn" data-act="copySave">セーブをコピー（文字列）</button>'
+    : '<button type="button" class="btn" data-act="export">セーブを書き出す（JSON）</button><button type="button" class="btn" data-act="copySave">文字列としてコピー</button>';
   return `<div class="sheet"><h1>セーブ管理</h1>
   <div class="grid"><div class="card"><h2>現在のセーブ</h2>
     ${p ? `<dl class="kv"><dt>日数</dt><dd>${p.day}日目まで</dd><dt>資金</dt><dd>${money(p.funds)}</dd><dt>一本釣り</dt><dd>Lv ${levelFromXp(p.methods.handline.xp)}</dd><dt>曳縄</dt><dd>Lv ${levelFromXp(p.methods.troll.xp)}</dd><dt>操業記録</dt><dd>${p.logs.length}件</dd><dt>聞いた話</dt><dd>${p.knowledge.reports.length}件</dd><dt>保存回数</dt><dd>${app.revision}</dd></dl>` : '<p class="note">プロフィールがありません。</p>'}
     <p class="note">${saveLine(app.saveStatus)}</p>
     <p class="note">このブラウザの保存領域（localStorage）に保存しています。直前のセーブを1つバックアップとして残します。以前の版（M0）のセーブを読み込んだときは、元のデータも別に残しています。ブラウザのデータ消去で消えるため、大事な進行は書き出して保管してください。</p>
-    <div class="actions">${p ? '<button type="button" class="btn" data-act="export">セーブを書き出す（JSON）</button>' : ''}</div></div>
+    ${app.hosted ? '<p class="note">この公開ページではファイルのダウンロードができないため、セーブは文字列としてコピーして保管してください（メモアプリなどに貼り付け）。</p>' : ''}
+    <div class="actions">${p ? exportBtn : ''}</div></div>
   <div class="card"><h2>セーブを読み込む</h2><p class="note">書き出したJSONファイルを読み込みます（M0のセーブも可）。内容を確認してから置き換え、現在のセーブはバックアップに残します。</p>
     <input type="file" id="importFile" accept="application/json,.json">
+    <p class="note" style="margin-top:12px">または、コピーしておいたセーブの文字列を貼り付けて読み込む：</p>
+    <textarea class="paste" id="pasteArea" placeholder="ここに貼り付け"></textarea>
+    <div class="actions"><button type="button" class="btn" data-act="importPaste">貼り付けた内容を読み込む</button></div>
     <p id="importResult" class="note"></p></div></div>
   <div class="actions"><button type="button" class="btn primary" data-act="${p ? 'toPort' : 'toTitle'}">戻る</button></div></div>`;
 }
@@ -362,7 +370,8 @@ export function helpModal() {
   <li><b>R</b> 流し直し（一本釣り：回収→流し始めの地点へ自動で戻って再開）</li>
   <li><b>C</b> 海図の拡大。曳縄のときは拡大した海図をクリックすると航路の経由点を追加、<b>X</b> で航路を消去（操業中でも変更できます）</li>
   <li><b>H</b> 帰港（港まで移動補助。操船すると取り消し）</li>
-  <li><b>M</b> 海図に印、<b>F</b> 魚探の表示切替、<b>V</b> 視点切替、<b>1 / 2 / 3</b> 時間の早さ、<b>P</b> 一時停止</li></ul>
+  <li><b>M</b> 海図に印、<b>F</b> 魚探の表示切替、<b>V</b> 視点切替、<b>1 / 2 / 3</b> 時間の早さ、<b>P</b> 一時停止</li>
+  <li><b>スマホ</b>：画面下のボタンで同じ操作ができます。舵のボタンは押している間だけ効きます。曳縄の航路は、海図の「拡大」を押してから海図をタップ。</li></ul>
   <p class="note">探す・決めるのはあなた、作業は自動。一本釣りは魚探の反応の潮上で止まって流す。曳縄は群れがいそうな場所を通る航路を決める（自動航行は決めた航路を走るだけで、魚を探しに行くことはありません）。表示の切替で海や魚が変わることはありません。</p>
   <div class="actions"><button type="button" class="btn primary" data-act="closeModal">閉じる</button></div></div>`;
 }
