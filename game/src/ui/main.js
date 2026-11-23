@@ -1,7 +1,7 @@
 // App controller: boot, screens, input, main loop.
-import { TIME, BOATS, PORT, EQUIPMENT, METHODS, SIM, SPECIES } from '../core/data.js';
+import { TIME, BOATS, PORT, EQUIPMENT, METHODS, SIM, SPECIES, sellValue } from '../core/data.js';
 import { createProfile, markDeparture, resolveInterruptedVoyage } from '../core/profile.js';
-import { settleVoyage, purchaseEquipment, purchasePreview, equipFromStorage } from '../core/economy.js';
+import { settleVoyage, purchaseEquipment, purchasePreview, equipFromStorage, unmountToStorage, sellStored, buyBoat, planBoatPurchase } from '../core/economy.js';
 import { loadSave, writeSave, exportSave, checkImport, memoryStorage, KEYS } from '../core/save.js';
 import {
   createVoyage, advanceVoyage, isOperating, isTrolling, setHelm, setMethod, startOperation, stopOperation, redrift, returnToPort,
@@ -117,6 +117,9 @@ function show(screen) {
       break;
     case 'equip':
       html = S.equipScreen(app);
+      break;
+    case 'market':
+      html = S.marketScreen(app);
       break;
     case 'log':
       html = S.logScreen(app);
@@ -267,6 +270,65 @@ function buyConfirm(itemId, slotId) {
   commit(res.profile, '装備の購入');
   toast(`${EQUIPMENT[itemId].name} を取り付けました`);
   show('equip');
+}
+
+function unmount(slotId) {
+  const res = unmountToStorage(app.profile, slotId);
+  if (!res.ok) {
+    toast(res.reason);
+    return;
+  }
+  commit(res.profile, '装備を倉庫へ');
+  show('equip');
+}
+
+function sell(uid) {
+  const inst = app.profile.storage.find((x) => x.uid === uid);
+  if (!inst) return;
+  const it = EQUIPMENT[inst.itemId];
+  const value = sellValue(it);
+  modal(`<div class="card"><h2>倉庫の装備を売る</h2><p><b>${S.esc(it.name)}</b> を売ります。売ると倉庫から消えます。</p>
+  <dl class="kv"><dt>受け取る金額</dt><dd>${value.toLocaleString()}G</dd><dt>売った後の資金</dt><dd>${(app.profile.funds + value).toLocaleString()}G</dd></dl>
+  <div class="actions"><button type="button" class="btn warn" data-act="sellConfirm" data-uid="${S.esc(uid)}">売る</button><button type="button" class="btn" data-act="closeModal">やめる</button></div></div>`);
+}
+
+function sellConfirm(uid) {
+  modal(null);
+  const res = sellStored(app.profile, uid);
+  if (!res.ok) {
+    toast(res.reason);
+    return;
+  }
+  commit(res.profile, '装備の売却');
+  toast(`${EQUIPMENT[res.receipt.itemId].name} を ${res.receipt.value.toLocaleString()}G で売りました`);
+  show('equip');
+}
+
+function boatQuote(offerId) {
+  const plan = planBoatPurchase(app.profile, offerId);
+  if (!plan.offer) {
+    toast(plan.reason);
+    return;
+  }
+  modal(S.boatQuoteModal(app.profile, offerId));
+}
+
+function buyBoatConfirm(offerId) {
+  modal(null);
+  const res = buyBoat(app.profile, offerId);
+  if (!res.ok) {
+    toast(res.reason);
+    return;
+  }
+  const r = commit(res.profile, '船の買い替え');
+  const m = BOATS[res.receipt.model];
+  const stored = res.receipt.moves.filter((mv) => !mv.to).map((mv) => EQUIPMENT[mv.itemId].name);
+  show('port');
+  modal(`<div class="card"><h2>${S.esc(m.name)}に買い替えました</h2>
+  <dl class="kv"><dt>支払総額</dt><dd>${res.receipt.payable.toLocaleString()}G（本体 ${res.receipt.price.toLocaleString()}G − 下取り ${res.receipt.tradeIn.toLocaleString()}G）</dd><dt>資金</dt><dd>${res.receipt.fundsBefore.toLocaleString()}G → <b>${res.receipt.fundsAfter.toLocaleString()}G</b></dd>
+  <dt>倉庫へ</dt><dd>${S.esc(stored.length ? stored.join('、') : 'なし')}</dd><dt>保存</dt><dd>${r.ok ? '保存しました' : `保存に失敗しました（${S.esc(r.error || '')}）`}</dd></dl>
+  <p class="note">次の航海からこの船で出ます。装備は「装備」画面で確認・付け替えできます。</p>
+  <div class="actions"><button type="button" class="btn primary" data-act="closeModal">閉じる</button><button type="button" class="btn" data-act="equip">装備を見る</button></div></div>`);
 }
 
 function equipStored(uid, slotId) {
@@ -582,6 +644,7 @@ document.addEventListener('click', (e) => {
       show(app.loadResult && app.loadResult.status !== 'none' && app.loadResult.status !== 'ok' ? 'saveProblem' : 'title');
       break;
     case 'equip':
+      modal(null);
       show('equip');
       break;
     case 'log':
@@ -616,6 +679,25 @@ document.addEventListener('click', (e) => {
       break;
     case 'equipStored':
       equipStored(b.dataset.uid, b.dataset.slot);
+      break;
+    case 'unmount':
+      unmount(b.dataset.slot);
+      break;
+    case 'sell':
+      sell(b.dataset.uid);
+      break;
+    case 'sellConfirm':
+      sellConfirm(b.dataset.uid);
+      break;
+    case 'market':
+      modal(null);
+      show('market');
+      break;
+    case 'boatQuote':
+      boatQuote(b.dataset.offer);
+      break;
+    case 'buyBoatConfirm':
+      buyBoatConfirm(b.dataset.offer);
       break;
     case 'retrySave':
       if (app.profile) commit(app.profile, '再試行');
@@ -685,41 +767,90 @@ function updateHudStatic() {
   $('sounderPanel').hidden = !app.sounderOpen;
   $('sounderOpen').hidden = app.sounderOpen;
   $('chartPanel').classList.toggle('big', app.chartBig);
+  $('chartToggle').textContent = app.chartBig ? '閉じる' : '拡大';
   $('sounderTitle').textContent = EQUIPMENT[v.equip.sounderId].name;
 }
 
 /**
- * On phones, fit the operation panel into the free band so it never covers
- * the controls: portrait — below the status chips, above the messages;
- * landscape — bottom right, above the controls, below the sounder.
+ * Place the HUD for the device and situation. While operating ("op-mode") the
+ * sounder grows and the operation panel gets the free space; on phones the
+ * chart is tucked away behind a button. The operation panel is fitted into
+ * the free band so it never covers the controls.
  */
-function layoutHud() {
-  const op = $('opPanel');
-  const msgs = $('msgs');
+function hudMode() {
   const W = window.innerWidth;
   const H = window.innerHeight;
-  const landscapePhone = H <= 520 && W > H;
-  const portraitPhone = W <= 900 && H >= W;
-  if (!landscapePhone && !portraitPhone) {
-    op.style.top = op.style.bottom = op.style.maxHeight = msgs.style.bottom = '';
-    return;
-  }
+  const land = H <= 520 && W > H;
+  const port = !land && W <= 900 && H >= W;
+  const opMode = !!(app.voyage && isOperating(app.voyage));
+  return { land, port, opMode, tuck: opMode && (land || port) && !app.chartBig };
+}
+
+function layoutHud() {
+  const hud = $('hud');
+  const op = $('opPanel');
+  const msgs = $('msgs');
+  const top = $('hudTop');
+  const { land, port, opMode, tuck } = hudMode();
+  hud.classList.toggle('op-mode', opMode);
+  hud.classList.toggle('phone-land', land);
+  hud.classList.toggle('phone-port', port);
+  $('chartPanel').hidden = tuck;
+  for (const el of [op, msgs, top]) el.style.top = el.style.bottom = el.style.maxHeight = el.style.left = el.style.width = '';
   const appR = $('app').getBoundingClientRect();
   const ctl = $('controls').getBoundingClientRect();
-  const gapAboveControls = appR.bottom - ctl.top + 6;
-  msgs.style.bottom = `${gapAboveControls}px`;
-  if (landscapePhone) {
-    const snd = ($('sounderPanel').hidden ? $('sounderOpen') : $('sounderPanel')).getBoundingClientRect();
-    op.style.top = 'auto';
-    op.style.bottom = `${gapAboveControls}px`;
-    op.style.maxHeight = `${Math.max(50, ctl.top - snd.bottom - 12)}px`;
-  } else {
-    const top = $('hudTop').getBoundingClientRect();
-    const msgTop = msgs.childElementCount ? msgs.getBoundingClientRect().top : ctl.top;
-    op.style.bottom = 'auto';
-    op.style.top = `${top.bottom - appR.top + 6}px`;
-    op.style.maxHeight = `${Math.max(50, msgTop - top.bottom - 12)}px`;
+  const rel = (y) => y - appR.top;
+  const aboveControls = appR.bottom - ctl.top + 6;
+  const snd = ($('sounderPanel').hidden ? $('sounderOpen') : $('sounderPanel')).getBoundingClientRect();
+  if (!land && !port) {
+    if (opMode || !op.hidden) {
+      op.style.top = `${rel(snd.bottom) + 8}px`;
+      op.style.maxHeight = `${Math.max(80, ctl.top - snd.bottom - 20)}px`;
+    }
+    return;
   }
+  msgs.style.bottom = `${aboveControls}px`;
+  if (land) {
+    if (opMode) {
+      // operation panel: the whole left column; messages next to it
+      op.style.top = '4px';
+      op.style.bottom = `${aboveControls}px`;
+      op.style.maxHeight = 'none';
+      const left = op.getBoundingClientRect().right - appR.left + 8;
+      msgs.style.left = `${left}px`;
+      msgs.style.width = `${Math.max(120, snd.left - appR.left - left - 8)}px`;
+    } else {
+      op.style.top = 'auto';
+      op.style.bottom = `${aboveControls}px`;
+      op.style.maxHeight = `${Math.max(50, ctl.top - snd.bottom - 12)}px`;
+    }
+    return;
+  }
+  // portrait phone: chips under the sounder (op-mode) or under the panels
+  if (opMode) top.style.top = `${rel(snd.bottom) + 6}px`;
+  const tb = top.getBoundingClientRect();
+  const msgTop = msgs.childElementCount ? msgs.getBoundingClientRect().top : ctl.top;
+  op.style.bottom = 'auto';
+  op.style.top = `${rel(tb.bottom) + 6}px`;
+  op.style.maxHeight = `${Math.max(60, msgTop - tb.bottom - 12)}px`;
+}
+
+const STEPS = {
+  handline: [['prep', '準備'], ['drop', '投入'], ['fish', '誘い'], ['retrieve', '回収'], ['unhook', '取込']],
+  troll: [['deploy', '出す'], ['tow', '曳く'], ['fight', '掛かり'], ['haul', '手繰り'], ['unhook', '取込']],
+};
+
+/** One row per rig: which step of the cycle it is in, and a short detail. */
+function stepRow(methodId, line, label, detail) {
+  const phase = line.phase === 'adjust' ? 'fish' : line.phase;
+  const steps = STEPS[methodId];
+  const at = steps.findIndex(([id]) => id === phase);
+  const lis = steps.map(([, name], i) => `<li class="${i < at ? 'done' : i === at ? 'on' : ''}">${name}</li>`).join('');
+  return `<div class="op-rig"><span class="rig">${S.esc(label)}</span><ol class="steps">${lis}</ol><div class="rig-detail">${S.esc(detail)}</div></div>`;
+}
+
+function bigNums(items) {
+  return `<div class="op-big">${items.map(([k, val, unit, sub]) => `<div><span class="k">${k}</span><b>${val}<small>${unit}</small></b>${sub ? `<span class="s">${sub}</span>` : ''}</div>`).join('')}</div>`;
 }
 
 let hudAt = 0;
@@ -735,14 +866,20 @@ function updateHud(now) {
   const sit = v.autopilot ? 'auto' : isOperating(v) ? 'operate' : 'sail';
   const scale = TIME.SCALE[sit] * TIME.USER_MULT[app.speedIdx];
   const late = v.world.time >= TIME.WARN;
+  const opMode = isOperating(v);
   let html = chip(`${v.day}日目`, fmtClock(v.world.time), late ? 'warn' : '');
-  html += chip('針路', `${String(hdg).padStart(3, '0')}°`);
-  html += chip('対地', `${(sog * 1.944).toFixed(1)}kt ${sog > 0.05 ? compass8(b.vx, b.vy) : ''}`);
+  if (!opMode) {
+    html += chip('針路', `${String(hdg).padStart(3, '0')}°`);
+    html += chip('対地', `${(sog * 1.944).toFixed(1)}kt ${sog > 0.05 ? compass8(b.vx, b.vy) : ''}`);
+  }
   html += chip('水深', last ? `${last.bottom.toFixed(1)}m` : '--');
   html += chip('場所', S.esc(areaNameAt(b.x, b.y)));
-  html += chip('漁法', METHODS[isOperating(v) ? v.op.methodId : v.method].name);
-  html += chip('魚倉', `${v.hold.kg.toFixed(1)}/${v.capacityKg}kg`, v.hold.kg > v.capacityKg * 0.9 ? 'warn' : '');
+  if (!opMode) {
+    html += chip('漁法', METHODS[v.method].name);
+    html += chip('魚倉', `${v.hold.kg.toFixed(1)}/${v.capacityKg}kg`, v.hold.kg > v.capacityKg * 0.9 ? 'warn' : '');
+  }
   html += chip('時間', `×${scale}${app.paused ? ' 停止中' : ''}`, app.paused ? 'warn' : '');
+  if (hudMode().tuck) html += '<button type="button" class="chip chip-btn" data-act="chart">海図を見る</button>';
   if (b.grounded) html += chip('注意', '浅瀬・陸', 'warn');
   if (b.outOfBounds) html += chip('注意', '漁場の外', 'warn');
   if (DEV) html += chip('DEV', `${Math.round(b.x)},${Math.round(b.y)}`, 'warn');
@@ -750,32 +887,26 @@ function updateHud(now) {
 
   // operation panel
   const panel = $('opPanel');
+  const clock = (secs) => `${Math.floor(secs / 60)}:${String(Math.floor(secs % 60)).padStart(2, '0')}`;
+  const holdNum = [`魚倉`, v.hold.kg.toFixed(0), `/${v.capacityKg}kg`, v.hold.kg > v.capacityKg * 0.9 ? '満杯が近い' : ''];
   if (isTrolling(v)) {
     const op = v.op;
     const pace = recentPace(op, v.world.time, 1800);
-    const el = v.world.time - op.startT;
     panel.hidden = false;
-    panel.innerHTML = `<h3>自動操業 — ${METHODS.troll.name} Lv${op.level}</h3>
-      ${op.lines.map((l) => `<div class="state">${S.esc(trollLineLabel(l))}</div>`).join('')}
-      <div class="row"><span>経過</span><span>${Math.floor(el / 60)}分${String(Math.floor(el % 60)).padStart(2, '0')}秒</span></div>
-      <div class="row"><span>この曳縄</span><span>${op.landedCount}本・${op.landedKg.toFixed(1)}kg</span></div>
-      <div class="row"><span>直近30分</span><span>${pace.n}本</span></div>
-      <div class="row"><span>航路</span><span>経由点${op.route.points.length - 1}・${op.route.dir > 0 ? '往路' : '復路'}${op.route.changes ? `（変更${op.route.changes}回）` : ''}</span></div>
-      <div class="row"><span>速力</span><span>${(Math.abs(b.speed) * 1.944).toFixed(1)}kt</span></div>
+    panel.innerHTML = `<div class="op-head"><span>曳縄 <b>Lv${op.level}</b></span><span class="op-clock">${clock(v.world.time - op.startT)}</span></div>
+      ${op.lines.map((l, i) => stepRow('troll', l, l.label || (l.side < 0 ? '左舷' : '右舷') + (op.lines.length > 2 ? `${Math.floor(i / 2) + 1}` : ''), trollLineLabel(l).replace(/^[^：]*：/, ''))).join('')}
+      ${bigNums([['この曳縄', op.landedCount, '本', `${op.landedKg.toFixed(1)}kg`], ['直近30分', pace.n, '本', ''], holdNum])}
+      <div class="op-note">航路：経由点${op.route.points.length - 1}・${op.route.dir > 0 ? '往路' : '復路'}${op.route.changes ? `（変更${op.route.changes}回）` : ''}・${(Math.abs(b.speed) * 1.944).toFixed(1)}kt</div>
       <div class="feed">${S.esc(app.lastFeed)}</div>`;
   } else if (isOperating(v)) {
     const op = v.op;
     const pace = recentPace(op, v.world.time);
     const line = op.lines[0];
-    const el = v.world.time - op.startT;
     panel.hidden = false;
-    panel.innerHTML = `<h3>自動操業 — ${METHODS.handline.name} Lv${op.level}</h3>
-      <div class="state">${S.esc(linePhaseLabel(line))}</div>
-      <div class="row"><span>経過</span><span>${Math.floor(el / 60)}分${String(Math.floor(el % 60)).padStart(2, '0')}秒</span></div>
-      <div class="row"><span>この流し</span><span>${op.landedCount}尾・${op.landedKg.toFixed(1)}kg</span></div>
-      <div class="row"><span>直近10分のペース</span><span>${pace.n}尾（${pace.perMin.toFixed(1)}尾/分）</span></div>
-      <div class="row"><span>タナ</span><span>${line.tana != null ? `${line.tana.toFixed(1)}m（${line.tanaSource === 'echo' ? '魚探反応に合わせる' : '底から少し上'}）` : '—'}</span></div>
-      <div class="row"><span>船の流れ</span><span>${sog > 0.03 ? `${compass8(b.vx, b.vy)}へ ${(sog * 1.944).toFixed(1)}kt` : 'ほぼ止まっている'}</span></div>
+    panel.innerHTML = `<div class="op-head"><span>一本釣り <b>Lv${op.level}</b></span><span class="op-clock">${clock(v.world.time - op.startT)}</span></div>
+      ${op.lines.map((l, i) => stepRow('handline', l, l.label || (i === 0 ? '右舷' : '左舷'), linePhaseLabel(l))).join('')}
+      ${bigNums([['この流し', op.landedCount, '尾', `${op.landedKg.toFixed(1)}kg`], ['直近10分', pace.perMin.toFixed(1), '尾/分', `${pace.n}尾`], holdNum])}
+      <div class="op-note">タナ ${line.tana != null ? `${line.tana.toFixed(0)}m（${line.tanaSource === 'echo' ? '魚探の反応に合わせる' : '底から少し上'}）` : '—'}・${sog > 0.03 ? `${compass8(b.vx, b.vy)}へ${(sog * 1.944).toFixed(1)}ktで流れている` : 'ほぼ流れていない'}</div>
       <div class="feed">${S.esc(app.lastFeed)}</div>`;
   } else if (v.logs.length) {
     const l = v.logs[v.logs.length - 1];
@@ -865,21 +996,26 @@ function frame(now) {
   }
   if (scene) {
     const atSea = app.screen === 'sea' && v;
-    const line = atSea && isOperating(v) && v.op.methodId === 'handline' ? v.op.lines[0] : null;
+    const hl = atSea && isOperating(v) && v.op.methodId === 'handline' ? v.op.lines : null;
     const tl = atSea && isTrolling(v) ? v.op.lines : null;
-    const reel = app.profile ? app.profile.boat.slots.starboard_reel.itemId : 'reel_hand';
-    const trollGear = atSea ? !!v.equip.troll : !!(app.profile && app.profile.boat.slots.stern_troll);
+    const slots = app.profile ? app.profile.boat.slots : {};
+    const itemAt = (id) => (slots[id] ? slots[id].itemId : null);
+    const reels = atSea
+      ? { starboard: (v.equip.rigs.find((r) => r.label === '右舷') || {}).reelId || null, port: (v.equip.rigs.find((r) => r.label === '左舷') || {}).reelId || null }
+      : { starboard: itemAt('starboard_reel'), port: itemAt('port_reel') };
+    const worker = (lines) => lines.find((l, i) => (v.op.worker === i));
+    const busy = hl ? worker(hl) : tl ? worker(tl) : null;
     scene.render({
       mode: atSea ? 'sea' : 'port',
       boat: atSea ? v.boat : { x: PORT.dock.x, y: PORT.dock.y + 20, heading: 0, speed: 0, vx: 0, vy: 0 },
       gameTime: atSea ? v.world.time : app.screen === 'receipt' ? 13 * 3600 : TIME.DEPART + 1800,
       windSpeed: atSea ? v.world.cond.windSpeed : 3,
-      reelId: atSea ? v.equip.reelId : reel,
-      lineActive: !!(line && ['drop', 'fish', 'adjust', 'retrieve'].includes(line.phase)),
-      lineDepth: line ? line.depth : 0,
-      working: line ? line.phase : tl ? (tl.some((l) => l.phase === 'haul' || l.phase === 'fight') ? 'retrieve' : tl.some((l) => l.phase === 'unhook' || l.phase === 'deploy') ? 'unhook' : null) : null,
-      trollGear,
-      trollLines: tl ? tl.map((l) => ({ active: l.phase === 'tow' || l.phase === 'fight' || l.phase === 'haul', side: l.side, len: l.phase === 'haul' ? l.haulLeft : 40 })) : null,
+      boatModel: atSea ? v.modelId : app.profile ? app.profile.boat.model : 'skiff_1',
+      reels,
+      trollId: atSea ? v.equip.trollId : itemAt('stern_troll'),
+      hlLines: hl ? hl.map((l) => ({ station: l.label === '左舷' ? 'port' : 'starboard', active: ['drop', 'fish', 'adjust', 'retrieve'].includes(l.phase), depth: l.depth })) : null,
+      trollLines: tl ? tl.map((l) => ({ active: l.phase === 'tow' || l.phase === 'fight' || (l.phase === 'haul'), offset: l.offset != null ? l.offset : l.side * 3, len: l.phase === 'haul' ? l.haulLeft : 40 })) : null,
+      working: busy ? ({ haul: 'retrieve', fight: 'retrieve', deploy: 'unhook' }[busy.phase] || busy.phase) : null,
       view: app.view,
       realTime,
       realDt,
@@ -943,6 +1079,11 @@ function devApi() {
         reel: app.profile && app.profile.boat.slots.starboard_reel.itemId,
         troll: app.profile && app.profile.boat.slots.stern_troll ? app.profile.boat.slots.stern_troll.itemId : null,
         trollXp: app.profile && app.profile.methods.troll.xp,
+        boatModel: app.profile && app.profile.boat.model,
+        boatUid: app.profile && app.profile.boat.uid,
+        slots: app.profile && Object.fromEntries(Object.entries(app.profile.boat.slots).map(([k, x]) => [k, x ? `${x.itemId}#${x.uid}` : null])),
+        storage: app.profile && app.profile.storage.map((x) => `${x.itemId}#${x.uid}`),
+        boatHistory: app.profile && app.profile.boatHistory.length,
         reports: app.profile && app.profile.knowledge.reports.length,
         candidates: (app.candidates || []).map((c) => ({ key: c.key, letter: c.letter, labels: c.labels, feasible: c.feasible.ok })),
         revision: app.revision,
@@ -962,6 +1103,9 @@ function devApi() {
           plan: v.plan,
           route: isTrolling(v) ? v.op.route.points : v.plannedRoute,
           phase: v.phase,
+          boatModel: v.modelId,
+          opLines: v.op ? v.op.lines.map((l) => ({ label: l.label || (l.side < 0 ? '左舷' : '右舷'), phase: l.phase, waiting: !!l.waiting })) : null,
+          worker: v.op ? v.op.worker : null,
           pings: v.obs.pingCount,
           schools: v.world.schools.map((s) => ({ id: s.id, counts: { ...s.counts } })),
           lastEcho: v.obs.cols.length ? v.obs.cols[v.obs.cols.length - 1].maxFish : 0,

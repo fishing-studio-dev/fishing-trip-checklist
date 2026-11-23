@@ -3,10 +3,10 @@
 // Keys are namespaced so they never collide with the checklist app that lives
 // at the repository root (it uses 'fishing-checklist-v1').
 import { hashString } from './rng.js';
-import { validateProfile, PROFILE_SCHEMA, migrateProfile1to2 } from './profile.js';
+import { validateProfile, PROFILE_SCHEMA, migrateProfile1to2, migrateProfile2to3 } from './profile.js';
 
 export const SAVE_FORMAT = 'ryoshi-game-save';
-export const SAVE_SCHEMA = 2;
+export const SAVE_SCHEMA = 3;
 export const KEYS = {
   main: 'ryoshi-game:save:main',
   backup: 'ryoshi-game:save:backup',
@@ -68,6 +68,14 @@ function migrate(env) {
       return { ok: false, error: `M0形式からの移行に失敗しました: ${e.message}` };
     }
     ver = 2;
+  }
+  if (ver === 2 && data.schema === 2) {
+    try {
+      data = migrateProfile2to3(data);
+    } catch (e) {
+      return { ok: false, error: `M1形式からの移行に失敗しました: ${e.message}` };
+    }
+    ver = 3;
   }
   if (ver === SAVE_SCHEMA && data.schema === PROFILE_SCHEMA) return { ok: true, envelope: { ...env, schemaVersion: ver, data }, from: from !== ver ? from : null };
   return { ok: false, error: `移行できない版です（${env.schemaVersion}/${env.data && env.data.schema}）` };

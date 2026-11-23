@@ -1,8 +1,8 @@
 // Persistent player progress (what the save file holds).
 // The live sea (WorldState) is NOT part of this; it is regenerated per voyage.
-import { ECONOMY, START_PROFILE, BOATS, EQUIPMENT, METHODS } from './data.js';
+import { ECONOMY, START_PROFILE, BOATS, EQUIPMENT, METHODS, fits } from './data.js';
 
-export const PROFILE_SCHEMA = 2;
+export const PROFILE_SCHEMA = 3;
 
 export function createProfile({ worldSeed, now = new Date().toISOString() } = {}) {
   const seed = worldSeed != null ? worldSeed >>> 0 : (Math.floor(Math.random() * 0xffffffff) >>> 0);
@@ -26,7 +26,18 @@ export function createProfile({ worldSeed, now = new Date().toISOString() } = {}
     interruptedVoyages: [],
     stats: { voyages: 0, fish: 0, kg: 0, sales: 0 },
     knowledge: { reports: [], briefedDay: 0 },
+    boatSeq: 1,
+    boatHistory: [], // boats traded in: {uid, model, name, tradeIn, day}
   };
+}
+
+/** Schema 2 (M1) -> 3 (M2): boat ownership history; nothing else changes. */
+export function migrateProfile2to3(p2) {
+  const p = clone(p2);
+  p.schema = 3;
+  p.boatSeq = p.boatSeq || 1;
+  p.boatHistory = p.boatHistory || [];
+  return p;
 }
 
 /**
@@ -99,9 +110,11 @@ export function validateProfile(p) {
       }
       const item = EQUIPMENT[inst.itemId];
       if (!item) errs.push(`未知の装備 ${inst.itemId}`);
-      else if (item.type !== slot.accepts) errs.push(`${slot.id} に対応しない装備 ${inst.itemId}`);
+      else if (!fits(item, slot)) errs.push(`${slot.id} に対応しない装備 ${inst.itemId}`);
     }
+    for (const key of Object.keys(p.boat.slots || {})) if (!model.slots.some((s) => s.id === key)) errs.push(`この船にない取付位置 ${key}`);
   }
+  if (typeof p.boatSeq !== 'number' || !Array.isArray(p.boatHistory)) errs.push('船の記録が不正です');
   if (!Array.isArray(p.storage)) errs.push('storage が配列ではありません');
   else for (const s of p.storage) if (!s || !EQUIPMENT[s.itemId]) errs.push('倉庫に未知の装備');
   if (!Array.isArray(p.logs)) errs.push('logs が配列ではありません');

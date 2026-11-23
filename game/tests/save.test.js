@@ -1,7 +1,7 @@
 // A12 save / restore, corruption handling, interrupted voyages.
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { createProfile, markDeparture, resolveInterruptedVoyage, validateProfile } from '../src/core/profile.js';
+import { createProfile, markDeparture, resolveInterruptedVoyage, validateProfile, PROFILE_SCHEMA } from '../src/core/profile.js';
 import { hashString } from '../src/core/rng.js';
 import { settleVoyage, purchaseEquipment } from '../src/core/economy.js';
 import { summarizeVoyage } from '../src/core/voyage.js';
@@ -147,7 +147,7 @@ function m0Save() {
   return { v1, raw: JSON.stringify({ format: 'ryoshi-game-save', schemaVersion: 1, app: 'M0', revision: 7, savedAt: NOW, checksum: hashString(data), data: v1 }) };
 }
 
-test('M1 reads an M0 save: funds, XP, equipment and logbook are kept; the original is preserved', () => {
+test('an M0 save is migrated step by step to the current format: funds, XP, equipment and logbook kept; the original preserved', () => {
   const st = memoryStorage();
   const { v1, raw } = m0Save();
   st.setItem(KEYS.main, raw);
@@ -155,7 +155,8 @@ test('M1 reads an M0 save: funds, XP, equipment and logbook are kept; the origin
   assert.equal(r.status, 'ok');
   assert.equal(r.migratedFrom, 1);
   const p = r.profile;
-  assert.equal(p.schema, 2);
+  assert.equal(p.schema, PROFILE_SCHEMA);
+  assert.deepEqual(p.boatHistory, []);
   assert.equal(p.funds, 12345);
   assert.equal(p.methods.handline.xp, 95);
   assert.equal(p.methods.troll.xp, 0);

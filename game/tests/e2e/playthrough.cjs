@@ -1,4 +1,4 @@
-// End-to-end playthrough in headless Chromium (M0 + M1).
+// End-to-end playthrough in headless Chromium (M0 + M1 + M2).
 // Steering, stopping, choosing a plan, switching method, setting a trolling
 // route on the chart, starting/stopping operations, returning, buying and
 // departing are all done with the game's own keys/buttons/clicks.
@@ -75,7 +75,7 @@ const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
       let err = Math.atan2(dx, dy) - b.heading;
       while (err > Math.PI) err -= 2 * Math.PI;
       while (err < -Math.PI) err += 2 * Math.PI;
-      const want = dist > 220 ? 4 : dist > 90 ? 3 : 2;
+      const want = dist > 220 ? 5 : dist > 90 ? 4 : 3; // 全速 / 半速 / 微速
       if (b.throttle < want) await press('w');
       else if (b.throttle > want) await press('s');
       const key = err > 0.06 ? 'd' : err < -0.06 ? 'a' : null;
@@ -311,6 +311,112 @@ const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
     await ctx2.close();
   } catch (e) {
     check('M0 save migration in the browser', false, e.message);
+  }
+
+  // ---------------------------------------------------------------- M2: buy a used boat, move gear, fish two rigs
+  try {
+    // same page as the main playthrough, so the keyboard skipper (driveTo) can be reused
+    const pg = page;
+    const st3 = st;
+    await pg.goto(`http://localhost:${port}/?dev=1&seed=77`);
+    await pg.waitForSelector('#screen');
+    const rich = fs.readFileSync(path.join(__dirname, 'fixtures', 'm2-rich-save.json'), 'utf8');
+    await pg.evaluate((raw) => localStorage.setItem('ryoshi-game:save:main', raw), rich);
+    await pg.reload();
+    await pg.waitForSelector('#portChart');
+    let s3 = await st3();
+    const before = { funds: s3.funds, slots: s3.slots, storage: s3.storage };
+    check('M2: test save (M1 progress, 100,000G) opens on the small boat', s3.funds === 100000 && s3.boatModel === 'skiff_1', JSON.stringify(before));
+    await pg.click('[data-act=market]');
+    await pg.waitForSelector('[data-act=boatQuote][data-offer=used_cruiser_a]');
+    const mText = await pg.textContent('#screen');
+    check('market compares new and used boats with the shown performance and price after trade-in', /新艇/.test(mText) && /中古/.test(mText) && /魚倉/.test(mText) && /一本釣りの竿受け/.test(mText) && /差引の支払い/.test(mText));
+    await pg.screenshot({ path: path.join(outDir, '14-boat-market.png') });
+    const plan = await pg.evaluate(() => import('/src/core/economy.js').then((m) => {
+      const r = m.planBoatPurchase(window.__ryoshi.app.profile, 'used_cruiser_a');
+      return { payable: r.payable, fundsAfter: r.fundsAfter, tradeIn: r.tradeIn, moves: r.moves };
+    }));
+    await pg.click('[data-act=boatQuote][data-offer=used_cruiser_a]');
+    await pg.waitForSelector('[data-act=buyBoatConfirm]');
+    const qText = await pg.textContent('#modal');
+    const yen = (n) => `${n.toLocaleString('ja-JP')}G`;
+    check('quote shows payment, funds after and where each item goes before buying', qText.includes(yen(plan.payable)) && qText.includes(yen(plan.fundsAfter)) && /装備の行き先/.test(qText) && /曳縄/.test(qText) && /倉庫/.test(qText), JSON.stringify(plan));
+    await pg.screenshot({ path: path.join(outDir, '15-boat-quote.png') });
+    await pg.click('[data-act=buyBoatConfirm]');
+    await pg.waitForSelector('#portChart');
+    s3 = await st3();
+    const allItems = [...Object.values(s3.slots).filter(Boolean), ...s3.storage];
+    const uids = allItems.map((x) => x.split('#')[1]);
+    const oldUids = [...Object.values(before.slots).filter(Boolean), ...before.storage].map((x) => x.split('#')[1]);
+    check('bought: one active boat (中型), paid exactly once, saved', s3.boatModel === 'cruiser_2' && s3.funds === 100000 - plan.payable && s3.boatHistory === 1 && s3.saveStatus.ok, `funds ${s3.funds}`);
+    check('gear: the trolling gear moved to the new stern, replaced items kept in storage, nothing lost or duplicated', s3.slots.stern_troll === before.slots.stern_troll && oldUids.every((u) => uids.includes(u)) && new Set(uids).size === uids.length && s3.slots.port_reel, JSON.stringify({ slots: s3.slots, storage: s3.storage }));
+    await pg.screenshot({ path: path.join(outDir, '16-bought-boat.png') });
+    await pg.click('[data-act=closeModal]');
+    await pg.reload();
+    await pg.waitForSelector('#portChart');
+    const s3r = await st3();
+    check('reload after the purchase restores the same boat, funds, slots and storage', s3r.boatModel === s3.boatModel && s3r.funds === s3.funds && JSON.stringify(s3r.slots) === JSON.stringify(s3.slots) && JSON.stringify(s3r.storage) === JSON.stringify(s3.storage));
+    // sell one stored item (confirm first)
+    await pg.click('[data-act=equip]');
+    const sellUid = s3r.storage[0].split('#')[1];
+    await pg.waitForSelector(`[data-act=sell][data-uid=${sellUid}]`);
+    await pg.screenshot({ path: path.join(outDir, '17-equip-cruiser.png'), fullPage: true });
+    await pg.click(`[data-act=sell][data-uid=${sellUid}]`);
+    await pg.waitForSelector('[data-act=sellConfirm]');
+    await pg.click('[data-act=sellConfirm]');
+    await sleep(200);
+    const s3s = await st3();
+    check('selling a stored item pays its shown value once and removes only that item', s3s.funds === s3r.funds + 300 && !s3s.storage.some((x) => x.endsWith(`#${sellUid}`)) && s3s.storage.length === s3r.storage.length - 1 && s3s.saveStatus.ok, `funds ${s3r.funds} → ${s3s.funds}`);
+    await pg.click('[data-act=toPort]');
+    await pg.waitForSelector('#portChart');
+    // depart on the new boat and fish the handline with both rigs
+    await pg.click('[data-act=depart]');
+    await pg.waitForFunction(() => window.__ryoshi.state().screen === 'sea');
+    s3 = await st3();
+    check('the next voyage uses the new boat', s3.voyage.boatModel === 'cruiser_2');
+    const sc = (await pg.evaluate(() => window.__ryoshi.schoolCenters())).filter((x) => !x.id.includes('sawara')).sort((a, b) => b.total - a.total)[0];
+    const cur = await pg.evaluate(() => window.__ryoshi.current());
+    const csp = Math.hypot(cur.x, cur.y) || 1;
+    await driveTo({ x: sc.x - (cur.x / csp) * 60, y: sc.y - (cur.y / csp) * 60 }, 'M2 approach');
+    await pg.keyboard.press('Space');
+    await pg.waitForFunction(() => window.__ryoshi.state().voyage.operating);
+    await pg.evaluate(() => window.__ryoshi.fastForward(240));
+    s3 = await st3();
+    const labels = (s3.voyage.opLines || []).map((l) => l.label);
+    check('two handline rigs work from 右舷 and 左舷 (one fisher, taking turns)', labels.length === 2 && labels.includes('右舷') && labels.includes('左舷'), JSON.stringify(s3.voyage.opLines));
+    const opText = await pg.textContent('#opPanel').catch(() => '');
+    check('operation panel lists both rigs', /右舷/.test(opText) && /左舷/.test(opText), opText.slice(0, 120));
+    await pg.screenshot({ path: path.join(outDir, '18-cruiser-two-rigs.png') });
+    await pg.keyboard.press('v');
+    await sleep(1200);
+    await pg.screenshot({ path: path.join(outDir, '19-cruiser-deck.png') });
+    // switching helm / deck views keeps the sea as it is (paused)
+    await pg.keyboard.press('p');
+    await sleep(300);
+    const snapV = JSON.stringify((await st3()).voyage);
+    for (const k of ['v', 'v', 'f', 'f', 'c', 'c', 'v']) {
+      await pg.keyboard.press(k);
+      await sleep(60);
+    }
+    await sleep(300);
+    check('helm/deck view switching on the new boat changes nothing in the sea, boat or catch', snapV === JSON.stringify((await st3()).voyage));
+    await pg.keyboard.press('v');
+    await pg.keyboard.press('p');
+    await pg.evaluate(() => window.__ryoshi.fastForward(900));
+    s3 = await st3();
+    check('the new boat lands アジ', s3.voyage.hold.count > 0, `${s3.voyage.hold.count} fish`);
+    await pg.keyboard.press('h');
+    await pg.evaluate(() => window.__ryoshi.fastForward(3000));
+    await pg.waitForSelector('[data-act=toPort]', { timeout: 30000 });
+    s3 = await st3();
+    check('landing on the new boat settles and saves', s3.saveStatus.ok && s3.screen === 'receipt');
+    await pg.click('[data-act=toPort]');
+    await pg.click('[data-act=log]');
+    await pg.waitForSelector('table.data');
+    const lg = await pg.textContent('#screen');
+    check('logbook records the boat and both reels for the trip', /中型漁船・手巻きリール＋手巻きリール/.test(lg), '');
+  } catch (e) {
+    check('M2 boat purchase playthrough', false, e.message);
   }
 
   check('no page errors or console errors', errors.length === 0, errors.slice(0, 5).join(' | '));

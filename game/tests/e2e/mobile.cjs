@@ -129,6 +129,30 @@ async function layout(page) {
         return a && !a.hidden && a.value.startsWith('{');
       });
       check(`${name}: save can be copied as text on the hosted page`, copied);
+      // M2 by touch: paste a richer save, compare boats, read the quote, buy
+      if (await page.isVisible('#modal [data-act=closeModal]')) await page.tap('#modal [data-act=closeModal]');
+      await page.fill('#pasteArea', fs.readFileSync(path.join(__dirname, 'fixtures', 'm2-rich-save.json'), 'utf8'));
+      await page.tap('[data-act=importPaste]');
+      await page.tap('[data-act=importConfirm]');
+      await page.waitForSelector('[data-act=market]');
+      await page.tap('[data-act=market]');
+      await page.waitForSelector('[data-act=boatQuote][data-offer=used_cruiser_b]');
+      const mw = await page.evaluate(() => ({ vw: window.innerWidth, sw: document.documentElement.scrollWidth }));
+      check(`${name}: boat market fits the width`, mw.sw <= mw.vw, `${mw.sw}/${mw.vw}`);
+      await page.screenshot({ path: path.join(outDir, `${slug}-5-market.png`) });
+      await page.tap('[data-act=boatQuote][data-offer=used_cruiser_b]');
+      await page.waitForSelector('[data-act=buyBoatConfirm]');
+      const q = await page.evaluate(() => {
+        const c = document.querySelector('#modal .card').getBoundingClientRect();
+        return { left: c.left, right: c.right, top: c.top, bottom: c.bottom, vw: window.innerWidth, vh: window.innerHeight };
+      });
+      check(`${name}: quote card is inside the screen (scrolls if long)`, q.left >= 0 && q.right <= q.vw + 1 && q.top >= 0 && q.bottom <= q.vh + 1, JSON.stringify(q));
+      await page.screenshot({ path: path.join(outDir, `${slug}-6-quote.png`) });
+      await page.locator('[data-act=buyBoatConfirm]').scrollIntoViewIfNeeded();
+      await page.tap('[data-act=buyBoatConfirm]');
+      await sleep(300);
+      const sb = await page.evaluate(() => window.__ryoshi.state());
+      check(`${name}: used boat bought by touch and saved`, sb.boatModel === 'cruiser_2' && sb.funds === 100000 - 70000 && sb.saveStatus.ok, `funds ${sb.funds}`);
     } catch (e) {
       check(`${name}: playtest ran`, false, e.message);
       await page.screenshot({ path: path.join(outDir, `${slug}-99-failure.png`) }).catch(() => {});

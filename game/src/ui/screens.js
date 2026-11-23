@@ -1,10 +1,10 @@
 // HTML for the menu screens. Pure functions of state -> markup.
-import { EQUIPMENT, BOATS, ECONOMY, METHODS, SPECIES, PEERS, skillForLevel, trollSkillForLevel, TIME } from '../core/data.js';
+import { EQUIPMENT, BOATS, ECONOMY, METHODS, SPECIES, PEERS, skillForLevel, trollSkillForLevel, TIME, fits, sellValue } from '../core/data.js';
 import { xpProgress, cycleEstimate, trollCycleEstimate, levelFromXp } from '../core/progress.js';
-import { purchasePreview } from '../core/economy.js';
+import { purchasePreview, boatOffers, planBoatPurchase } from '../core/economy.js';
 import { forecastText, fmtClock } from '../core/sea.js';
 import { reportLine, KIND_LABEL } from '../core/reports.js';
-import { similarLogs, todaysReports, timeBandLabel, logTags, opRate } from '../core/knowledge.js';
+import { similarLogs, todaysReports, timeBandLabel, logTags, opRate, gearOfType } from '../core/knowledge.js';
 
 export const esc = (s) => String(s ?? '').replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
 const money = (n) => `${Math.round(n).toLocaleString('ja-JP')}${ECONOMY.currency}`;
@@ -84,8 +84,8 @@ function candidateCard(c, today, profile) {
   const neg = c.negatives.filter((e) => !e.superseded).map((e) => evidenceLine(e, today)).join('');
   const own = c.own.lines.map((l) => `<li>自分の日誌：${esc(l)}</li>`).join('');
   const notes = c.notes.map((n) => `<li>今日の海況：${esc(n)}</li>`).join('');
-  const gearItem = itemOf(profile, METHODS[c.methodId].gearSlot);
-  const feas = c.feasible.ok ? `<li>装備：可能（${esc(gearItem ? gearItem.name : '')}）</li>` : `<li class="warn-text">装備：${esc(c.feasible.reason)}</li>`;
+  const gearNames = gearOfType(profile, METHODS[c.methodId].gearType).map((id) => EQUIPMENT[id].name);
+  const feas = c.feasible.ok ? `<li>装備：可能（${esc(gearNames.join('＋'))}）</li>` : `<li class="warn-text">装備：${esc(c.feasible.reason)}</li>`;
   const details = [
     ...c.evidence.slice(2).map((e) => evidenceLine(e, today)),
     ...c.rules.map((r) => `<li><b>${esc(PEERS[r.speaker].name)}</b>の経験則：「${esc(r.text)}」</li>`),
@@ -139,14 +139,16 @@ function skillCard(profile) {
 
 function boatCard(profile) {
   const model = BOATS[profile.boat.model];
-  const slots = model.slots.map((s) => `<dt>${esc(s.label)}</dt><dd>${esc(itemOf(profile, s.id) ? itemOf(profile, s.id).name : '（空き）')}</dd>`).join('');
+  const slots = model.slots.map((sl) => `<dt>${esc(sl.label)}</dt><dd>${esc(itemOf(profile, sl.id) ? itemOf(profile, sl.id).name : '（空き）')}</dd>`).join('');
   const next = [];
-  if (itemOf(profile, 'starboard_reel').id !== 'reel_electric') next.push(EQUIPMENT.reel_electric);
+  if (!gearOfType(profile, 'reel').includes('reel_electric')) next.push(EQUIPMENT.reel_electric);
   if (!itemOf(profile, 'stern_troll')) next.push(EQUIPMENT.troll_tr1);
   const goal = next.map((it) => `<p class="note">次の設備：${esc(it.name)}（${money(it.price)}）${profile.funds >= it.price ? '<span class="tag good">購入可能</span>' : ` まであと${money(it.price - profile.funds)}`}</p>`).join('');
+  const cheapest = boatOffers(profile).map((o) => o.price - model.tradeIn).sort((a, b) => a - b)[0];
+  const boatGoal = cheapest != null ? `<p class="note">船の買い替え：下取り後 ${money(cheapest)} から${profile.funds >= cheapest ? '<span class="tag good">検討できる</span>' : ''}</p>` : '';
   return `<div class="card"><h2>船・装備</h2>
-    <dl class="kv"><dt>船名</dt><dd>${esc(profile.boat.name)}</dd><dt>船体</dt><dd>${esc(model.name)}（${model.length}m）</dd><dt>魚倉</dt><dd>${model.holdKg}kg</dd>${slots}</dl>
-    ${goal}<div class="actions"><button type="button" class="btn" data-act="equip">装備・船</button></div></div>`;
+    <dl class="kv"><dt>船名</dt><dd>${esc(profile.boat.name)}</dd><dt>船体</dt><dd>${esc(model.name)}（${model.length}m）</dd><dt>魚倉</dt><dd>${model.holdKg}kg</dd><dt>全速</dt><dd>${(model.speeds[model.steps.full] * 1.944).toFixed(0)}ノット</dd>${slots}</dl>
+    ${goal}${boatGoal}<div class="actions"><button type="button" class="btn" data-act="equip">装備</button><button type="button" class="btn" data-act="market">船の買い替え</button></div></div>`;
 }
 
 export function portScreen(app) {
@@ -244,49 +246,142 @@ function reelCompare(level, fromId, toId) {
   const c30b = cycleEstimate(level, toId, 30);
   const c50a = cycleEstimate(level, fromId, 50);
   const c50b = cycleEstimate(level, toId, 50);
-  return `<table class="data"><tr><th>効果</th><th class="num">現在</th><th class="num">購入後</th></tr>
+  return `<div class="table-wrap"><table class="data wrap"><tr><th>効果</th><th class="num">現在</th><th class="num">購入後</th></tr>
   <tr><td>巻上げ速度</td><td class="num">${c30a.retrieveSpeed.toFixed(2)}m/秒</td><td class="num up">${c30b.retrieveSpeed.toFixed(2)}m/秒</td></tr>
   <tr><td>対応水深</td><td class="num">${a.maxDepth}m</td><td class="num up">${b.maxDepth}m</td></tr>
   <tr><td>手返し目安 水深30m</td><td class="num">${sec(c30a.total)}</td><td class="num up">${sec(c30b.total)}</td></tr>
-  <tr><td>手返し目安 水深50m</td><td class="num">${sec(c50a.total)}</td><td class="num up">${sec(c50b.total)}</td></tr></table>`;
+  <tr><td>手返し目安 水深50m</td><td class="num">${sec(c50a.total)}</td><td class="num up">${sec(c50b.total)}</td></tr></table></div>`;
 }
 
 function trollEffect(item) {
   const t = item.troll;
-  return `<table class="data"><tr><th>効果</th><th class="num">購入後</th></tr>
+  return `<div class="table-wrap"><table class="data wrap"><tr><th>効果</th><th class="num">取り付け後</th></tr>
   <tr><td>できる漁</td><td class="num up">曳縄（サワラ）</td></tr>
-  <tr><td>仕掛け</td><td class="num">${t.lines}本（潜行板の深さ ${t.lureDepths.join('m・')}m）</td></tr>
-  <tr><td>曳く速さ</td><td class="num">${t.towSpeed}m/秒（約${(t.towSpeed * 1.944).toFixed(0)}ノット）</td></tr></table>`;
+  <tr><td>仕掛け</td><td class="num">${t.lines}本</td></tr>
+  <tr><td>潜行板の深さ</td><td class="num">${t.lureDepths.join('・')}m</td></tr>
+  <tr><td>曳く速さ</td><td class="num">約${(t.towSpeed * 1.944).toFixed(0)}ノット</td></tr></table></div>`;
+}
+
+function sounderEffect(cur, item) {
+  const a = cur.sounder;
+  const b = item.sounder;
+  return `<div class="table-wrap"><table class="data wrap"><tr><th>効果</th><th class="num">現在</th><th class="num">取り付け後</th></tr>
+  <tr><td>ビームの幅（狭いほど反応を分けて映す）</td><td class="num">${a.halfAngleDeg * 2}°</td><td class="num up">${b.halfAngleDeg * 2}°</td></tr>
+  <tr><td>表示の細かさ</td><td class="num">${a.binSize}m</td><td class="num up">${b.binSize}m</td></tr>
+  <tr><td>探れる深さ</td><td class="num">${a.maxRange}m</td><td class="num up">${b.maxRange}m</td></tr>
+  <tr><td>弱い反応</td><td class="num">標準</td><td class="num up">よく拾う</td></tr></table></div>`;
+}
+
+/** Which boat model has a slot this item fits (for "not on this boat" notes). */
+function whereItFits(item) {
+  const out = [];
+  for (const m of Object.values(BOATS)) for (const sl of m.slots) if (fits(item, sl)) out.push(`${m.name}の${sl.label}`);
+  return out;
 }
 
 export function equipScreen(app) {
   const p = app.profile;
   const model = BOATS[p.boat.model];
   const level = levelFromXp(p.methods.handline.xp);
+  const fitsHere = (it) => model.slots.some((sl) => fits(it, sl));
   const slotCards = model.slots
     .map((slot) => {
       const cur = itemOf(p, slot.id);
-      const offers = Object.values(EQUIPMENT).filter((it) => it.type === slot.accepts && (!cur || it.id !== cur.id) && it.price > 0);
+      const offers = Object.values(EQUIPMENT).filter((it) => fits(it, slot) && (!cur || it.id !== cur.id) && it.price > 0);
       const offerHtml = offers
         .map((it) => {
           const pv = purchasePreview(p, it.id, slot.id);
-          const cmp = slot.accepts === 'reel' && cur ? reelCompare(level, cur.id, it.id) : slot.accepts === 'troll' ? trollEffect(it) : '';
-          return `<div class="card" style="margin-top:8px;background:rgba(255,255,255,.03)"><h2>${esc(it.name)} <span class="tag">${money(it.price)}</span></h2><p class="note">${esc(it.desc)}</p>${cmp}
+          const cmp = it.type === 'reel' ? reelCompare(level, cur ? cur.id : 'reel_hand', it.id) : it.type === 'troll' ? trollEffect(it) : it.type === 'sounder' && cur ? sounderEffect(cur, it) : '';
+          return `<div class="card offer"><h2>${esc(it.name)} <span class="tag">${money(it.price)}</span></h2><p class="note">${esc(it.desc)}</p>${cmp}
           <dl class="kv" style="margin-top:8px"><dt>支払総額</dt><dd>${money(it.price)}</dd><dt>購入後の資金</dt><dd>${money(Math.max(0, pv.fundsAfter))}</dd><dt>外す装備</dt><dd>${cur ? `${esc(cur.name)} → 倉庫` : 'なし（空きの取付位置）'}</dd></dl>
           <div class="actions"><button type="button" class="btn primary" data-act="buy" data-item="${esc(it.id)}" data-slot="${esc(slot.id)}" ${pv.ok ? '' : 'disabled'}>購入して取り付ける</button>${pv.ok ? '' : `<span class="note">${esc(pv.reason)}</span>`}</div></div>`;
         })
         .join('');
-      const stored = p.storage.filter((s) => EQUIPMENT[s.itemId].type === slot.accepts);
-      const storedHtml = stored.map((s) => `<div class="actions"><span>${esc(EQUIPMENT[s.itemId].name)}（倉庫）</span><button type="button" class="btn" data-act="equipStored" data-uid="${esc(s.uid)}" data-slot="${esc(slot.id)}">取り付ける</button></div>`).join('');
-      return `<div class="card"><h2>${esc(slot.label)}</h2><p><b>${esc(cur ? cur.name : '（空き）')}</b></p><p class="note">${esc(cur ? cur.desc : 'この位置に対応する装備を取り付けられます。')}</p>${offerHtml}${storedHtml}</div>`;
+      const stored = p.storage.filter((x) => fits(EQUIPMENT[x.itemId], slot) && (!cur || x.itemId !== cur.id));
+      const storedHtml = stored.map((x) => `<div class="actions"><span>${esc(EQUIPMENT[x.itemId].name)}（倉庫）</span><button type="button" class="btn" data-act="equipStored" data-uid="${esc(x.uid)}" data-slot="${esc(slot.id)}">ここに付ける</button></div>`).join('');
+      const unmount = cur && slot.optional ? `<button type="button" class="btn" data-act="unmount" data-slot="${esc(slot.id)}">外して倉庫へ</button>` : '';
+      return `<div class="card"><h2>${esc(slot.label)}</h2><p><b>${esc(cur ? cur.name : '（空き）')}</b></p><p class="note">${esc(cur ? cur.desc : 'この位置に対応する装備を取り付けられます。')}</p>
+        ${unmount ? `<div class="actions">${unmount}</div>` : ''}${storedHtml}${offerHtml}</div>`;
     })
     .join('');
-  return `<div class="sheet"><h1>船・装備</h1>
-  <p class="lead">${esc(p.boat.name)}（${esc(model.name)}）。装備は船体に決められた取付位置へ付けます。外した装備は倉庫に残り、いつでも付け直せます。資金：<b>${money(p.funds)}</b></p>
-  <div class="grid">${slotCards}</div>
-  <p class="note">船の買い替え（新艇・中古船の選択）と追加の装備は M2 で実装予定です。</p>
+  const storage = p.storage.length
+    ? `<div class="card full"><h2>倉庫</h2><div class="table-wrap"><table class="data wrap"><tr><th>装備</th><th>付けられる位置（この船）</th><th class="num">売値</th><th></th></tr>${p.storage
+        .map((x) => {
+          const it = EQUIPMENT[x.itemId];
+          const where = model.slots.filter((sl) => fits(it, sl)).map((sl) => sl.label);
+          return `<tr><td>${esc(it.name)}</td><td>${where.length ? esc(where.join('・')) : `<span class="tag warn">この船には付けられる位置がない</span> <span class="note">${esc(whereItFits(it).join('・'))}なら可</span>`}</td><td class="num">${money(sellValue(it))}</td><td><button type="button" class="mini" data-act="sell" data-uid="${esc(x.uid)}">売る</button></td></tr>`;
+        })
+        .join('')}</table></div><p class="note">倉庫の装備はなくなりません。売ると記載の金額が資金に入り、倉庫から消えます。</p></div>`
+    : '';
+  const others = Object.values(EQUIPMENT).filter((it) => it.price > 0 && !fitsHere(it));
+  const otherHtml = others.length
+    ? `<div class="card full"><h2>この船には付けられない装備</h2><ul>${others.map((it) => `<li><b>${esc(it.name)}</b>（${money(it.price)}）：${esc(whereItFits(it).join('・'))}に付けられる。${esc(it.desc)}</li>`).join('')}</ul>
+      <div class="actions"><button type="button" class="btn" data-act="market">船の買い替えを見る</button></div></div>`
+    : '';
+  return `<div class="sheet"><h1>装備</h1>
+  <p class="lead">${esc(p.boat.name)}（${esc(model.name)}）。装備は船体に決められた取付位置へ付けます。外した装備は倉庫に残り、別の位置へ付け直したり売ったりできます。資金：<b>${money(p.funds)}</b></p>
+  <div class="grid">${slotCards}${storage}${otherHtml}</div>
   <p class="note">${saveLine(app.saveStatus)}</p>
-  <div class="actions"><button type="button" class="btn primary" data-act="toPort">港に戻る</button></div></div>`;
+  <div class="actions"><button type="button" class="btn primary" data-act="toPort">港に戻る</button><button type="button" class="btn" data-act="market">船の買い替え</button></div></div>`;
+}
+
+function boatSpecRows(cur, next) {
+  const row = (label, a, b, better) => `<tr><td>${label}</td><td class="num">${a}</td><td class="num ${better ? 'up' : ''}">${b}</td></tr>`;
+  const reelSlots = (m) => m.slots.filter((sl) => sl.accepts.includes('reel')).length;
+  const has = (m, mount) => (m.slots.some((sl) => sl.accepts.includes(mount)) ? '可' : '不可');
+  const kt = (m) => `${(m.speeds[m.steps.full] * 1.944).toFixed(0)}ノット`;
+  return `<div class="table-wrap"><table class="data wrap spec"><tr><th>性能（表示どおり）</th><th class="num">今の船</th><th class="num">この船</th></tr>
+    ${row('全長', `${cur.length}m`, `${next.length}m`, false)}
+    ${row('魚倉', `${cur.holdKg}kg`, `${next.holdKg}kg`, next.holdKg > cur.holdKg)}
+    ${row('全速', kt(cur), kt(next), next.speeds[next.steps.full] > cur.speeds[cur.steps.full])}
+    ${row('燃料', `${cur.fuelPerKm}G/km`, `${next.fuelPerKm}G/km`, next.fuelPerKm < cur.fuelPerKm)}
+    ${row('一本釣りの竿受け', `${reelSlots(cur)}か所`, `${reelSlots(next)}か所`, reelSlots(next) > reelSlots(cur))}
+    ${row('大型魚探（ES-2）', has(cur, 'sounder_l'), has(next, 'sounder_l'), has(next, 'sounder_l') === '可' && has(cur, 'sounder_l') !== '可')}
+    ${row('アウトリガー（TR-2）', has(cur, 'troll_l'), has(next, 'troll_l'), has(next, 'troll_l') === '可' && has(cur, 'troll_l') !== '可')}
+    ${row('風での流されやすさ', `${Math.round(cur.windage * 1000) / 10}%`, `${Math.round(next.windage * 1000) / 10}%`, next.windage < cur.windage)}</table></div>`;
+}
+
+export function marketScreen(app) {
+  const p = app.profile;
+  const cur = BOATS[p.boat.model];
+  const cards = boatOffers(p)
+    .map((o) => {
+      const m = BOATS[o.model];
+      const plan = planBoatPurchase(p, o.id);
+      const inc = Object.entries(o.included).map(([slotId, itemId]) => `${m.slots.find((x) => x.id === slotId).label}：${EQUIPMENT[itemId].name}`);
+      return `<div class="card"><h2>${esc(o.title)} <span class="tag ${o.kind === 'new' ? 'good' : ''}">${o.kind === 'new' ? '新艇' : '中古'}</span></h2>
+        <p class="note">${esc(o.note)}</p>
+        ${boatSpecRows(cur, m)}
+        <p class="note">付属の装備：${inc.length ? esc(inc.join('、')) : 'なし（今の装備を移す）'}</p>
+        <dl class="kv"><dt>本体価格</dt><dd>${money(o.price)}</dd><dt>下取り（今の${esc(cur.name)}）</dt><dd>−${money(cur.tradeIn)}</dd><dt>差引の支払い</dt><dd><b>${money(plan.payable)}</b></dd></dl>
+        <div class="actions"><button type="button" class="btn ${plan.ok ? 'primary' : ''}" data-act="boatQuote" data-offer="${esc(o.id)}">見積もりと装備の行き先を見る</button>${plan.ok ? '' : `<span class="note">${esc(plan.reason)}</span>`}</div></div>`;
+    })
+    .join('');
+  return `<div class="sheet"><h1>船の買い替え</h1>
+  <p class="lead">使う船は一隻だけです。買い替えると今の船は下取りに出し、付けていた装備は新しい船の合う位置へ移すか、倉庫に入れます。中古船も性能は表示どおりで、隠れた故障はありません（安い代わりに前の持ち主の装備付き）。資金：<b>${money(p.funds)}</b></p>
+  <div class="card" style="margin-bottom:12px"><h2>今の船：${esc(p.boat.name)}（${esc(cur.name)}）</h2>
+    <p class="note">${cur.slots.map((sl) => `${sl.label}：${itemOf(p, sl.id) ? itemOf(p, sl.id).name : '空き'}`).map(esc).join('／')}</p></div>
+  <div class="grid">${cards}</div>
+  <div class="actions"><button type="button" class="btn primary" data-act="toPort">港に戻る</button><button type="button" class="btn" data-act="equip">装備</button></div></div>`;
+}
+
+/** Full quote: what is paid and where every item goes, before confirming. */
+export function boatQuoteModal(profile, offerId) {
+  const plan = planBoatPurchase(profile, offerId);
+  const m = BOATS[plan.offer.model];
+  const moves = plan.moves
+    .map((mv) => `<tr><td>${esc(EQUIPMENT[mv.itemId].name)}</td><td>${esc(mv.from)}</td><td>${mv.to ? esc(mv.toLabel) : `<span class="tag warn">倉庫</span> <span class="note">${esc(mv.why)}</span>`}</td></tr>`)
+    .join('');
+  const extra = [
+    ...plan.included.map((x) => `<tr><td>${esc(EQUIPMENT[x.itemId].name)}</td><td>付属（${esc(plan.offer.kind === 'used' ? '前の持ち主の装備' : '新艇')}）</td><td>新しい船の${esc(x.label)}</td></tr>`),
+    ...plan.standard.map((x) => `<tr><td>${esc(EQUIPMENT[x.itemId].name)}</td><td>標準装備（合う魚探がないため）</td><td>新しい船の${esc(m.slots.find((s) => s.id === x.slotId).label)}</td></tr>`),
+  ].join('');
+  return `<div class="card quote"><h2>見積もり：${esc(plan.offer.title)}</h2>
+    <dl class="kv"><dt>本体価格</dt><dd>${money(plan.price)}</dd><dt>下取り（今の船）</dt><dd>−${money(plan.tradeIn)}</dd><dt>支払総額</dt><dd><b>${money(plan.payable)}</b></dd><dt>購入後の資金</dt><dd><b>${money(plan.fundsAfter)}</b></dd></dl>
+    <h3>装備の行き先</h3>
+    <div class="table-wrap"><table class="data wrap"><tr><th>装備</th><th>今</th><th>買い替え後</th></tr>${moves}${extra}</table></div>
+    <p class="note">倉庫に入った装備はなくならず、あとで付け直したり売ったりできます。船名「${esc(profile.boat.name)}」は新しい船に引き継ぎます。</p>
+    <div class="actions"><button type="button" class="btn primary" data-act="buyBoatConfirm" data-offer="${esc(offerId)}" ${plan.ok ? '' : 'disabled'}>この内容で買い替える</button><button type="button" class="btn" data-act="closeModal">やめる</button>${plan.ok ? '' : `<span class="note">${esc(plan.reason)}</span>`}</div></div>`;
 }
 
 const END_TEXT = { player: '終了', redrift: '流し直し', return: '帰港', day_end: '時間切れ', hold_full: '魚倉満杯' };
@@ -295,23 +390,23 @@ export function logScreen(app) {
   const p = app.profile;
   const f = app.logFilter || { method: '', area: '' };
   const areas = [...new Set(p.logs.map((l) => l.area))];
-  const curReel = itemOf(p, 'starboard_reel').id;
-  const curTroll = itemOf(p, 'stern_troll') ? itemOf(p, 'stern_troll').id : null;
+  const gearSig = (boat, items) => `${boat}:${items.join('+')}`;
+  const nowSig = (m) => gearSig(p.boat.model, gearOfType(p, m === 'troll' ? 'troll' : 'reel'));
   const logs = p.logs.filter((l) => (!f.method || (l.methodId || 'handline') === f.method) && (!f.area || l.area === f.area)).slice().reverse();
   const rows = logs
     .map((l) => {
       const m = l.methodId || 'handline';
       const g = logTags(l);
-      const gearNow = m === 'troll' ? curTroll : curReel;
-      const gearThen = m === 'troll' ? l.gear.troll : l.gear.reel;
+      const thenItems = m === 'troll' ? [l.gear.troll].filter(Boolean) : l.gear.reels || [l.gear.reel].filter(Boolean);
+      const thenBoat = l.gear.boat || 'skiff_1';
       const lvNow = levelFromXp(p.methods[m].xp);
       const marks = [];
-      if (gearThen && gearNow && gearThen !== gearNow) marks.push('装備が今と違う');
+      if (gearSig(thenBoat, thenItems) !== nowSig(m)) marks.push('船・装備が今と違う');
       if (Math.abs(lvNow - l.level) >= 2) marks.push(`当時Lv${l.level}`);
       return `<tr><td>${l.day}日目</td><td>${fmtClock(l.startT)}–${fmtClock(l.endT)}<div class="note">${esc(timeBandLabel(g.timeBand))}</div></td><td>${esc(METHODS[m].name)}</td><td>${esc(l.area)}</td><td class="num">${Math.round(l.durationS / 60)}分</td>
       <td class="num">${l.count === 0 ? '<span class="tag">この時間に漁獲なし</span>' : `${l.count}${unitOf(m)}`}</td><td class="num">${l.kg.toFixed(1)}kg</td><td class="num">${opRate(l).toFixed(0)}${unitOf(m)}/時</td>
       <td class="num">${l.tana.min != null ? `${l.tana.min.toFixed(0)}–${l.tana.max.toFixed(0)}m` : '—'}</td><td class="num">${Math.round(l.sounder.echoRatio * 100)}%</td><td>${esc(l.conditions.tideName)}・風${esc(g.windBand)}・潮${l.conditions.current.speed.toFixed(2)}m/s</td>
-      <td>Lv${l.level}・${esc(EQUIPMENT[gearThen] ? EQUIPMENT[gearThen].name : '—')}${marks.map((x) => `<span class="tag warn">${esc(x)}</span>`).join('')}</td><td>${l.plan ? esc(l.plan.label) : '—'}</td><td>${esc(END_TEXT[l.endReason] || l.endReason)}</td></tr>`;
+      <td>Lv${l.level}・${esc(BOATS[thenBoat] ? BOATS[thenBoat].name : thenBoat)}・${esc(thenItems.map((id) => (EQUIPMENT[id] ? EQUIPMENT[id].name : id)).join('＋') || '—')}${marks.map((x) => `<span class="tag warn">${esc(x)}</span>`).join('')}</td><td>${l.plan ? esc(l.plan.label) : '—'}</td><td>${esc(END_TEXT[l.endReason] || l.endReason)}</td></tr>`;
     })
     .join('');
   let summary = '';
@@ -363,7 +458,7 @@ export function saveScreen(app) {
 
 export function helpModal() {
   return `<div class="card"><h2>操作説明</h2><ul>
-  <li><b>W / ↑</b> 増速、<b>S / ↓</b> 減速（後進・停止・微速・半速・全速）</li>
+  <li><b>W / ↑</b> 増速、<b>S / ↓</b> 減速（後進・停止・極微速・微速・半速・全速）</li>
   <li><b>A / ←</b>・<b>D / →</b> 押している間だけ舵を切る</li>
   <li><b>T</b> 漁法の切替（一本釣り／曳縄。積んでいる装備の範囲）</li>
   <li><b>Space</b> 操業開始／回収して終了（一本釣りは停船してから。曳縄は走りながら開始）</li>

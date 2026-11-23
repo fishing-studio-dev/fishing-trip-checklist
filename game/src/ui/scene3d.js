@@ -60,11 +60,11 @@ export function createScene(canvas) {
   scene.add(far);
 
   scene.add(buildLand());
-  const boat = buildBoat();
+  let boat = buildBoat('skiff_1');
   scene.add(boat.group);
-  const line = buildLine();
-  scene.add(line.obj);
-  const trollLines = [buildLine(), buildLine()];
+  const hlLines = [buildLine(), buildLine()];
+  for (const l of hlLines) scene.add(l.obj);
+  const trollLines = [buildLine(), buildLine(), buildLine(), buildLine()];
   for (const l of trollLines) scene.add(l.obj);
   const wake = buildWake(scene);
   const fishFx = [];
@@ -73,7 +73,6 @@ export function createScene(canvas) {
 
   const camPos = new THREE.Vector3(PORT.dock.x + 40, 20, -(PORT.dock.y + 120));
   const camLook = new THREE.Vector3(PORT.dock.x, 0, -PORT.dock.y);
-  let lastReel = null;
   let lastWakeAt = 0;
 
   function waveH(x, z, t, amp) {
@@ -90,7 +89,9 @@ export function createScene(canvas) {
 
   /**
    * state: { mode: 'port'|'sea', boat:{x,y,heading,speed}, gameTime, windSpeed,
-   *          reelId, lineDepth, lineActive, working, view: 'helm'|'deck', realTime, newLandings }
+   *          boatModel, reels:{starboard,port}, trollId,
+   *          hlLines:[{station, active, depth}], trollLines:[{active, offset, len}],
+   *          working, view: 'helm'|'deck', realTime, newLandings }
    */
   function render(st) {
     const rt = st.realTime;
@@ -106,11 +107,13 @@ export function createScene(canvas) {
     hemi.intensity = 0.55 + 0.6 * dayK;
     sun.color.copy(lerpColor([[5, 0xffb38a], [7.5, 0xffffff], [15, 0xffffff], [16.8, 0xffa060]], hour));
 
-    if (st.reelId !== lastReel) {
-      boat.setReel(st.reelId);
-      lastReel = st.reelId;
+    if (st.boatModel && st.boatModel !== boat.modelId) {
+      scene.remove(boat.group);
+      boat = buildBoat(st.boatModel);
+      scene.add(boat.group);
     }
-    boat.setTroll(!!st.trollGear);
+    boat.setReels(st.reels || { starboard: 'reel_hand' });
+    boat.setTroll(st.trollId || null);
 
     const amp = Math.min(1.6, 0.35 + (st.windSpeed || 3) / 6);
     // boat pose
@@ -133,10 +136,11 @@ export function createScene(canvas) {
       wantLook = new THREE.Vector3(bx - 10, 2, bz + 10);
     } else if (st.view === 'deck') {
       // over the fisherman's shoulder at the starboard station, looking at the line
-      wantPos = g.position.clone().add(right.clone().multiplyScalar(-0.65)).add(new THREE.Vector3(0, 2.95, 0));
+      const dc = boat.cam.deck;
+      wantPos = g.position.clone().add(right.clone().multiplyScalar(dc.right)).add(fwd.clone().multiplyScalar(dc.fwd)).add(new THREE.Vector3(0, dc.up, 0));
       wantLook = g.position.clone().add(right.clone().multiplyScalar(3.4)).add(fwd.clone().multiplyScalar(1.4)).add(new THREE.Vector3(0, -0.4, 0));
     } else {
-      wantPos = g.position.clone().add(fwd.clone().multiplyScalar(-26)).add(new THREE.Vector3(0, 10.5, 0)).add(right.clone().multiplyScalar(4));
+      wantPos = g.position.clone().add(fwd.clone().multiplyScalar(-boat.cam.chase)).add(new THREE.Vector3(0, 10.5, 0)).add(right.clone().multiplyScalar(4));
       wantLook = g.position.clone().add(fwd.clone().multiplyScalar(22));
     }
     const k = st.snapCamera ? 1 : Math.min(1, (st.realDt || 0.016) * (st.view === 'deck' ? 10 : 4));
@@ -161,27 +165,35 @@ export function createScene(canvas) {
     seaGeo.computeVertexNormals();
     far.position.set(camPos.x, -0.8, camPos.z);
 
-    // fishing line from the rod tip
+    // handlines from the rod tips straight down
     g.updateMatrixWorld(true);
-    const tip = boat.rodTip.getWorldPosition(new THREE.Vector3());
-    if (st.lineActive) {
-      line.obj.visible = true;
-      const p = line.obj.geometry.attributes.position.array;
-      p[0] = tip.x; p[1] = tip.y; p[2] = tip.z;
-      p[3] = tip.x + (st.boat.vx || 0) * -0.6; p[4] = waveH(tip.x, tip.z, rt, amp) - Math.min(3, st.lineDepth * 0.08); p[5] = tip.z - (st.boat.vy || 0) * -0.6;
-      line.obj.geometry.attributes.position.needsUpdate = true;
-    } else line.obj.visible = false;
+    const mainStation = boat.stations.starboard;
+    const tip = mainStation.tip.getWorldPosition(new THREE.Vector3());
+    hlLines.forEach((obj, i) => {
+      const spec = st.hlLines && st.hlLines[i];
+      const station = spec && boat.stations[spec.station];
+      if (!spec || !spec.active || !station) {
+        obj.obj.visible = false;
+        return;
+      }
+      const t = station.tip.getWorldPosition(new THREE.Vector3());
+      obj.obj.visible = true;
+      const p = obj.obj.geometry.attributes.position.array;
+      p[0] = t.x; p[1] = t.y; p[2] = t.z;
+      p[3] = t.x + (st.boat.vx || 0) * -0.6; p[4] = waveH(t.x, t.z, rt, amp) - Math.min(3, spec.depth * 0.08); p[5] = t.z - (st.boat.vy || 0) * -0.6;
+      obj.obj.geometry.attributes.position.needsUpdate = true;
+    });
     boat.animateWorker(rt, st.working);
-    // trolling lines streaming astern
+    // trolling lines streaming astern (outer ones from the outriggers)
     trollLines.forEach((tlObj, i) => {
-      const spec = st.trollLines && st.trollLines.find((x) => (x.side > 0 ? 1 : 0) === i);
-      if (!spec || !spec.active) {
+      const spec = st.trollLines && st.trollLines[i];
+      if (!spec || !spec.active || !boat.trollTips[i]) {
         tlObj.obj.visible = false;
         return;
       }
       const tipW = boat.trollTips[i].tip.getWorldPosition(new THREE.Vector3());
       const back = Math.max(2, spec.len);
-      const end = g.position.clone().add(fwd.clone().multiplyScalar(-back)).add(right.clone().multiplyScalar(spec.side * 3));
+      const end = g.position.clone().add(fwd.clone().multiplyScalar(-back)).add(right.clone().multiplyScalar(spec.offset));
       const p = tlObj.obj.geometry.attributes.position.array;
       p[0] = tipW.x; p[1] = tipW.y; p[2] = tipW.z;
       p[3] = end.x; p[4] = waveH(end.x, end.z, rt, amp); p[5] = end.z;
@@ -221,7 +233,7 @@ export function createScene(canvas) {
     // wake
     if (st.mode === 'sea' && Math.abs(st.boat.speed) > 1 && rt - lastWakeAt > 0.12) {
       lastWakeAt = rt;
-      wake.spawn(g.position.clone().add(fwd.clone().multiplyScalar(-3.8)), rt, st.boat.speed);
+      wake.spawn(g.position.clone().add(fwd.clone().multiplyScalar(-(boat.cam.half + 0.1))), rt, st.boat.speed);
     }
     wake.update(rt);
 
@@ -293,79 +305,93 @@ function buildLand() {
   return group;
 }
 
-function buildBoat() {
+// Hull sizes per boat model (simple shapes; the bow points to -z, +x is starboard).
+const HULLS = {
+  skiff_1: { half: 3.75, beam: 1.15, depth: 1.15, house: [1.5, 1.4, 1.5], houseZ: 0.9, boot: 0x1f4f86, roof: 0x2f5d8a, deck: { right: -0.65, fwd: 0, up: 2.95 }, chase: 26 },
+  cruiser_2: { half: 4.95, beam: 1.45, depth: 1.4, house: [2.0, 1.7, 2.2], houseZ: 1.3, boot: 0x8a2b26, roof: 0x3d6f4f, deck: { right: -0.9, fwd: 0.6, up: 3.3 }, chase: 31 },
+};
+
+function buildBoat(modelId = 'skiff_1') {
+  const H = HULLS[modelId] || HULLS.skiff_1;
+  const sz = H.half / 3.75;
+  const sx = H.beam / 1.15;
   const group = new THREE.Group();
   const hullShape = new THREE.Shape();
-  const pts = [[-1.05, -3.75], [1.05, -3.75], [1.15, -0.5], [0.85, 1.9], [0.35, 3.25], [0, 3.75], [-0.35, 3.25], [-0.85, 1.9], [-1.15, -0.5]];
+  const pts = [[-1.05, -3.75], [1.05, -3.75], [1.15, -0.5], [0.85, 1.9], [0.35, 3.25], [0, 3.75], [-0.35, 3.25], [-0.85, 1.9], [-1.15, -0.5]].map(([x, z]) => [x * sx, z * sz]);
   hullShape.moveTo(pts[0][0], pts[0][1]);
   for (const p of pts.slice(1)) hullShape.lineTo(p[0], p[1]);
   hullShape.closePath();
-  const hullGeo = new THREE.ExtrudeGeometry(hullShape, { depth: 1.15, bevelEnabled: false });
+  const hullGeo = new THREE.ExtrudeGeometry(hullShape, { depth: H.depth, bevelEnabled: false });
   hullGeo.rotateX(-Math.PI / 2);
   const white = new THREE.MeshStandardMaterial({ color: 0xf1f1ec, roughness: 0.55 });
   const hull = new THREE.Mesh(hullGeo, white);
   hull.position.y = -0.45;
   group.add(hull);
-  const boot = new THREE.Mesh(hullGeo, new THREE.MeshStandardMaterial({ color: 0x1f4f86 }));
+  const boot = new THREE.Mesh(hullGeo, new THREE.MeshStandardMaterial({ color: H.boot }));
   boot.scale.set(1.025, 0.22, 1.01);
   boot.position.y = -0.47;
   group.add(boot);
+  const deckY = H.depth - 0.53;
   const deckGeo = new THREE.ShapeGeometry(hullShape);
   deckGeo.rotateX(-Math.PI / 2);
   const deck = new THREE.Mesh(deckGeo, new THREE.MeshStandardMaterial({ color: 0xb98d5f, roughness: 0.9 }));
   deck.scale.set(0.9, 1, 0.94);
-  deck.position.y = 0.62;
+  deck.position.y = deckY;
   group.add(deck);
-  // wheelhouse (slightly aft of centre); bow is toward -z
-  const house = new THREE.Mesh(new THREE.BoxGeometry(1.5, 1.4, 1.5), white);
-  house.position.set(0, 1.32, 0.9);
+  // wheelhouse (slightly aft of centre)
+  const [hw, hh, hd] = H.house;
+  const house = new THREE.Mesh(new THREE.BoxGeometry(hw, hh, hd), white);
+  house.position.set(0, deckY + hh / 2, H.houseZ);
   group.add(house);
-  const glass = new THREE.Mesh(new THREE.BoxGeometry(1.3, 0.5, 0.05), new THREE.MeshStandardMaterial({ color: 0x223344, metalness: 0.5, roughness: 0.2 }));
-  glass.position.set(0, 1.7, 0.13);
+  const glass = new THREE.Mesh(new THREE.BoxGeometry(hw * 0.86, 0.5, 0.05), new THREE.MeshStandardMaterial({ color: 0x223344, metalness: 0.5, roughness: 0.2 }));
+  glass.position.set(0, deckY + hh * 0.78, H.houseZ - hd / 2 - 0.02);
   group.add(glass);
-  const roof = new THREE.Mesh(new THREE.BoxGeometry(1.75, 0.1, 1.75), new THREE.MeshStandardMaterial({ color: 0x2f5d8a }));
-  roof.position.set(0, 2.07, 0.9);
+  const roofY = deckY + hh + 0.05;
+  const roof = new THREE.Mesh(new THREE.BoxGeometry(hw + 0.25, 0.1, hd + 0.25), new THREE.MeshStandardMaterial({ color: H.roof }));
+  roof.position.set(0, roofY, H.houseZ);
   group.add(roof);
   const mast = new THREE.Mesh(new THREE.CylinderGeometry(0.04, 0.05, 2.0), new THREE.MeshStandardMaterial({ color: 0xdddddd }));
-  mast.position.set(0, 3.05, 1.3);
+  mast.position.set(0, roofY + 1.0, H.houseZ + hd * 0.25);
   group.add(mast);
   const flag = new THREE.Mesh(new THREE.PlaneGeometry(0.5, 0.32), new THREE.MeshStandardMaterial({ color: 0xd94b3d, side: THREE.DoubleSide }));
-  flag.position.set(0.26, 3.85, 1.3);
+  flag.position.set(0.26, roofY + 1.8, H.houseZ + hd * 0.25);
   group.add(flag);
   // fish box (魚倉) at the stern
-  const fishBox = new THREE.Mesh(new THREE.BoxGeometry(0.9, 0.5, 0.65), new THREE.MeshStandardMaterial({ color: 0x3d7fb8 }));
-  fishBox.position.set(-0.2, 0.9, 2.6);
+  const fishBox = new THREE.Mesh(new THREE.BoxGeometry(0.9 * sx, 0.5, 0.65 * sz), new THREE.MeshStandardMaterial({ color: 0x3d7fb8 }));
+  fishBox.position.set(-0.2, deckY + 0.28, 2.6 * sz);
   group.add(fishBox);
-  // starboard rod holder (+x is starboard when the bow points to -z)
-  const rod = new THREE.Group();
-  rod.position.set(0.95, 0.95, -0.9);
-  const rodMesh = new THREE.Mesh(new THREE.CylinderGeometry(0.012, 0.035, 2.6), new THREE.MeshStandardMaterial({ color: 0x222222 }));
-  rodMesh.position.y = 1.3;
-  rod.add(rodMesh);
-  rod.rotation.z = -1.05;
-  group.add(rod);
-  const rodTip = new THREE.Object3D();
-  rodTip.position.y = 2.6;
-  rod.add(rodTip);
-  const handReel = new THREE.Mesh(new THREE.CylinderGeometry(0.1, 0.1, 0.09, 16), new THREE.MeshStandardMaterial({ color: 0x555b60, metalness: 0.6 }));
-  handReel.rotation.z = Math.PI / 2;
-  handReel.position.set(0, 0.25, 0.08);
-  rod.add(handReel);
-  const eReel = new THREE.Group();
-  const eBody = new THREE.Mesh(new THREE.BoxGeometry(0.24, 0.18, 0.22), new THREE.MeshStandardMaterial({ color: 0xd8342c, metalness: 0.3, roughness: 0.4 }));
-  eReel.add(eBody);
-  const eDrum = new THREE.Mesh(new THREE.CylinderGeometry(0.06, 0.06, 0.26, 12), new THREE.MeshStandardMaterial({ color: 0xcccccc, metalness: 0.8 }));
-  eDrum.rotation.z = Math.PI / 2;
-  eDrum.position.y = 0.11;
-  eReel.add(eDrum);
-  eReel.position.set(0, 0.3, 0.12);
-  rod.add(eReel);
-  // power cable from the reel down to the deck (short and thin)
-  const cable = new THREE.Mesh(new THREE.CylinderGeometry(0.006, 0.006, 0.45), new THREE.MeshStandardMaterial({ color: 0x111111 }));
-  cable.position.set(0.85, 0.85, -0.75);
-  cable.rotation.z = 0.5;
-  group.add(cable);
-  // the fisherman (player character) at the starboard station
+
+  // reel stations: starboard always, port on boats that have one
+  const stations = {};
+  for (const [name, side] of [['starboard', 1], ['port', -1]]) {
+    if (name === 'port' && modelId !== 'cruiser_2') continue;
+    const rod = new THREE.Group();
+    rod.position.set(side * (H.beam - 0.2), deckY + 0.33, -0.9 * sz);
+    const rodMesh = new THREE.Mesh(new THREE.CylinderGeometry(0.012, 0.035, 2.6), new THREE.MeshStandardMaterial({ color: 0x222222 }));
+    rodMesh.position.y = 1.3;
+    rod.add(rodMesh);
+    rod.rotation.z = -side * 1.05;
+    group.add(rod);
+    const tip = new THREE.Object3D();
+    tip.position.y = 2.6;
+    rod.add(tip);
+    const handReel = new THREE.Mesh(new THREE.CylinderGeometry(0.1, 0.1, 0.09, 16), new THREE.MeshStandardMaterial({ color: 0x555b60, metalness: 0.6 }));
+    handReel.rotation.z = Math.PI / 2;
+    handReel.position.set(0, 0.25, 0.08);
+    rod.add(handReel);
+    const eReel = new THREE.Group();
+    const eBody = new THREE.Mesh(new THREE.BoxGeometry(0.24, 0.18, 0.22), new THREE.MeshStandardMaterial({ color: 0xd8342c, metalness: 0.3, roughness: 0.4 }));
+    eReel.add(eBody);
+    const eDrum = new THREE.Mesh(new THREE.CylinderGeometry(0.06, 0.06, 0.26, 12), new THREE.MeshStandardMaterial({ color: 0xcccccc, metalness: 0.8 }));
+    eDrum.rotation.z = Math.PI / 2;
+    eDrum.position.y = 0.11;
+    eReel.add(eDrum);
+    eReel.position.set(0, 0.3, 0.12);
+    rod.add(eReel);
+    stations[name] = { rod, tip, handReel, eReel, side };
+  }
+
+  // the fisherman (player character) between the stations
   const worker = new THREE.Group();
   const body = new THREE.Mesh(new THREE.CylinderGeometry(0.2, 0.25, 0.95, 10), new THREE.MeshStandardMaterial({ color: 0x3e6b8c }));
   body.position.y = 0.48;
@@ -379,15 +405,16 @@ function buildBoat() {
   const arm = new THREE.Mesh(new THREE.BoxGeometry(0.1, 0.1, 0.55), new THREE.MeshStandardMaterial({ color: 0x3e6b8c }));
   arm.position.set(0.18, 0.7, -0.22);
   worker.add(arm);
-  worker.position.set(0.45, 0.62, -0.55);
+  worker.position.set(modelId === 'cruiser_2' ? 0.2 : 0.45, deckY, -0.55 * sz);
   group.add(worker);
 
-  // stern trolling rods (曳縄具): two rods splayed out over the stern quarters
+  // stern trolling rods, plus outriggers for the four-line gear
   const trollGroup = new THREE.Group();
+  const outGroup = new THREE.Group();
   const trollTips = [];
   for (const side of [-1, 1]) {
     const r = new THREE.Group();
-    r.position.set(side * 0.85, 0.9, 3.2);
+    r.position.set(side * (H.beam - 0.3), deckY + 0.28, 3.2 * sz);
     const m = new THREE.Mesh(new THREE.CylinderGeometry(0.015, 0.04, 3.2), new THREE.MeshStandardMaterial({ color: 0x2a2a2a }));
     m.position.y = 1.6;
     r.add(m);
@@ -402,17 +429,34 @@ function buildBoat() {
     trollGroup.add(r);
     trollTips.push({ side, tip });
   }
-  group.add(trollGroup);
-  function setTroll(on) {
-    trollGroup.visible = on;
+  for (const side of [-1, 1]) {
+    const o = new THREE.Group();
+    o.position.set(side * (hw / 2), roofY, H.houseZ);
+    const pole = new THREE.Mesh(new THREE.CylinderGeometry(0.03, 0.05, 7.5), new THREE.MeshStandardMaterial({ color: 0xbfc6c9, metalness: 0.5 }));
+    pole.position.y = 3.75;
+    o.add(pole);
+    o.rotation.z = -side * 1.15;
+    const tip = new THREE.Object3D();
+    tip.position.y = 7.5;
+    o.add(tip);
+    outGroup.add(o);
+    trollTips.push({ side, tip });
   }
-  setTroll(false);
+  group.add(trollGroup);
+  group.add(outGroup);
 
-  function setReel(reelId) {
-    const electric = reelId === 'reel_electric';
-    eReel.visible = electric;
-    cable.visible = electric;
-    handReel.visible = !electric;
+  function setTroll(itemId) {
+    trollGroup.visible = !!itemId;
+    outGroup.visible = itemId === 'troll_tr2';
+  }
+  /** reels: { starboard: itemId|null, port: itemId|null } */
+  function setReels(reels) {
+    for (const [name, st] of Object.entries(stations)) {
+      const id = reels[name];
+      st.rod.visible = !!id;
+      st.eReel.visible = id === 'reel_electric';
+      st.handReel.visible = id === 'reel_hand';
+    }
   }
   function animateWorker(rt, working) {
     if (working === 'retrieve') {
@@ -426,8 +470,9 @@ function buildBoat() {
       arm.rotation.x = 0;
     }
   }
-  setReel('reel_hand');
-  return { group, rodTip, fishBox, setReel, animateWorker, setTroll, trollTips };
+  setTroll(null);
+  setReels({ starboard: 'reel_hand' });
+  return { group, modelId, stations, fishBox, setReels, animateWorker, setTroll, trollTips, cam: H };
 }
 
 function buildLine() {

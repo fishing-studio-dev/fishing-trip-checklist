@@ -77,15 +77,15 @@ export const METHODS = {
     defaultOffBottom: 1.5, // m: tana used when the sounder shows no fish echo
     echoThreshold: 0.3,
     maxStartSpeed: 0.6, // m/s: boat must be (almost) stopped to start
-    gearSlot: 'starboard_reel',
+    gearType: 'reel',
     goodRate: 25, // fish per hour regarded as 好調 in the logbook (目安)
   },
   troll: {
     id: 'troll',
     name: '曳縄',
-    detail: '潜行板付きの仕掛け2本を船尾から流し、決めた航路を走りながら掛かった魚を取り込む',
+    detail: '潜行板付きの仕掛け（曳縄具 TR-1 は2本、TR-2 は4本）を船尾から流し、決めた航路を走りながら掛かった魚を取り込む',
     target: 'sawara',
-    gearSlot: 'stern_troll',
+    gearType: 'troll',
     biteRateMax: 0.05, // strikes / s / lure at saturation (before activity)
     densityHalf: 0.0001,
     minTowSpeed: 1.2, // m/s: below this the lures don't work
@@ -131,67 +131,137 @@ export function trollSkillForLevel(level) {
 }
 
 // ---- Equipment ----
-// type = which slot kinds accept it. Effects are explicit fields, not multipliers.
+// type  = what the item does (sounder / reel / troll)
+// mount = which mounting it needs; a boat slot lists the mounts it accepts.
+// Effects are explicit fields, not multipliers.
 export const EQUIPMENT = {
   sounder_es1: {
     id: 'sounder_es1',
     type: 'sounder',
+    mount: 'sounder',
     name: '小型魚探 ES-1',
     price: 0,
     desc: '下向き一周波。水深と一定規模の魚群反応を時間履歴で表示する。',
     sounder: { halfAngleDeg: 22, binSize: 0.5, maxRange: 100, noise: 0.12, gainK: 350 },
   },
+  sounder_es2: {
+    id: 'sounder_es2',
+    type: 'sounder',
+    mount: 'sounder_l',
+    name: '二周波魚探 ES-2',
+    price: 32000,
+    desc: '大型の操舵室に付ける魚探。細いビームで真下の反応を分けて映し、弱い反応も拾う。表示の細かさは2倍。',
+    sounder: { halfAngleDeg: 14, binSize: 0.25, maxRange: 120, noise: 0.08, gainK: 520 },
+  },
   reel_hand: {
     id: 'reel_hand',
     type: 'reel',
+    mount: 'reel',
     name: '手巻きリール',
     price: 0,
-    desc: '手で巻き上げる。巻上げ速度は手際（漁法レベル）で少し上がる。',
+    desc: '手で巻き上げる。巻いている間は手がふさがる。巻上げ速度は手際（漁法レベル）で少し上がる。',
     reel: { retrieve: null, maxDepth: 80, model: 'hand' },
   },
   reel_electric: {
     id: 'reel_electric',
     type: 'reel',
+    mount: 'reel',
     name: '電動リール DR-1',
     price: 15000,
-    desc: 'モーターで巻き上げる。深いタナほど回収時間の短縮が大きい。対応水深150m。',
+    desc: 'モーターで巻き上げる。巻いている間も手が空く。深いタナほど回収時間の短縮が大きい。対応水深150m。',
     reel: { retrieve: 2.6, maxDepth: 150, model: 'electric' },
   },
   troll_tr1: {
     id: 'troll_tr1',
     type: 'troll',
+    mount: 'troll',
     name: '曳縄具 TR-1',
     price: 9000,
     desc: '船尾に竿2本と潜行板付きの仕掛け。曳縄（サワラ狙い）ができるようになる。航路を決めれば航行と仕掛けの作業は自動。',
-    troll: { lines: 2, lineLength: 40, lureDepths: [3, 7], towSpeed: 2.6 },
+    troll: { lines: 2, lineLength: 40, lureDepths: [3, 7], spread: [3, 3], towSpeed: 2.6 },
+  },
+  troll_tr2: {
+    id: 'troll_tr2',
+    type: 'troll',
+    mount: 'troll_l',
+    name: '曳縄具 TR-2（アウトリガー）',
+    price: 26000,
+    desc: '両舷に張り出すアウトリガーで仕掛けを4本、幅広く曳く。取り込みは一人なので、同時に掛かると順番になる。中型の船尾に付ける。',
+    troll: { lines: 4, lineLength: 40, lureDepths: [3, 7, 2, 5], spread: [3, 3, 10, 10], towSpeed: 2.6 },
   },
 };
 
+/** Can this item be mounted on this boat slot? */
+export function fits(item, slot) {
+  return !!item && !!slot && slot.accepts.includes(item.mount);
+}
+
+/** Sale value of an item taken off the boat (simple, provisional). */
+export function sellValue(item) {
+  return item.price > 0 ? Math.round(item.price * 0.5) : 300;
+}
+
 // ---- Boats ----
+// Performance is exactly what is listed — a used boat performs like a new one.
 export const BOATS = {
   skiff_1: {
     id: 'skiff_1',
     name: '小型和船',
     length: 7.5,
     holdKg: 120,
-    speeds: [-1.5, 0, 2.0, 4.5, 8.0], // throttle levels: 後進, 停止, 微速, 半速, 全速 (m/s)
-    throttleNames: ['後進', '停止', '微速', '半速', '全速'],
+    speeds: [-1.5, 0, 0.8, 2.0, 4.5, 8.0], // throttle levels (m/s)
+    throttleNames: ['後進', '停止', '極微速', '微速', '半速', '全速'],
+    steps: { stop: 1, deadSlow: 2, slow: 3, half: 4, full: 5 },
     accel: 0.4,
     maxTurn: 0.2, // rad/s at full rudder
     windage: 0.025, // drift fraction of wind speed
+    fuelPerKm: 40,
+    tradeIn: 15000,
     slots: [
-      { id: 'helm_sounder', label: '操舵席（魚探）', accepts: 'sounder' },
-      { id: 'starboard_reel', label: '右舷 竿受け', accepts: 'reel' },
-      { id: 'stern_troll', label: '船尾 曳縄竿受け', accepts: 'troll', optional: true },
+      { id: 'helm_sounder', label: '操舵席（魚探）', accepts: ['sounder'] },
+      { id: 'starboard_reel', label: '右舷 竿受け', accepts: ['reel'], rig: '右舷' },
+      { id: 'stern_troll', label: '船尾 曳縄竿受け', accepts: ['troll'], optional: true },
+    ],
+  },
+  cruiser_2: {
+    id: 'cruiser_2',
+    name: '中型漁船',
+    length: 9.9,
+    holdKg: 320,
+    speeds: [-1.8, 0, 0.9, 2.2, 5.0, 10.0],
+    throttleNames: ['後進', '停止', '極微速', '微速', '半速', '全速'],
+    steps: { stop: 1, deadSlow: 2, slow: 3, half: 4, full: 5 },
+    accel: 0.32,
+    maxTurn: 0.17,
+    windage: 0.018, // heavier hull: the wind pushes it less
+    fuelPerKm: 60,
+    tradeIn: 55000,
+    slots: [
+      { id: 'helm_sounder', label: '操舵室（魚探・大型可）', accepts: ['sounder', 'sounder_l'] },
+      { id: 'starboard_reel', label: '右舷 竿受け', accepts: ['reel'], rig: '右舷' },
+      { id: 'port_reel', label: '左舷 竿受け', accepts: ['reel'], optional: true, rig: '左舷' },
+      { id: 'stern_troll', label: '船尾 曳縄（アウトリガー可）', accepts: ['troll', 'troll_l'], optional: true },
     ],
   },
 };
+
+// ---- Boats for sale (造船所・中古船) ----
+// New: every slot empty — move your gear over and build the layout you want
+// (a basic sounder is fitted if none of yours fits). Used: cheaper, comes with
+// the previous owner's gear already fitted. No hidden faults either way.
+export const BOAT_OFFERS = [
+  { id: 'new_cruiser', kind: 'new', model: 'cruiser_2', price: 110000, title: '新艇 中型漁船', note: '取付位置はすべて空き。今の装備を移し、好きな構成にできる。', included: {} },
+  { id: 'used_cruiser_a', kind: 'used', model: 'cruiser_2', price: 65000, title: '中古 中型漁船（元「第三浜丸」・船齢12年）', note: '一本釣り向けの装備付き。', included: { helm_sounder: 'sounder_es1', starboard_reel: 'reel_hand', port_reel: 'reel_hand' } },
+  { id: 'used_cruiser_b', kind: 'used', model: 'cruiser_2', price: 85000, title: '中古 中型漁船（元「千代丸」・船齢8年）', note: '大型魚探と電動リール、曳縄具付き。', included: { helm_sounder: 'sounder_es2', starboard_reel: 'reel_electric', stern_troll: 'troll_tr1' } },
+  { id: 'new_skiff', kind: 'new', model: 'skiff_1', price: 40000, title: '新艇 小型和船', note: '小回りが利き、燃料が少なくて済む。', included: {} },
+  { id: 'used_skiff', kind: 'used', model: 'skiff_1', price: 22000, title: '中古 小型和船（船齢15年）', note: '最低限の装備付き。', included: { helm_sounder: 'sounder_es1', starboard_reel: 'reel_hand' } },
+];
 
 export const ECONOMY = {
   startFunds: 5000,
   currency: 'G',
   tripBaseCost: 300, // 氷・餌など1航海の定額
-  fuelPerKm: 40, // under power
+  fuelPerKm: 40, // under power (default; boats set their own)
 };
 
 export const START_PROFILE = {

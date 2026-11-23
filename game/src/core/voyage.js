@@ -29,7 +29,11 @@ export function createVoyage(profile, opts = {}) {
   const start = opts.start || { x: PORT.dock.x, y: PORT.dock.y + 20, heading: 0 };
   const slot = (id) => (profile.boat.slots[id] ? profile.boat.slots[id].itemId : null);
   const sounderId = slot('helm_sounder');
-  const reelId = slot('starboard_reel');
+  // one handline rig per fitted reel (中型漁船 has two stations)
+  const rigs = model.slots
+    .filter((sl) => sl.rig && profile.boat.slots[sl.id] && EQUIPMENT[slot(sl.id)].type === 'reel')
+    .map((sl) => ({ slotId: sl.id, label: sl.rig, reelId: slot(sl.id), reel: EQUIPMENT[slot(sl.id)].reel }));
+  const reelId = rigs[0].reelId;
   const trollId = slot('stern_troll');
   const radio = opts.radio !== undefined ? opts.radio : opts.scenario ? [] : radioReports(profile.worldSeed, av.day);
   const v = {
@@ -41,6 +45,7 @@ export function createVoyage(profile, opts = {}) {
     equip: {
       sounderId,
       reelId,
+      rigs,
       trollId,
       sounder: EQUIPMENT[sounderId].sounder,
       reel: EQUIPMENT[reelId].reel,
@@ -213,7 +218,7 @@ export function addManualMark(v) {
   const col = o.cols[o.cols.length - 1];
   o.marks.push({ id: o.markSeq++, kind: 'manual', x: v.boat.x, y: v.boat.y, t: v.world.time, depth: col ? col.fishDepth : null, bottom: col ? col.bottom : null });
   if (o.marks.length > 80) o.marks.shift();
-  say(v, `${fmtClock(v.world.time)} 現在地に印を付けました。`);
+  say(v, '現在地に印を付けました。');
 }
 
 function runAutopilot(v, model) {
@@ -226,7 +231,7 @@ function runAutopilot(v, model) {
       ap.leg += 1;
       return;
     }
-    v.boat.throttle = 1;
+    v.boat.throttle = model.steps.stop;
     v.boat.rudder = 0;
     if (Math.abs(v.boat.speed) > 0.4) return; // wait until the boat has stopped
     v.autopilot = null;
@@ -262,7 +267,7 @@ function runTrollHelm(v, model) {
   }
   v.boat.rudder = cmd.arrived ? 0 : cmd.rudder;
   v.boat.speedOverride = trollTargetSpeed(op);
-  v.boat.throttle = 2;
+  v.boat.throttle = model.steps.slow; // shown on the HUD; the speed itself is speedOverride
 }
 
 // ---------------------------------------------------------------------------
@@ -344,25 +349,24 @@ export function startOperation(v) {
       route: route.points,
     });
     v.op.startConditions = conditionsSnapshot(v);
-    say(v, `${fmtClock(v.world.time)} 曳縄開始（${areaNameAt(v.boat.x, v.boat.y)}・航路${Math.round(routeLength(route.points))}m${route.planned ? '' : '：今の向きで往復'}）。航行と仕掛けの作業は自動です。`);
+    say(v, `曳縄開始（${areaNameAt(v.boat.x, v.boat.y)}・航路${Math.round(routeLength(route.points))}m${route.planned ? '' : '：今の向きで往復'}）。航行と仕掛けの作業は自動です。`);
     return { ok: true };
   }
-  v.boat.throttle = 1;
+  v.boat.throttle = boatModel(v).steps.stop;
   v.boat.rudder = 0;
   v.op = createOperation({
     id: `${v.id}-op${v.opSeq}`,
     voyageId: v.id,
     methodId: 'handline',
     level: v.levels.handline,
-    reel: v.equip.reel,
-    reelId: v.equip.reelId,
+    rigs: v.equip.rigs,
     startT: v.world.time,
     x: v.boat.x,
     y: v.boat.y,
   });
   v.op.startConditions = conditionsSnapshot(v);
   if (depth > v.equip.reel.maxDepth) say(v, `水深${depth.toFixed(0)}mはリールの対応水深${v.equip.reel.maxDepth}mを超えています。届く深さまでで操業します。`, 'warn');
-  say(v, `${fmtClock(v.world.time)} 操業開始（${areaNameAt(v.boat.x, v.boat.y)}・水深${depth.toFixed(0)}m）。投入から回収まで自動で行います。`);
+  say(v, `操業開始（${areaNameAt(v.boat.x, v.boat.y)}・水深${depth.toFixed(0)}m）。投入から回収まで自動で行います。`);
   return { ok: true };
 }
 
@@ -442,7 +446,7 @@ function finishOperation(v) {
   v.logs.push(log);
   v.op = null;
   v.boat.speedOverride = null;
-  v.boat.throttle = 1;
+  v.boat.throttle = boatModel(v).steps.stop;
   v.boat.rudder = 0;
   const mins = Math.round(log.durationS / 60);
   const unit = op.methodId === 'troll' ? '本' : '尾';
@@ -515,7 +519,7 @@ function makeOperationLog(v, op) {
       maxEcho: Math.round(st.maxEcho * 100) / 100,
       echoDepth: st.echoPings ? round1(st.echoDepthSum / st.echoPings) : null,
     },
-    gear: { boat: v.modelId, sounder: v.equip.sounderId, reel: v.equip.reelId, troll: v.equip.trollId },
+    gear: { boat: v.modelId, sounder: v.equip.sounderId, reel: v.equip.reelId, reels: v.equip.rigs.map((r) => r.reelId), troll: v.equip.trollId },
     level: op.level,
     plan: v.plan ? { key: v.plan.key, label: v.plan.label, basis: v.plan.basis } : null,
   };
@@ -537,6 +541,7 @@ export function summarizeVoyage(v) {
     logs: v.logs.map((l) => ({ ...l })),
     heard: v.heard.map((r) => ({ ...r })),
     distanceM: Math.round(v.boat.distance),
+    fuelPerKm: boatModel(v).fuelPerKm,
     opSeconds: Math.round(v.opSeconds),
     plan: v.plan,
   };

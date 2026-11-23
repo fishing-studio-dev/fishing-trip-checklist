@@ -20,18 +20,27 @@ export function maxFishKg(species) {
 }
 const MAX_FISH_KG = maxFishKg('aji');
 
-export function createOperation({ id, voyageId, methodId, level, reel, reelId, startT, x, y }) {
+/**
+ * rigs: one per fitted reel, e.g. [{label:'右舷', reelId, reel}, {label:'左舷', ...}].
+ * One fisher works all rigs: baiting, unhooking and hand-cranking need their
+ * hands, so with two rigs those steps take turns (op.worker). Dropping,
+ * waiting for bites and electric retrieval do not.
+ */
+export function createOperation({ id, voyageId, methodId, level, rigs, startT, x, y }) {
   const method = METHODS[methodId];
   const skill = skillForLevel(level);
+  const lines = rigs.map((r) => newLine(method, skill, r));
   return {
     id,
     voyageId,
     methodId,
     species: method.target,
     level,
-    reelId,
-    retrieveSpeed: reel.retrieve != null ? reel.retrieve : skill.handRetrieve,
-    maxDepth: reel.maxDepth,
+    reelId: rigs[0].reelId,
+    retrieveSpeed: lines[0].retrieveSpeed,
+    maxDepth: lines[0].maxDepth,
+    worker: null,
+    queue: [],
     skill,
     state: 'running',
     endReason: null,
@@ -39,7 +48,7 @@ export function createOperation({ id, voyageId, methodId, level, reel, reelId, s
     endT: null,
     start: { x, y },
     end: null,
-    lines: [newLine(method, skill)],
+    lines,
     landed: { s: 0, m: 0, l: 0 },
     landedKg: 0,
     landedCount: 0,
@@ -61,8 +70,15 @@ export function createOperation({ id, voyageId, methodId, level, reel, reelId, s
   };
 }
 
-function newLine(method, skill) {
+function newLine(method, skill, rig) {
+  const hand = rig.reel.retrieve == null;
   return {
+    label: rig.label,
+    reelId: rig.reelId,
+    handReel: hand,
+    retrieveSpeed: hand ? skill.handRetrieve : rig.reel.retrieve,
+    maxDepth: rig.reel.maxDepth,
+    waiting: false,
     phase: 'prep',
     timer: skill.rebait,
     depth: 0,
@@ -73,6 +89,11 @@ function newLine(method, skill) {
     firstBiteT: null,
     sinceRetune: 0,
   };
+}
+
+/** Steps that need the fisher's hands (others run on their own). */
+export function handlineNeedsHands(line) {
+  return line.phase === 'prep' || line.phase === 'unhook' || (line.phase === 'retrieve' && line.handReel);
 }
 
 export function fishOnLine(line) {
@@ -105,8 +126,21 @@ export function stepOperation(op, ctx, dt) {
   op.stats.bottomMax = op.stats.bottomMax == null ? bottom : Math.max(op.stats.bottomMax, bottom);
   let poses = null;
   const stopping = op.state === 'stopping';
+  if (op.worker == null && op.queue.length) op.worker = op.queue.shift();
 
-  for (const line of op.lines) {
+  for (let li = 0; li < op.lines.length; li++) {
+    const line = op.lines[li];
+    if (stopping && line.phase === 'prep') line.phase = 'idle';
+    // the fisher's hands: one rig at a time for the steps that need them
+    if (handlineNeedsHands(line)) {
+      if (op.worker == null) op.worker = li;
+      if (op.worker !== li) {
+        if (!op.queue.includes(li)) op.queue.push(li);
+        line.waiting = true;
+        continue;
+      }
+    }
+    line.waiting = false;
     switch (line.phase) {
       case 'prep': {
         line.timer -= dt;
@@ -115,7 +149,7 @@ export function stepOperation(op, ctx, dt) {
           break;
         }
         if (line.timer <= 0) {
-          const r = readTana(ctx.obs, method, op.maxDepth);
+          const r = readTana(ctx.obs, method, line.maxDepth);
           if (r.tana == null) break; // no sounder reading yet
           setTana(op, line, r);
           line.phase = 'drop';
@@ -127,7 +161,7 @@ export function stepOperation(op, ctx, dt) {
           line.phase = 'retrieve';
           break;
         }
-        line.tana = Math.min(line.tana, bottom - 0.5, op.maxDepth);
+        line.tana = Math.min(line.tana, bottom - 0.5, line.maxDepth);
         line.depth += op.skill.dropSpeed * dt;
         if (line.depth >= line.tana) {
           line.depth = line.tana;
@@ -204,7 +238,7 @@ export function stepOperation(op, ctx, dt) {
           line.sinceRetune += dt;
           if (line.sinceRetune >= method.retuneAfter) {
             line.sinceRetune = 0;
-            const r = readTana(ctx.obs, method, op.maxDepth);
+            const r = readTana(ctx.obs, method, line.maxDepth);
             if (r.tana != null && Math.abs(r.tana - line.tana) > 2.5) {
               line.target = Math.min(r.tana, bottom - 0.5);
               line.tanaSource = r.source;
@@ -216,7 +250,7 @@ export function stepOperation(op, ctx, dt) {
         break;
       }
       case 'retrieve': {
-        line.depth -= op.retrieveSpeed * dt;
+        line.depth -= line.retrieveSpeed * dt;
         if (line.depth <= 0) {
           line.depth = 0;
           line.phase = 'unhook';
@@ -254,6 +288,15 @@ export function stepOperation(op, ctx, dt) {
       default:
         break;
     }
+    if (handlineNeedsHands(line) && op.worker !== li) {
+      // just stepped into a hand job: take the hands if free, otherwise wait in turn
+      if (op.worker == null) op.worker = li;
+      else {
+        line.waiting = true;
+        if (!op.queue.includes(li)) op.queue.push(li);
+      }
+    }
+    if (op.worker === li && !handlineNeedsHands(line)) op.worker = op.queue.length ? op.queue.shift() : null;
   }
 
   if (op.state === 'running' && op.stats.holdBlocked > 0 && inFlightKg(op) === 0) {
@@ -294,6 +337,7 @@ export function recentPace(op, t, window = 600) {
 
 /** Human label for the current state of a line (for the HUD). */
 export function linePhaseLabel(line) {
+  if (line.waiting) return `手が空くのを待っている（${{ prep: '餌付け', unhook: '取り込み', retrieve: '巻上げ' }[line.phase] || line.phase}）`;
   switch (line.phase) {
     case 'prep':
       return '餌付け・準備';

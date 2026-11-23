@@ -33,15 +33,24 @@ export function createTrollOperation({ id, voyageId, level, gear, gearId, startT
     start: { x, y },
     end: null,
     route: { points: route.map((p) => ({ x: p.x, y: p.y })), idx: route.length > 1 ? 1 : 0, dir: 1, changes: 0 },
-    lines: gear.lureDepths.map((depth, i) => ({
-      phase: 'deploy',
-      timer: skill.deploy * (1 + i * 0.3),
-      side: i % 2 ? 1 : -1,
-      lureDepth: depth,
-      fish: null,
-      acc: 0,
-      haulLeft: 0,
-    })),
+    worker: null,
+    queue: [],
+    lines: gear.lureDepths.map((depth, i) => {
+      const side = i % 2 ? 1 : -1;
+      const outer = gear.lines > 2 && i >= 2;
+      return {
+        phase: 'deploy',
+        timer: skill.deploy,
+        side,
+        offset: side * (gear.spread ? gear.spread[i] : 3),
+        label: `${side < 0 ? '左舷' : '右舷'}${gear.lines > 2 ? (outer ? '外' : '内') : ''}`,
+        lureDepth: depth,
+        fish: null,
+        acc: 0,
+        haulLeft: 0,
+        waiting: false,
+      };
+    }),
     landed: { s: 0, m: 0, l: 0 },
     landedKg: 0,
     landedCount: 0,
@@ -64,6 +73,10 @@ export function createTrollOperation({ id, voyageId, level, gear, gearId, startT
   };
 }
 
+export function trollNeedsHands(line) {
+  return line.phase === 'deploy' || line.phase === 'fight' || line.phase === 'haul' || line.phase === 'unhook';
+}
+
 export function trollInFlightKg(op) {
   let kg = 0;
   for (const l of op.lines) if (l.fish) kg += l.fish.kg;
@@ -81,7 +94,7 @@ export function trollTargetSpeed(op) {
 /** World position of a line's lure (behind the boat, a little to its side). */
 export function lurePosition(boat, gear, line) {
   const back = gear.lineLength;
-  const sideOff = line.side * 3;
+  const sideOff = line.offset != null ? line.offset : line.side * 3;
   return {
     x: boat.x - Math.sin(boat.heading) * back + Math.cos(boat.heading) * sideOff,
     y: boat.y - Math.cos(boat.heading) * back - Math.sin(boat.heading) * sideOff,
@@ -100,8 +113,21 @@ export function stepTrollOperation(op, ctx, dt) {
   if (op.state === 'running') op.stats.towDistance += speed * dt;
   const stopping = op.state === 'stopping';
   let poses = null;
+  if (op.worker == null && op.queue.length) op.worker = op.queue.shift();
 
-  for (const line of op.lines) {
+  for (let li = 0; li < op.lines.length; li++) {
+    const line = op.lines[li];
+    if (stopping && line.phase === 'deploy') line.phase = 'idle';
+    // one fisher: setting, playing, hauling and unhooking take turns
+    if (trollNeedsHands(line)) {
+      if (op.worker == null) op.worker = li;
+      if (op.worker !== li) {
+        if (!op.queue.includes(li)) op.queue.push(li);
+        line.waiting = true;
+        continue;
+      }
+    }
+    line.waiting = false;
     switch (line.phase) {
       case 'deploy': {
         line.timer -= dt;
@@ -189,6 +215,14 @@ export function stepTrollOperation(op, ctx, dt) {
       default:
         break;
     }
+    if (trollNeedsHands(line) && op.worker !== li) {
+      if (op.worker == null) op.worker = li;
+      else {
+        line.waiting = true;
+        if (!op.queue.includes(li)) op.queue.push(li);
+      }
+    }
+    if (op.worker === li && !trollNeedsHands(line)) op.worker = op.queue.length ? op.queue.shift() : null;
   }
 
   if (op.state === 'running' && op.stats.holdBlocked > 0 && trollInFlightKg(op) === 0) requestStop(op, 'hold_full');
@@ -228,7 +262,8 @@ export function routeLength(points) {
 }
 
 export function trollLineLabel(line) {
-  const side = line.side < 0 ? '左舷' : '右舷';
+  const side = line.label || (line.side < 0 ? '左舷' : '右舷');
+  if (line.waiting) return `${side}：手が空くのを待っている${line.fish ? '（魚が掛かったまま）' : ''}`;
   switch (line.phase) {
     case 'deploy':
       return `${side}：仕掛けを出している`;

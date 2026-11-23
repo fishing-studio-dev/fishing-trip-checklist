@@ -9,7 +9,7 @@ export function createBoatRuntime(model, x, y, heading) {
     y,
     heading, // rad, 0 = north, clockwise
     speed: 0, // m/s through water (forward)
-    throttle: 1, // index into model.speeds (1 = stop)
+    throttle: model.steps.stop, // index into model.speeds
     rudder: 0, // -1..1 (input)
     vx: 0,
     vy: 0,
@@ -31,14 +31,15 @@ export function autopilotCommand(boat, model, target, slowRadius = 120, arriveRa
   const dx = target.x - boat.x;
   const dy = target.y - boat.y;
   const dist = Math.hypot(dx, dy);
-  if (dist < arriveRadius) return { rudder: 0, throttle: 1, arrived: true, dist };
+  const S = model.steps;
+  if (dist < arriveRadius) return { rudder: 0, throttle: S.stop, arrived: true, dist };
   const want = Math.atan2(dx, dy);
   const err = wrapAngle(want - boat.heading);
   const rudder = Math.max(-1, Math.min(1, err * 2.2));
-  let throttle = 4;
-  if (dist < slowRadius) throttle = 3;
-  if (dist < slowRadius * 0.4) throttle = 2;
-  if (Math.abs(err) > 1.2) throttle = Math.min(throttle, 2);
+  let throttle = S.full;
+  if (dist < slowRadius) throttle = S.half;
+  if (dist < slowRadius * 0.4) throttle = S.slow;
+  if (Math.abs(err) > 1.2) throttle = Math.min(throttle, S.slow);
   return { rudder, throttle, arrived: false, dist };
 }
 

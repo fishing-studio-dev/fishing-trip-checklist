@@ -2,7 +2,7 @@
 // acquired peer reports, the player's own logbook and today's forecast.
 // Nothing here may read the live world (fish positions) — candidates must not
 // reveal unobserved fish (handover §7.4, A10).
-import { METHODS, SPECIES, EQUIPMENT, BOATS, TIME_BANDS, BRIEFING_T } from './data.js';
+import { METHODS, SPECIES, EQUIPMENT, BOATS, TIME_BANDS, BRIEFING_T, fits } from './data.js';
 import { tideClass, windBand, CHART_LABELS } from './sea.js';
 import { briefingReports, dayWord, peerName, KIND_LABEL } from './reports.js';
 import { levelFromXp } from './progress.js';
@@ -71,14 +71,30 @@ export function isGood(log) {
   return log.durationS >= 600 && opRate(log) >= m.goodRate;
 }
 
-function currentGearFor(profile, methodId) {
-  const slot = METHODS[methodId].gearSlot;
-  const inst = profile.boat.slots[slot];
-  return inst ? inst.itemId : null;
+/** Items of a type fitted on the boat now, in slot order (e.g. both reels). */
+export function gearOfType(profile, type) {
+  const model = BOATS[profile.boat.model];
+  return model.slots.map((sl) => profile.boat.slots[sl.id]).filter((inst) => inst && EQUIPMENT[inst.itemId].type === type).map((inst) => inst.itemId);
 }
 
-function logGear(log) {
-  return log.methodId === 'troll' ? log.gear && log.gear.troll : log.gear && log.gear.reel;
+/** A comparable signature of the gear a method uses: boat + its rigs. */
+function gearSig(boat, items) {
+  return `${boat}:${items.join('+')}`;
+}
+
+function currentGearSig(profile, methodId) {
+  return gearSig(profile.boat.model, gearOfType(profile, METHODS[methodId].gearType));
+}
+
+function logGearSig(log) {
+  const g = log.gear || {};
+  const items = log.methodId === 'troll' ? [g.troll].filter(Boolean) : g.reels || [g.reel].filter(Boolean);
+  return gearSig(g.boat || 'skiff_1', items);
+}
+
+function gearText(boatId, items) {
+  const names = items.map((id) => (EQUIPMENT[id] ? EQUIPMENT[id].name : id));
+  return `${BOATS[boatId] ? BOATS[boatId].name : boatId}・${names.join('＋') || 'なし'}`;
 }
 
 /**
@@ -103,9 +119,13 @@ export function similarLogs(logs, { methodId, area, forecast, profile }) {
   else lines.push(`似た条件（${tc}・風${wb}）で${similar.length}回操業し、${good}回は好調（${m.goodRate}${methodId === 'troll' ? '本' : '尾'}/時以上）`);
   const ref = similar[similar.length - 1] || same[same.length - 1];
   if (ref && profile) {
-    const cur = currentGearFor(profile, methodId);
-    const was = logGear(ref);
-    if (was && cur && was !== cur) lines.push(`前回は${EQUIPMENT[was] ? EQUIPMENT[was].name : was}を使用（現在は${EQUIPMENT[cur].name}）`);
+    const cur = currentGearSig(profile, methodId);
+    const was = logGearSig(ref);
+    if (was !== cur) {
+      const [wb, wi] = was.split(':');
+      const [cb, ci] = cur.split(':');
+      lines.push(`前回の装備は${gearText(wb, wi ? wi.split('+') : [])}（現在は${gearText(cb, ci ? ci.split('+') : [])}）`);
+    }
     const lvNow = levelFromXp(profile.methods[methodId].xp);
     if (ref.level != null && Math.abs(lvNow - ref.level) >= 2) lines.push(`前回は${m.name}Lv${ref.level}（現在Lv${lvNow}）`);
   }
@@ -210,12 +230,14 @@ export function buildCandidates({ knowledge, logs, today, forecast, profile }) {
     const ruleNotes = c.rules.map((r) => r);
     if (ruleNotes.length) score += 0.4;
     // feasibility with the current boat & gear
-    const slot = METHODS[c.methodId].gearSlot;
-    const inst = profile.boat.slots[slot];
+    const type = METHODS[c.methodId].gearType;
     let feasible = { ok: true, reason: '' };
-    if (!inst) {
-      const item = Object.values(EQUIPMENT).find((it) => it.type === BOATS[profile.boat.model].slots.find((s) => s.id === slot).accepts);
-      feasible = { ok: false, reason: `${item.name}が必要（未搭載・${item.price.toLocaleString('ja-JP')}G）` };
+    if (!gearOfType(profile, type).length) {
+      const model = BOATS[profile.boat.model];
+      const item = Object.values(EQUIPMENT)
+        .filter((it) => it.type === type && model.slots.some((sl) => fits(it, sl)))
+        .sort((a, b) => a.price - b.price)[0];
+      feasible = { ok: false, reason: item ? `${item.name}が必要（未搭載・${item.price.toLocaleString('ja-JP')}G）` : 'この船ではできない漁法です' };
     }
     const live = evidence.filter((e) => !e.superseded);
     const freshest = live.reduce((a, e) => Math.max(a, e.origin.obsDay), -1);
