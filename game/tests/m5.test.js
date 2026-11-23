@@ -29,6 +29,8 @@ function cruiser({ longline = false, hauler = false, level = 1 } = {}) {
     stern_troll: null,
     deck_longline: longline ? { uid: 'x5', itemId: 'longline_ll1' } : null,
     starboard_hauler: hauler ? { uid: 'x6', itemId: 'hauler_lh1' } : null,
+    hull_sonar: null,
+    roof_lights: null,
   };
   assert.deepEqual(validateProfile(p), []);
   return p;
@@ -162,13 +164,15 @@ test('A12 (移行): an M3/M4 save (format 4) opens in M5 with an empty hauler mo
   const v4 = JSON.parse(JSON.stringify(p));
   v4.schema = 4;
   delete v4.boat.slots.starboard_hauler;
+  delete v4.boat.slots.hull_sonar;
+  delete v4.boat.slots.roof_lights;
   const data = JSON.stringify(v4);
   const raw = JSON.stringify({ format: 'ryoshi-game-save', schemaVersion: 4, app: 'M4', revision: 9, savedAt: NOW, checksum: hashString(data), data: v4 });
   const st = memoryStorage({ [KEYS.main]: raw });
   const res = loadSave(st);
   assert.equal(res.status, 'ok', res.error);
   assert.equal(res.migratedFrom, 4);
-  assert.equal(SAVE_SCHEMA, 5);
+  assert.ok(SAVE_SCHEMA >= 5);
   assert.equal(res.profile.schema, PROFILE_SCHEMA);
   assert.equal(res.profile.funds, 4321);
   assert.equal(res.profile.boat.slots.starboard_hauler, null);

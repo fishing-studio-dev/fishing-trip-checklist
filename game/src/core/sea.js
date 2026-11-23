@@ -11,6 +11,58 @@ export const FEATURES = {
   okiNoSe: { name: '沖の瀬', x: 1650, y: 4050, r: 240, h: 50 },
 };
 
+// Small bottom structures (本作設定, fictional): where big fish and rockfish
+// hold. They are part of the real seabed (the sounder sees them) but too small
+// for the printed chart — they are found with the sounder, sonar and depth
+// mapping, and remembered with marks.
+//   kind: 'koboreze' こぼれ瀬 (rocky patch off a reef) | 'ne' 大きな根 (pinnacle)
+//         | 'gyosho' 漁礁 (artificial reef blocks on sand)
+export const STRUCTURES = [
+  { id: 'k1', kind: 'koboreze', x: 2330, y: 2050, r: 28, h: 9 },
+  { id: 'k2', kind: 'koboreze', x: 1750, y: 2480, r: 24, h: 8 },
+  { id: 'k3', kind: 'koboreze', x: 480, y: 1150, r: 22, h: 7 },
+  { id: 'k4', kind: 'koboreze', x: 820, y: 1500, r: 20, h: 6 },
+  { id: 'n1', kind: 'ne', x: 1500, y: 2200, r: 45, h: 20 },
+  { id: 'n2', kind: 'ne', x: 2700, y: 2300, r: 40, h: 22 },
+  { id: 'n3', kind: 'ne', x: 1900, y: 3800, r: 50, h: 24 },
+  { id: 'g1', kind: 'gyosho', x: 1300, y: 1050, r: 16, h: 5 },
+  { id: 'g2', kind: 'gyosho', x: 1700, y: 1350, r: 16, h: 5 },
+  { id: 'g3', kind: 'gyosho', x: 1000, y: 2050, r: 18, h: 6 },
+  { id: 'g4', kind: 'gyosho', x: 900, y: 850, r: 14, h: 4 },
+];
+export const STRUCTURE_LABEL = { koboreze: 'こぼれ瀬', ne: '大きな根', gyosho: '漁礁' };
+
+/** How much a structure raises the bottom at (x, y) (m), 0 outside it. */
+function structureRelief(st, x, y) {
+  const dx = x - st.x;
+  const dy = y - st.y;
+  const d2 = dx * dx + dy * dy;
+  if (d2 >= st.r * st.r) return 0;
+  const u = Math.sqrt(d2) / st.r;
+  if (st.kind === 'gyosho') {
+    // concrete blocks: flat tops with gaps between them
+    const block = (Math.floor(x / 5) + Math.floor(y / 5)) % 3 === 0 ? 0.35 : 1;
+    return st.h * block * (u < 0.8 ? 1 : (1 - u) / 0.2);
+  }
+  // rock: steep sides, rough top
+  const rough = 1 + 0.18 * Math.sin(x / 3.1 + st.r) * Math.sin(y / 2.7);
+  return st.h * Math.pow(1 - u * u, 1.3) * rough;
+}
+
+/** The structure at (x, y), if any (the one raising the bottom most). */
+export function structureAt(x, y) {
+  let best = null;
+  let bestH = 0;
+  for (const st of STRUCTURES) {
+    const h = structureRelief(st, x, y);
+    if (h > bestH) {
+      bestH = h;
+      best = st;
+    }
+  }
+  return best;
+}
+
 /** y of the coastline at x (land is south of it). */
 export function coastY(x) {
   const bay = 75 * Math.exp(-(((x - PORT.dock.x) / 150) ** 2));
@@ -36,8 +88,17 @@ function smoothstep(a, b, v) {
   return t * t * (3 - 2 * t);
 }
 
-/** Water depth (m, positive) at a point. Land returns 0. */
+/** Water depth (m) including the small structures (what the sounder sees). */
 export function depthAt(x, y) {
+  let d = baseDepthAt(x, y);
+  for (const st of STRUCTURES) {
+    if (Math.abs(x - st.x) < st.r && Math.abs(y - st.y) < st.r) d -= structureRelief(st, x, y);
+  }
+  return Math.max(1.5, d);
+}
+
+/** Water depth (m, positive) of the large-scale seabed (the printed chart). Land returns 0. */
+export function baseDepthAt(x, y) {
   const s = y - coastY(x);
   if (s <= 0) return 0;
   let d = 3 + 22 * (1 - Math.exp(-s / 700)) + 0.012 * s;
@@ -59,7 +120,7 @@ export function depthAt(x, y) {
 
 /** Bottom type used for sounder echo thickness (visual cue only). */
 export function bottomIsRocky(x, y) {
-  return gauss2(x, y, FEATURES.kitaNoSe) > 0.25 || gauss2(x, y, FEATURES.nishiNoNe) > 0.3 || gauss2(x, y, FEATURES.okiNoSe) > 0.3;
+  return gauss2(x, y, FEATURES.kitaNoSe) > 0.25 || gauss2(x, y, FEATURES.nishiNoNe) > 0.3 || gauss2(x, y, FEATURES.okiNoSe) > 0.3 || !!structureAt(x, y);
 }
 
 export function areaNameAt(x, y) {

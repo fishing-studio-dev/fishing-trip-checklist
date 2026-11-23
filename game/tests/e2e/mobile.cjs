@@ -166,7 +166,7 @@ async function layout(page) {
       await page.tap('[data-act=playtestLoad]');
       await page.tap('[data-act=playtestLoadConfirm]');
       await page.waitForSelector('[data-act=playtestRestore]');
-      check(`${name}: playtest save (100,000G) loads with one button on the boat market`, (await page.evaluate(() => window.__ryoshi.state().funds)) === 100000);
+      check(`${name}: playtest save (300,000G) loads with one button on the boat market`, (await page.evaluate(() => window.__ryoshi.state().funds)) === 300000);
       await page.screenshot({ path: path.join(outDir, `${slug}-5a-playtest.png`) });
       await page.evaluate(() => document.getElementById('screen').scrollTo(0, 0));
       await page.waitForSelector('[data-act=boatQuote][data-offer=used_cruiser_b]');
@@ -185,7 +185,7 @@ async function layout(page) {
       await page.tap('[data-act=buyBoatConfirm]');
       await sleep(300);
       const sb = await page.evaluate(() => window.__ryoshi.state());
-      check(`${name}: used boat bought by touch and saved`, sb.boatModel === 'cruiser_2' && sb.funds === 100000 - 70000 && sb.saveStatus.ok, `funds ${sb.funds}`);
+      check(`${name}: used boat bought by touch and saved`, sb.boatModel === 'cruiser_2' && sb.funds === 300000 - 70000 && sb.saveStatus.ok, `funds ${sb.funds}`);
     } catch (e) {
       check(`${name}: playtest ran`, false, e.message);
       await page.screenshot({ path: path.join(outDir, `${slug}-99-failure.png`) }).catch(() => {});

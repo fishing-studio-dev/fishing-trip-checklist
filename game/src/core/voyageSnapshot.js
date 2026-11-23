@@ -5,6 +5,7 @@
 // Sounder history keeps only its newest columns (what the screen and the
 // automatic tana reading need); everything else is kept whole.
 import { hashString } from './rng.js';
+import { mergeBathy, cellsFromBathy } from './bathy.js';
 
 export const SNAPSHOT_VERSION = 1;
 const KEEP_COLS = 40;
@@ -18,10 +19,12 @@ function decodeCol(c) {
 
 /** A JSON-ready copy of the voyage (with a checksum). */
 export function snapshotVoyage(v, savedAt = new Date().toISOString()) {
-  const obs = { ...v.obs, cols: v.obs.cols.slice(-KEEP_COLS).map(encodeCol) };
+  const obs = { ...v.obs, cols: v.obs.cols.slice(-KEEP_COLS).map(encodeCol), side: (v.obs.side || []).slice(-KEEP_COLS).map((c) => ({ t: c.t, vals: Array.from(c.vals) })) };
   // the track is only drawn on the chart: whole metres are enough
   const track = v.track.map((p) => ({ x: Math.round(p.x), y: Math.round(p.y), t: Math.round(p.t) }));
-  const data = JSON.parse(JSON.stringify({ ...v, obs, track }));
+  // measured depths: packed as map tiles (compact)
+  const bathy = { tiles: mergeBathy(null, (v.bathy && v.bathy.cells) || {}).tiles };
+  const data = JSON.parse(JSON.stringify({ ...v, obs, track, bathy }));
   const body = JSON.stringify(data);
   return { format: 'ryoshi-game-voyage', version: SNAPSHOT_VERSION, voyageId: v.id, day: v.day, savedAt, checksum: hashString(body), data };
 }
@@ -40,5 +43,7 @@ export function restoreVoyage(raw, activeVoyage) {
   if (hashString(JSON.stringify(snap.data)) !== snap.checksum) return { ok: false, reason: '海上の保存データが壊れています' };
   const v = JSON.parse(JSON.stringify(snap.data));
   v.obs.cols = v.obs.cols.map(decodeCol);
+  v.obs.side = (v.obs.side || []).map((c) => ({ t: c.t, vals: Uint8Array.from(c.vals) }));
+  v.bathy = { cells: cellsFromBathy(v.bathy) };
   return { ok: true, voyage: v, savedAt: snap.savedAt };
 }

@@ -6,6 +6,9 @@ import { SIM, TIME, PORT, BOATS, EQUIPMENT, METHODS, SPECIES, CREW } from './dat
 import { createWorld } from './world.js';
 import { createBoatRuntime, stepBoat, autopilotCommand, routeToPort, clearPath } from './boat.js';
 import { createObservation, pingColumn, pushColumn } from './sounder.js';
+import { sideColumn } from './sideview.js';
+import { recordDepth } from './bathy.js';
+import { createSonar, stepSonar } from './sonar.js';
 import { createOperation, stepOperation, requestStop, inFlightKg } from './fishing.js';
 import { createTrollOperation, stepTrollOperation, trollTargetSpeed, validateRoute, defaultRoute, routeLength, trollInFlightKg } from './troll.js';
 import {
@@ -51,6 +54,7 @@ export function createVoyage(profile, opts = {}) {
   const trollId = ofType('troll');
   const longlineId = ofType('longline');
   const haulerId = ofType('hauler');
+  const sonarId = ofType('sonar');
   const radio = opts.radio !== undefined ? opts.radio : opts.scenario ? [] : radioReports(profile.worldSeed, av.day);
   const v = {
     id: av.id,
@@ -70,7 +74,9 @@ export function createVoyage(profile, opts = {}) {
       longline: longlineId ? EQUIPMENT[longlineId].longline : null,
       haulerId,
       hauler: haulerId ? EQUIPMENT[haulerId].hauler : null,
+      sonarId,
     },
+    sonar: sonarId ? createSonar(EQUIPMENT[sonarId].sonar) : null,
     levels: {
       handline: levelFromXp(profile.methods.handline.xp),
       troll: levelFromXp(profile.methods.troll.xp),
@@ -85,6 +91,7 @@ export function createVoyage(profile, opts = {}) {
     line: null, // the longline (延縄): lives here while it soaks, also when no operation runs
     lineSeq: 0,
     crew: opts.crew != null ? (opts.crew ? 1 : 0) : av.crew ? 1 : 0, // a hired deckhand on board
+    bathy: { cells: {} }, // depths measured on this voyage by a mapping sounder (merged at landing)
 
     logs: [],
     hold: emptyHold(),
@@ -195,10 +202,26 @@ export function stepVoyage(v) {
   const mode = isOperating(v) && v.op.methodId === 'handline' ? 'drift' : 'manual';
   stepBoat(v.boat, model, w.cond, w.time, dt, mode);
 
+  // the sonar turns one bearing per step (display only; it reads the world, never changes it)
+  if (v.sonar) stepSonar(v.sonar, w, v.boat);
+
   // sounder pings on a fixed schedule, regardless of what the UI shows
   if (w.step % SIM.PING_EVERY_STEPS === 0) {
     const col = pingColumn(w, v.boat.x, v.boat.y, v.equip.sounder, v.obs.pingCount);
     pushColumn(v.obs, col);
+    // a mapping sounder: the strip to port and starboard, and the depths it measured
+    if (v.equip.sounder.side) {
+      const side = sideColumn(w, v.boat.x, v.boat.y, v.boat.heading, v.equip.sounder, v.obs.pingCount);
+      if (!v.obs.side) v.obs.side = [];
+      v.obs.side.push({ t: side.t, vals: side.vals });
+      if (v.obs.side.length > 240) v.obs.side.shift();
+      if (v.equip.sounder.mapping) {
+        recordDepth(v.bathy.cells, v.boat.x, v.boat.y, col.bottomCenter);
+        side.depths.forEach((d, k) => {
+          if (k % 2 === 0) recordDepth(v.bathy.cells, v.boat.x + Math.cos(v.boat.heading) * side.offsets[k], v.boat.y - Math.sin(v.boat.heading) * side.offsets[k], d);
+        });
+      }
+    }
     if (isOperating(v)) {
       const st = v.op.stats;
       st.pings += 1;
@@ -273,6 +296,23 @@ function maybeAutoMark(v, col) {
   if (last && v.world.time - last.t < 90 && Math.hypot(last.x - col.x, last.y - col.y) < 120) return;
   o.marks.push({ id: o.markSeq++, kind: 'auto', x: col.x, y: col.y, t: col.t, depth: col.fishDepth, bottom: col.bottom });
   if (o.marks.length > 80) o.marks.shift();
+}
+
+/** Next sonar range (the old picture was drawn at another scale, so it is cleared). */
+export function cycleSonarRange(v) {
+  const sn = v.sonar;
+  if (!sn) return null;
+  sn.range = sn.ranges[(sn.ranges.indexOf(sn.range) + 1) % sn.ranges.length];
+  sn.data.fill(0);
+  return sn.range;
+}
+
+/** A mark at a chosen point (e.g. a sonar echo), with the depth there. */
+export function addMarkAt(v, x, y, kind = 'manual') {
+  const o = v.obs;
+  o.marks.push({ id: o.markSeq++, kind, x, y, t: v.world.time, depth: null, bottom: Math.round(depthAt(x, y) * 10) / 10 });
+  if (o.marks.length > 80) o.marks.shift();
+  say(v, kind === 'sonar' ? 'ソナーの反応の位置に印を付けました。' : '印を付けました。');
 }
 
 export function addManualMark(v) {
@@ -846,6 +886,8 @@ export function summarizeVoyage(v) {
     fuelPerKm: boatModel(v).fuelPerKm,
     crew: v.crew,
     crewWage: v.crew ? CREW.wage : 0,
+    bathyCells: v.bathy ? v.bathy.cells : {},
+    marks: v.obs.marks.filter((m) => m.kind !== 'auto').map((m) => ({ ...m })),
     opSeconds: Math.round(v.opSeconds),
     plan: v.plan,
   };

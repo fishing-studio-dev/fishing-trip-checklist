@@ -1,8 +1,9 @@
 // Persistent player progress (what the save file holds).
 // The live sea (WorldState) is NOT part of this; it is regenerated per voyage.
 import { ECONOMY, START_PROFILE, BOATS, EQUIPMENT, METHODS, fits } from './data.js';
+import { emptyBathy } from './bathy.js';
 
-export const PROFILE_SCHEMA = 5;
+export const PROFILE_SCHEMA = 6;
 
 export function createProfile({ worldSeed, now = new Date().toISOString() } = {}) {
   const seed = worldSeed != null ? worldSeed >>> 0 : (Math.floor(Math.random() * 0xffffffff) >>> 0);
@@ -28,7 +29,23 @@ export function createProfile({ worldSeed, now = new Date().toISOString() } = {}
     knowledge: { reports: [], briefedDay: 0 },
     boatSeq: 1,
     boatHistory: [], // boats traded in: {uid, model, name, tradeIn, day}
+    bathy: emptyBathy(), // the player's own depth map (デプスマッピング)
+    marks: [], // the player's own marks, kept across days: {id, x, y, name, memo, day, t, kind, depth}
+    markSeq: 0,
   };
+}
+
+/** Schema 5 (M5) -> 6: the own depth map and marks kept across days (both empty). */
+export function migrateProfile5to6(p5) {
+  const p = clone(p5);
+  p.schema = 6;
+  p.bathy = p.bathy || emptyBathy();
+  // new mountings (empty): the sonar under the medium boat, lamps for night squid on every boat
+  if (p.boat.model === 'cruiser_2' && !('hull_sonar' in p.boat.slots)) p.boat.slots.hull_sonar = null;
+  if (!('roof_lights' in p.boat.slots)) p.boat.slots.roof_lights = null;
+  p.marks = p.marks || [];
+  p.markSeq = p.markSeq || 0;
+  return p;
 }
 
 /** Schema 4 (M3/M4) -> 5 (M5): the line hauler's mounting (empty) on every boat. */
@@ -135,6 +152,7 @@ export function validateProfile(p) {
     for (const key of Object.keys(p.boat.slots || {})) if (!model.slots.some((s) => s.id === key)) errs.push(`この船にない取付位置 ${key}`);
   }
   if (typeof p.boatSeq !== 'number' || !Array.isArray(p.boatHistory)) errs.push('船の記録が不正です');
+  if (!p.bathy || typeof p.bathy.tiles !== 'object' || !Array.isArray(p.marks) || typeof p.markSeq !== 'number') errs.push('海図の記録（水深・印）が不正です');
   if (!Array.isArray(p.storage)) errs.push('storage が配列ではありません');
   else for (const s of p.storage) if (!s || !EQUIPMENT[s.itemId]) errs.push('倉庫に未知の装備');
   if (!Array.isArray(p.logs)) errs.push('logs が配列ではありません');

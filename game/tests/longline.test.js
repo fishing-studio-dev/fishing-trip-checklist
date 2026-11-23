@@ -35,6 +35,8 @@ function llProfile({ level = 1, boat = 'skiff_1', seed = 5 } = {}) {
       stern_troll: null,
       deck_longline: { uid: 'L1', itemId: 'longline_ll1' },
       starboard_hauler: null,
+      hull_sonar: null,
+      roof_lights: null,
     };
   }
   assert.deepEqual(validateProfile(p), []);
@@ -293,6 +295,8 @@ function m2Save() {
   delete v3.methods.longline;
   delete v3.boat.slots.deck_longline;
   delete v3.boat.slots.starboard_hauler;
+  delete v3.boat.slots.hull_sonar;
+  delete v3.boat.slots.roof_lights;
   v3.methods.handline.xp = 222;
   v3.funds = 43210;
   const data = JSON.stringify(v3);

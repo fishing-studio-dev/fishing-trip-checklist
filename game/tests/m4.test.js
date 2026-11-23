@@ -26,6 +26,8 @@ function cruiser({ reels = ['reel_hand', 'reel_hand'], troll = null, longline = 
     stern_troll: troll ? { uid: 'x4', itemId: troll } : null,
     deck_longline: longline ? { uid: 'x5', itemId: longline } : null,
     starboard_hauler: null,
+    hull_sonar: null,
+    roof_lights: null,
   };
   assert.deepEqual(validateProfile(p), []);
   return p;

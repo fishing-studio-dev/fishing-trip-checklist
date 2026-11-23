@@ -341,7 +341,7 @@ const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
     let s3 = await st3();
     const kept = await pg.evaluate(() => localStorage.getItem('ryoshi-game:save:before-playtest'));
     const before = { funds: s3.funds, slots: s3.slots, storage: s3.storage };
-    check('playtest save: one button switches to 100,000G on the small boat; own progress kept aside', s3.funds === 100000 && s3.boatModel === 'skiff_1' && s3.saveStatus.ok && kept === ownRaw, JSON.stringify(before));
+    check('playtest save: one button switches to 300,000G on the small boat; own progress kept aside', s3.funds === 300000 && s3.boatModel === 'skiff_1' && s3.saveStatus.ok && kept === ownRaw, JSON.stringify(before));
     await pg.screenshot({ path: path.join(outDir, '14a-playtest-loaded.png') });
     await pg.waitForSelector('[data-act=boatQuote][data-offer=used_cruiser_a]');
     const mText = await pg.textContent('#screen');
@@ -363,7 +363,7 @@ const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
     const allItems = [...Object.values(s3.slots).filter(Boolean), ...s3.storage];
     const uids = allItems.map((x) => x.split('#')[1]);
     const oldUids = [...Object.values(before.slots).filter(Boolean), ...before.storage].map((x) => x.split('#')[1]);
-    check('bought: one active boat (中型), paid exactly once, saved', s3.boatModel === 'cruiser_2' && s3.funds === 100000 - plan.payable && s3.boatHistory === 1 && s3.saveStatus.ok, `funds ${s3.funds}`);
+    check('bought: one active boat (中型), paid exactly once, saved', s3.boatModel === 'cruiser_2' && s3.funds === 300000 - plan.payable && s3.boatHistory === 1 && s3.saveStatus.ok, `funds ${s3.funds}`);
     check('gear: the trolling gear moved to the new stern, replaced items kept in storage, nothing lost or duplicated', s3.slots.stern_troll === before.slots.stern_troll && oldUids.every((u) => uids.includes(u)) && new Set(uids).size === uids.length && s3.slots.port_reel, JSON.stringify({ slots: s3.slots, storage: s3.storage }));
     await pg.screenshot({ path: path.join(outDir, '16-bought-boat.png') });
     await pg.click('[data-act=closeModal]');
@@ -645,6 +645,78 @@ const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
   } catch (e) {
     check('M5 playthrough', false, e.message);
     await shot('99-m5-failure').catch(() => {});
+  }
+
+  // ---------------------------------------------------------------- search tools: structures, side view + depth map, sonar (items 2-4)
+  try {
+    const pg = page;
+    await pg.goto(`http://localhost:${port}/?dev=1&seed=77`);
+    await pg.waitForSelector('#portChart');
+    const own = await st();
+    await pg.click('[data-act=market]');
+    await pg.click('[data-act=playtestLoad]');
+    await pg.click('[data-act=playtestLoadConfirm]');
+    await pg.click('[data-act=boatQuote][data-offer=used_cruiser_a]');
+    await pg.click('[data-act=buyBoatConfirm]');
+    await pg.click('[data-act=closeModal]');
+    await pg.click('[data-act=equip]');
+    await pg.click('[data-act=buy][data-item=sonar_cs1][data-slot=hull_sonar]');
+    const confS = await pg.textContent('#modal');
+    await pg.click('[data-act=buyConfirm]');
+    await sleep(200);
+    if (await pg.isVisible('#modal [data-act=closeModal]').catch(() => false)) await pg.click('#modal [data-act=closeModal]');
+    await pg.click('[data-act=buy][data-item=sounder_sv1][data-slot=helm_sounder]');
+    const confV = await pg.textContent('#modal');
+    await pg.click('[data-act=buyConfirm]');
+    await sleep(200);
+    if (await pg.isVisible('#modal [data-act=closeModal]').catch(() => false)) await pg.click('#modal [data-act=closeModal]');
+    let s6 = await st();
+    check('search tools: the sonar and the side-view sounder are explained before buying and fitted', /何が変わるか/.test(confS) && /ソナー/.test(confS) && /左右/.test(confV) && s6.slots.hull_sonar.startsWith('sonar_cs1') && s6.slots.helm_sounder.startsWith('sounder_sv1') && s6.saveStatus.ok, JSON.stringify(s6.slots));
+    await pg.click('[data-act=toPort]');
+    await pg.waitForSelector('#portChart');
+    await pg.click('[data-act=depart]');
+    await waitFor((x) => x.screen === 'sea', 'at sea (search tools)');
+    check('search tools: the sonar button appears with the sonar fitted', await pg.isVisible('#btnSonar'));
+    // run toward the big 根 west of 北の瀬 along a chart route, sonar open
+    await press('o');
+    await press('c');
+    await sleep(200);
+    await clickChart(1420, 2140);
+    await press('c');
+    await press('g');
+    await waitFor((x) => x.voyage.autopilot === 'route', 'route toward the 根');
+    for (let i = 0; i < 60 && (await st()).voyage.autopilot; i++) await ff(20);
+    await ff(15);
+    await sleep(400);
+    const sonarFill = await pg.evaluate(() => window.__ryoshi.app.voyage.sonar.data.filter((x) => x > 60).length);
+    check('search tools: the sonar picture fills in around the boat', (await pg.isVisible('#sonarPanel')) && sonarFill > 0, `${sonarFill} bright cells`);
+    const box = await pg.locator('#sonar').boundingBox();
+    await pg.mouse.click(box.x + box.width * 0.5, box.y + box.height * 0.25);
+    await sleep(200);
+    const sm = await pg.evaluate(() => window.__ryoshi.app.voyage.obs.marks.filter((m) => m.kind === 'sonar').length);
+    check('search tools: tapping the sonar picture leaves a mark at that echo', sm === 1);
+    await pg.click('[data-act=sonarRange]');
+    check('search tools: the sonar range button steps the range', /600m/.test(await pg.textContent('#sonarRange')));
+    await shot('26-sonar');
+    await pg.click('#sideToggle');
+    await press('w');
+    await ff(120);
+    await sleep(400);
+    const sv = await pg.evaluate(() => ({ side: window.__ryoshi.app.voyage.obs.side.length, cells: Object.keys(window.__ryoshi.app.voyage.bathy.cells).length }));
+    check('search tools: the side view draws port and starboard, and the depth map fills in while running', (await pg.isVisible('#sideview')) && sv.side > 50 && sv.cells > 100, JSON.stringify(sv));
+    await shot('27-sideview');
+    s6 = await returnAndLand('search tools');
+    const kept6 = await pg.evaluate(() => ({ marks: window.__ryoshi.app.profile.marks.filter((m) => m.kind === 'sonar').length, tiles: Object.keys(window.__ryoshi.app.profile.bathy.tiles || {}).length }));
+    check('search tools: the depth map and the sonar mark are kept in the profile after landing', kept6.marks === 1 && kept6.tiles > 0, JSON.stringify(kept6));
+    await pg.click('[data-act=toPort]');
+    await pg.click('[data-act=openSave]');
+    await pg.click('[data-act=playtestRestore]');
+    await pg.click('[data-act=playtestRestoreConfirm]');
+    await pg.waitForSelector('#portChart');
+    check('back to the own progress after the search-tools playtest', (await st()).funds === own.funds);
+  } catch (e) {
+    check('search tools playthrough', false, e.message);
+    await shot('99-search-failure').catch(() => {});
   }
 
   check('no page errors or console errors', errors.length === 0, errors.slice(0, 5).join(' | '));

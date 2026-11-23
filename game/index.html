@@ -19,10 +19,15 @@
       <canvas id="chart" width="240" height="240"></canvas>
     </div>
     <div class="hud-sounder panel" id="sounderPanel">
-      <div class="panel-head"><span id="sounderTitle">魚探</span><button type="button" class="mini" data-act="sounder" title="魚探を閉じる（F）">閉じる</button></div>
+      <div class="panel-head"><span id="sounderTitle">魚探</span><span><button type="button" class="mini" id="sideToggle" data-act="sideview" title="真下と左右の表示を切り替え" hidden>左右</button> <button type="button" class="mini" data-act="sounder" title="魚探を閉じる（F）">閉じる</button></span></div>
       <canvas id="sounder" width="260" height="300"></canvas>
+      <canvas id="sideview" class="sideview" width="260" height="300" hidden></canvas>
     </div>
     <button type="button" class="sounder-open" id="sounderOpen" data-act="sounder" hidden>魚探を開く（F）</button>
+    <div class="hud-sonar panel" id="sonarPanel" hidden>
+      <div class="panel-head"><span>ソナー</span><span><button type="button" class="mini" id="sonarRange" data-act="sonarRange" title="探る距離">300m</button> <button type="button" class="mini" data-act="sonar" title="ソナーを閉じる（O）">閉じる</button></span></div>
+      <canvas id="sonar" width="240" height="240"></canvas>
+    </div>
     <div class="hud-op panel" id="opPanel" hidden></div>
     <div class="hud-msgs" id="msgs" aria-live="polite"></div>
     <div class="walk-bar" id="walkBar" hidden aria-label="持ち場へ移動"></div>
@@ -58,6 +63,7 @@
       <div class="ctl-group sys">
         <button type="button" class="ctl small" id="btnSpeed" data-act="speed" title="時間の早さ（1/2/3）">×1</button>
         <button type="button" class="ctl small" id="btnView" data-act="view" title="視点切替（V）">視点</button>
+        <button type="button" class="ctl small" id="btnSonar" data-act="sonar" title="ソナー（O）" hidden>ソナー</button>
         <button type="button" class="ctl small" id="btnPause" data-act="pause" title="一時停止（P）">停止</button>
         <button type="button" class="ctl small" data-act="help" title="操作説明">？</button>
       </div>

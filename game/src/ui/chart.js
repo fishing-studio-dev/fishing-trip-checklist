@@ -2,7 +2,7 @@
 // observed (track, marks, operation spots). Fish are only drawn in dev mode,
 // clearly labelled, and never in normal play.
 import { AREA, PORT, BOATS } from '../core/data.js';
-import { depthAt, isLand, CHART_LABELS, fmtClock } from '../core/sea.js';
+import { baseDepthAt, isLand, CHART_LABELS, fmtClock, STRUCTURES, STRUCTURE_LABEL } from '../core/sea.js';
 import { schoolCenter, schoolTotal } from '../core/world.js';
 
 const RES = 10; // metres per pixel of the static map
@@ -28,7 +28,7 @@ export function buildStaticMap() {
     for (let i = 0; i < w; i++) {
       const x = (i + 0.5) * RES;
       const y = AREA.H - (j + 0.5) * RES;
-      depths[j * w + i] = isLand(x, y) ? -1 : depthAt(x, y);
+      depths[j * w + i] = isLand(x, y) ? -1 : baseDepthAt(x, y); // the printed chart: small structures are not on it
     }
   }
   for (let j = 0; j < h; j++) {
@@ -53,6 +53,56 @@ export function buildStaticMap() {
   }
   ctx.putImageData(img, 0, 0);
   return c;
+}
+
+// ---- the own depth map (デプスマッピング): fine 2 m contours where the player measured
+const MAP_NX = Math.ceil(AREA.W / 10);
+const MAP_NY = Math.ceil(AREA.H / 10);
+let bathyLayer = null;
+let bathyKey = '';
+
+/** Build (when changed) a 10 m-per-pixel layer from measured cells (profile + this voyage). */
+export function bathyCanvas(baseCells, voyCells) {
+  const nV = voyCells ? Object.keys(voyCells).length : 0;
+  const nB = baseCells ? Object.keys(baseCells).length : 0;
+  const key = `${nB}:${nV}`;
+  if (bathyLayer && key === bathyKey) return bathyLayer;
+  if (!nB && !nV) return null;
+  bathyKey = key;
+  if (!bathyLayer) {
+    bathyLayer = document.createElement('canvas');
+    bathyLayer.width = MAP_NX;
+    bathyLayer.height = MAP_NY;
+  }
+  const ctx = bathyLayer.getContext('2d');
+  const img = ctx.createImageData(MAP_NX, MAP_NY);
+  const get = (idx) => (voyCells && voyCells[idx]) || (baseCells && baseCells[idx]) || 0;
+  const all = new Set([...Object.keys(baseCells || {}), ...Object.keys(voyCells || {})]);
+  for (const k of all) {
+    const idx = Number(k);
+    const b = get(idx);
+    if (!b) continue;
+    const d = b / 2;
+    const i = idx % MAP_NX;
+    const j = Math.floor(idx / MAP_NX);
+    let col = depthColor(d);
+    // hill shade from the north-west: a raised spot is lit on its NW side
+    const nw = get(idx - 1 + MAP_NX) || b;
+    const shade = Math.max(-0.35, Math.min(0.35, (nw - b) / 2 * 0.12));
+    col = col.map((c) => Math.max(0, Math.min(255, c + 255 * shade)));
+    // 2 m contours
+    const band = Math.floor(d / 2);
+    for (const n of [get(idx + 1), get(idx + MAP_NX)]) {
+      if (n && Math.floor(n / 2 / 2) !== band) col = col.map((c) => Math.min(255, c + 70));
+    }
+    const p = ((MAP_NY - 1 - j) * MAP_NX + i) * 4;
+    img.data[p] = col[0];
+    img.data[p + 1] = col[1];
+    img.data[p + 2] = col[2];
+    img.data[p + 3] = 235;
+  }
+  ctx.putImageData(img, 0, 0);
+  return bathyLayer;
 }
 
 /**
@@ -215,7 +265,7 @@ function drawLongline(ctx, line, toPx, label) {
 /**
  * Draw the chart at sea. opts: { big, dev, reports: [{r, label}], route: {points, live}, hint, line, lineLabel }
  */
-export function drawChart(canvas, staticMap, v, { big = false, dev = false, reports = [], route = null, hint = '', line = null, lineLabel = '' } = {}) {
+export function drawChart(canvas, staticMap, v, { big = false, dev = false, reports = [], route = null, hint = '', line = null, lineLabel = '', bathy = null } = {}) {
   const dpr = Math.min(window.devicePixelRatio || 1, 2);
   const cssW = canvas.clientWidth || canvas.width;
   const cssH = canvas.clientHeight || canvas.height;
@@ -235,6 +285,11 @@ export function drawChart(canvas, staticMap, v, { big = false, dev = false, repo
   const [ox, oy] = toPx(0, AREA.H);
   ctx.imageSmoothingEnabled = true;
   ctx.drawImage(staticMap, ox, oy, AREA.W * scale, AREA.H * scale);
+  if (bathy) {
+    ctx.imageSmoothingEnabled = false;
+    ctx.drawImage(bathy, ox, oy, AREA.W * scale, AREA.H * scale);
+    ctx.imageSmoothingEnabled = true;
+  }
 
   ctx.font = `${big ? 13 : 10}px sans-serif`;
   ctx.textAlign = 'center';
@@ -296,6 +351,15 @@ export function drawChart(canvas, staticMap, v, { big = false, dev = false, repo
   if (line) drawLongline(ctx, line, toPx, lineLabel);
   // dev overlay
   if (dev) {
+    ctx.strokeStyle = '#ff5cf0';
+    ctx.fillStyle = '#ffb3f6';
+    for (const st of STRUCTURES) {
+      const [px, py] = toPx(st.x, st.y);
+      ctx.beginPath();
+      ctx.arc(px, py, Math.max(3, st.r * scale), 0, Math.PI * 2);
+      ctx.stroke();
+      ctx.fillText(`開発表示:${STRUCTURE_LABEL[st.kind]}`, px + 5, py + 12);
+    }
     ctx.setLineDash([4, 3]);
     ctx.strokeStyle = '#ff5c5c';
     ctx.fillStyle = '#ff9b9b';
@@ -406,7 +470,7 @@ export function drawChart(canvas, staticMap, v, { big = false, dev = false, repo
 }
 
 /** Port briefing chart: whole area, candidates, peers' observations and own operation spots. */
-export function drawBriefingChart(canvas, staticMap, { candidates = [], reports = [], boatModel = null }) {
+export function drawBriefingChart(canvas, staticMap, { candidates = [], reports = [], boatModel = null, bathy = null }) {
   const dpr = Math.min(window.devicePixelRatio || 1, 2);
   const cssW = canvas.clientWidth || canvas.width;
   const cssH = canvas.clientHeight || canvas.height;
@@ -424,6 +488,7 @@ export function drawBriefingChart(canvas, staticMap, { candidates = [], reports 
   ctx.fillStyle = '#0a244e';
   ctx.fillRect(0, 0, W, H);
   ctx.drawImage(staticMap, ox, oy, AREA.W * scale, AREA.H * scale);
+  if (bathy) ctx.drawImage(bathy, ox, oy, AREA.W * scale, AREA.H * scale);
   if (boatModel) drawRangeLimit(ctx, boatModel, toPx, W, true);
   ctx.font = '11px sans-serif';
   ctx.textAlign = 'center';

@@ -200,6 +200,15 @@ export const EQUIPMENT = {
     desc: '大型の操舵室に付ける魚探。細いビームで真下の反応を分けて映し、弱い反応も拾う。表示の細かさは2倍で、魚群反応の深さを数字で出す。',
     sounder: { halfAngleDeg: 14, binSize: 0.25, maxRange: 120, noise: 0.05, gainK: 850, readout: true },
   },
+  sounder_sv1: {
+    id: 'sounder_sv1',
+    type: 'sounder',
+    mount: 'sounder_l',
+    name: 'サイドビュー魚探 SV-1',
+    price: 60000,
+    desc: 'ES-2と同じ真下の魚探に加え、船の左右それぞれ60mの海底と底近くの魚を帯状に映す。測った水深を10mごとに記録し、自分だけの細かい海図（デプスマッピング）を作る。大型の操舵室に付ける。',
+    sounder: { halfAngleDeg: 14, binSize: 0.25, maxRange: 120, noise: 0.05, gainK: 850, readout: true, side: { range: 60, res: 5 }, mapping: true },
+  },
   reel_hand: {
     id: 'reel_hand',
     type: 'reel',
@@ -245,6 +254,15 @@ export const EQUIPMENT = {
     desc: '餌付きの針100本を6m間隔に並べた縄（約600m）と、両端のブイ。海底に張って浸け、あとで揚げる。小型和船では船尾に付けるので、曳縄具とは付け替えになる。',
     longline: { hooks: 100, spacing: 6, maxDepth: 120 },
   },
+  sonar_cs1: {
+    id: 'sonar_cs1',
+    type: 'sonar',
+    mount: 'sonar',
+    name: 'スキャニングソナー CS-1',
+    price: 90000,
+    desc: '船底から水中を横向きに見回し、船のまわり150〜600mの魚群反応と、海底から立ち上がる根・漁礁の反応を映す。中型漁船の船底に付ける。',
+    sonar: { ranges: [150, 300, 600], gain: 900 },
+  },
   hauler_lh1: {
     id: 'hauler_lh1',
     type: 'hauler',
@@ -273,6 +291,18 @@ export const GUIDES = {
     ],
     note: '魚の種類・食い気・どの漁が良いかは表示しません（見立てはプレイヤーが行う）。',
   },
+  sounder_sv1: {
+    changes: [
+      '真下の魚探はES-2と同じ（細いビーム・高い感度・反応の深さの数字）。',
+      '左右の帯：船の左右60mずつの海底を、走りながら帯状に映す（サイドビュー）。硬い岩や漁礁は明るく、海底の起伏は明暗と影で、底近くの魚は明るい点で出る。真下を通らなくても、横にある小さな瀬や漁礁、底の魚に気づける。',
+      'デプスマッピング：測った水深を10mごとに記録し、海図に細かい等深線（2mごと）として重ねる。翌日以降も残り、印を付けた瀬や漁礁の形を後から確かめられる。',
+    ],
+    inPlay: [
+      '海図に載っていない小さな瀬・大きな根・漁礁を探すとき、左右120mの幅で一度に調べられる。',
+      '走った所の細かい地形が海図に残るので、根魚や青物の付き場（根の肩・漁礁の際）を予想しやすくなる。',
+    ],
+    note: '魚の種類は表示しません。映るのは地形と、底近くに何かがいる反応です。',
+  },
   reel_electric: {
     changes: ['巻き上げが速い（毎秒2.6m。手巻きは腕前で0.7〜1.1m）。深いタナほど1回の手返しが短くなる。', '巻いている間も手が空くので、2本仕掛けのもう1本の作業が止まらない。', '届く深さ 80m→150m。'],
     inPlay: ['操業パネルの「回収」の段階が短くなり、同じ時間に流せる回数が増える。'],
@@ -288,6 +318,18 @@ export const GUIDES = {
   longline_ll1: {
     changes: ['延縄（マダイ）ができるようになる。針100本・約600mの縄を海底に張り、浸けて、あとで揚げる。'],
     inPlay: ['張る向きは今の向きか海図で決める。浸けている間は他の漁ができる。揚げるときは L（確認あり）。'],
+  },
+  sonar_cs1: {
+    changes: [
+      '船のまわりを丸く見る（真上から見た図、船首が上）。距離は150・300・600mから選べる。魚探が真下しか見ないのに対し、まわり数百mの群れを一度に探せる。',
+      '水中の群れは色の濃い塊で、海底から立ち上がった根や漁礁は硬い反応（点状）で出る。',
+      '画面をタップ（クリック）すると、その位置に印を付けられる（海図に残る）。',
+    ],
+    inPlay: [
+      '青物やベイトの群れのように動き回る群れを、遠くから見つけて先回りできる。',
+      '漁礁や小さな根の場所の見当を付けてから、魚探・サイドビューで確かめる、という探し方ができる。',
+    ],
+    note: '魚の種類は表示しません。反応の大きさ・動き・場所から見立てます。',
   },
   hauler_lh1: {
     changes: ['揚げ縄を機械で巻き上げる（毎秒1.3m、腕前によらない）。魚を外すのは手作業のまま。'],
@@ -327,6 +369,7 @@ export const BOATS = {
       { id: 'starboard_reel', label: '右舷 竿受け', accepts: ['reel'], rig: '右舷' },
       { id: 'stern_troll', label: '船尾（曳縄・延縄）', accepts: ['troll', 'longline'], optional: true },
       { id: 'starboard_hauler', label: '右舷前（揚げ縄機）', accepts: ['hauler'], optional: true },
+      { id: 'roof_lights', label: '屋根（集魚灯）', accepts: ['lights'], optional: true },
     ],
   },
   cruiser_2: {
@@ -350,6 +393,8 @@ export const BOATS = {
       { id: 'stern_troll', label: '船尾 曳縄（アウトリガー可）', accepts: ['troll', 'troll_l'], optional: true },
       { id: 'deck_longline', label: '後部甲板（延縄）', accepts: ['longline'], optional: true },
       { id: 'starboard_hauler', label: '右舷前（揚げ縄機）', accepts: ['hauler'], optional: true },
+      { id: 'hull_sonar', label: '船底（ソナー）', accepts: ['sonar'], optional: true },
+      { id: 'roof_lights', label: '屋根（集魚灯）', accepts: ['lights'], optional: true },
     ],
   },
 };
@@ -386,7 +431,7 @@ export const ECONOMY = {
 export const START_PROFILE = {
   boatModel: 'skiff_1',
   boatName: 'はやせ丸',
-  slots: { helm_sounder: 'sounder_es1', starboard_reel: 'reel_hand', stern_troll: null, starboard_hauler: null },
+  slots: { helm_sounder: 'sounder_es1', starboard_reel: 'reel_hand', stern_troll: null, starboard_hauler: null, roof_lights: null },
 };
 
 // ---- Tide (潮回り) table by day number modulo 15 (game calendar) ----

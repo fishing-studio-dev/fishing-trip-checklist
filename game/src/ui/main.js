@@ -6,8 +6,9 @@ import { loadSave, writeSave, exportSave, checkImport, memoryStorage, KEYS } fro
 import {
   createVoyage, advanceVoyage, isOperating, isTrolling, setHelm, setMethod, startOperation, stopOperation, redrift, returnToPort,
   nearPort, addManualMark, summarizeVoyage, canStartOperation, addRoutePoint, clearRoute, trollRouteFrom,
-  isLonglining, lineInWater, haulLongline, lineRouteFrom, runRoute,
+  isLonglining, lineInWater, haulLongline, lineRouteFrom, runRoute, addMarkAt, cycleSonarRange,
 } from '../core/voyage.js';
+import { sonarToWorld } from '../core/sonar.js';
 import { longlineLabel, baitLeft, nearestBuoy, buoys } from '../core/longline.js';
 import { acquireBriefing, buildCandidates, planSummary } from '../core/knowledge.js';
 import { reportLine, peerName } from '../core/reports.js';
@@ -16,7 +17,10 @@ import { linePhaseLabel, recentPace } from '../core/fishing.js';
 import { fmtClock, compass8, areaNameAt, currentAt, makeDayConditions, forecastOf } from '../core/sea.js';
 import { levelFromXp } from '../core/progress.js';
 import { schoolCenter } from '../core/world.js';
-import { buildStaticMap, drawChart, drawBriefingChart, chartToWorld, worldToChart } from './chart.js';
+import { buildStaticMap, drawChart, drawBriefingChart, chartToWorld, worldToChart, bathyCanvas } from './chart.js';
+import { drawSideView } from './sideView.js';
+import { drawSonar, sonarTap } from './sonarView.js';
+import { cellsFromBathy } from '../core/bathy.js';
 import { createSounderView } from './sounderView.js';
 import { demoObservation } from './sounderDemo.js';
 import * as S from './screens.js';
@@ -141,7 +145,7 @@ function show(screen) {
   el.scrollTop = 0;
   if (screen === 'port') {
     const c = $('portChart');
-    if (c) drawBriefingChart(c, staticMap, { candidates: app.candidates, reports: chartReports(app.profile.knowledge.reports, app.profile.day + 1), boatModel: app.profile.boat.model });
+    if (c) drawBriefingChart(c, staticMap, { candidates: app.candidates, reports: chartReports(app.profile.knowledge.reports, app.profile.day + 1), boatModel: app.profile.boat.model, bathy: bathyCanvas(ownCells(), null) });
   }
   if (screen === 'equip') drawSounderDemos(el);
   if (screen === 'save') {
@@ -226,6 +230,14 @@ function depart(planKey = null) {
   if (DEV && params.get('scenario') === 'near') scenario = nearScenario();
   enterSea(createVoyage(app.profile, { scenario }));
   saveVoyageNow();
+}
+
+/** The player's own measured depths (from the profile), decoded once per change. */
+let ownCellsCache = { tiles: null, cells: {} };
+function ownCells() {
+  const b = app.profile && app.profile.bathy;
+  if (b && b.tiles !== ownCellsCache.tiles) ownCellsCache = { tiles: b.tiles, cells: cellsFromBathy(b) };
+  return ownCellsCache.cells;
 }
 
 /** Put a voyage (new or resumed) on screen. */
@@ -595,6 +607,12 @@ function onChartClick(ev) {
 function toggle(name) {
   if (name === 'sounder') {
     app.sounderOpen = !app.sounderOpen;
+  } else if (name === 'sideview') {
+    app.sideOpen = !app.sideOpen;
+  } else if (name === 'sonar') {
+    app.sonarOpen = !app.sonarOpen;
+  } else if (name === 'sonarRange') {
+    if (app.voyage && app.voyage.sonar) toast(`ソナーの距離 ${cycleSonarRange(app.voyage)}m`);
   } else if (name === 'chart') {
     app.chartBig = !app.chartBig;
   } else if (name === 'view') {
@@ -662,6 +680,9 @@ document.addEventListener('keydown', (e) => {
       break;
     case 'l':
       cmd('haul');
+      break;
+    case 'o':
+      if (app.voyage && app.voyage.sonar) toggle('sonar');
       break;
     case 'g':
       cmd('route');
@@ -749,6 +770,17 @@ document.addEventListener('contextmenu', (e) => {
 document.addEventListener('pointercancel', releaseHold);
 
 $('chart').addEventListener('click', onChartClick);
+// tap the sonar picture: a mark at that echo
+$('sonar').addEventListener('click', (ev) => {
+  const v = app.voyage;
+  if (!v || !v.sonar || app.screen !== 'sea') return;
+  const r = $('sonar').getBoundingClientRect();
+  const hit = sonarTap($('sonar'), v.sonar, ev.clientX - r.left, ev.clientY - r.top);
+  if (!hit) return;
+  const p = sonarToWorld(v.boat, hit.rel, hit.dist);
+  addMarkAt(v, p.x, p.y, 'sonar');
+  toast(`ソナーの反応に印（${Math.round(hit.dist)}m先）`);
+});
 document.addEventListener('change', (e) => {
   if (e.target && e.target.id === 'hireCrew') {
     app.hireCrew = e.target.checked;
@@ -874,6 +906,9 @@ document.addEventListener('click', (e) => {
       haulConfirm(b.dataset.then);
       break;
     case 'sounder':
+    case 'sonar':
+    case 'sonarRange':
+    case 'sideview':
     case 'chart':
     case 'view':
     case 'pause':
@@ -897,7 +932,7 @@ function readKey(key) {
 // ---------------------------------------------------------------- playtest save
 function playtestLoad() {
   const own = app.profile && !app.inPlaytest;
-  modal(`<div class="card"><h2>試遊用セーブで遊ぶ</h2><p>資金100,000Gの試遊用の進行（小型和船・曳縄具付き、M1まで遊んだ状態）に切り替えます。</p>
+  modal(`<div class="card"><h2>試遊用セーブで遊ぶ</h2><p>資金300,000Gの試遊用の進行（小型和船・曳縄具付き、M1まで遊んだ状態）に切り替えます。</p>
   ${own ? '<p class="note">今の自分の進行は別に残します。「船の買い替え」や「セーブ管理」の「自分の進行に戻す」でいつでも戻せます。</p>' : ''}
   <div class="actions"><button type="button" class="btn primary" data-act="playtestLoadConfirm">切り替える</button><button type="button" class="btn" data-act="closeModal">やめる</button></div></div>`);
 }
@@ -924,9 +959,9 @@ function playtestLoadConfirm() {
     }
   }
   commit(resolveInterruptedVoyage(res.profile).profile, '試遊用セーブに切り替え');
-  app.notice = '試遊用セーブ（資金100,000G）に切り替えました。港の「船の買い替え」から試せます。';
+  app.notice = '試遊用セーブ（資金300,000G）に切り替えました。港の「船の買い替え」から試せます。';
   show('market');
-  toast('試遊用セーブ（資金100,000G）に切り替えました');
+  toast('試遊用セーブ（資金300,000G）に切り替えました');
 }
 
 function playtestRestore() {
@@ -1023,6 +1058,14 @@ function updateHudStatic() {
   $('chartPanel').classList.toggle('big', app.chartBig);
   $('chartToggle').textContent = app.chartBig ? '閉じる' : '拡大';
   $('sounderTitle').textContent = EQUIPMENT[v.equip.sounderId].name;
+  $('btnSonar').hidden = !v.sonar;
+  $('sonarPanel').hidden = !(v.sonar && app.sonarOpen);
+  if (v.sonar) $('sonarRange').textContent = `${v.sonar.range}m`;
+  const sideCap = !!v.equip.sounder.side;
+  $('sideToggle').hidden = !sideCap;
+  $('sideToggle').textContent = app.sideOpen ? '真下' : '左右';
+  $('sideview').hidden = !(sideCap && app.sideOpen);
+  $('sounder').hidden = sideCap && app.sideOpen;
 }
 
 /**
@@ -1047,10 +1090,12 @@ function layoutHud() {
   const msgs = $('msgs');
   const top = $('hudTop');
   const { land, port, opMode, tuck } = hudMode();
+  // on phones the sonar takes the chart's place while it is open
+  const sonarUp = !!(app.voyage && app.voyage.sonar && app.sonarOpen);
   hud.classList.toggle('op-mode', opMode);
   hud.classList.toggle('phone-land', land);
   hud.classList.toggle('phone-port', port);
-  $('chartPanel').hidden = tuck;
+  $('chartPanel').hidden = tuck || (sonarUp && (land || port) && !app.chartBig);
   for (const el of [op, msgs, top]) el.style.top = el.style.bottom = el.style.maxHeight = el.style.left = el.style.width = '';
   const appR = $('app').getBoundingClientRect();
   const ctl = $('controls').getBoundingClientRect();
@@ -1249,6 +1294,10 @@ function consumeEvents(v) {
 }
 
 // ---------------------------------------------------------------- loop
+let bathyAt = 0;
+let sonarAt = 0;
+let bathyNow = null;
+let sideAt = 0;
 let lastFrame = performance.now();
 let realTime = 0;
 function frame(now) {
@@ -1298,8 +1347,23 @@ function frame(now) {
     else if (app.chartBig) hint = v.plannedRoute.length ? 'クリックで経由点を追加・G で航路に沿って移動・X で消去' : 'クリックで行き先（経由点）を置くと、G でそこへ移動できます';
     const reps = chartReports([...app.profile.knowledge.reports, ...v.heard], v.day);
     const showLine = v.line && v.line.state !== 'aboard' ? v.line : null;
-    drawChart($('chart'), staticMap, v, { big: app.chartBig, dev: DEV, reports: reps, route, hint, line: showLine, lineLabel: showLine ? longlineLabel(showLine, v.op, v.world.time) : '' });
-    if (app.sounderOpen) sounderView.draw(v.obs, { lines: isOperating(v) && v.op.lines ? v.op.lines : null, waterTemp: v.world.cond.waterTemp, readout: !!v.equip.sounder.readout });
+    if (now - bathyAt > 1000) {
+      bathyAt = now;
+      bathyNow = bathyCanvas(ownCells(), v.bathy && v.bathy.cells);
+    }
+    drawChart($('chart'), staticMap, v, { big: app.chartBig, dev: DEV, reports: reps, route, hint, line: showLine, lineLabel: showLine ? longlineLabel(showLine, v.op, v.world.time) : '', bathy: bathyNow });
+    if (app.sonarOpen && v.sonar && now - sonarAt > 150) {
+      sonarAt = now;
+      const marks = [...(app.profile.marks || []), ...v.obs.marks.filter((m) => m.kind !== 'auto')];
+      drawSonar($('sonar'), v.sonar, v.boat, marks);
+    }
+    const sideCap = v.equip.sounder.side;
+    if (app.sounderOpen && sideCap && app.sideOpen) {
+      if (now - sideAt > 200) {
+        sideAt = now;
+        drawSideView($('sideview'), v.obs.side, sideCap.range);
+      }
+    } else if (app.sounderOpen) sounderView.draw(v.obs, { lines: isOperating(v) && v.op.lines ? v.op.lines : null, waterTemp: v.world.cond.waterTemp, readout: !!v.equip.sounder.readout });
     if (v.phase === 'docked') arriveAndSettle();
   }
   if (scene) {

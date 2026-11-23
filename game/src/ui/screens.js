@@ -63,7 +63,7 @@ export function titleScreen({ storageNote }) {
 }
 
 /**
- * The playtest save: one button to try the boat purchase with 100,000G, and
+ * The playtest save: one button to try the boat purchase with 300,000G, and
  * one button back to the player's own progress (kept aside, never deleted).
  */
 export function playtestCard(app) {
@@ -72,9 +72,9 @@ export function playtestCard(app) {
     <p class="note">切り替える前の自分の進行は別に残してあります。いつでも戻せます（試遊用セーブでの進行は消えます）。</p>
     <div class="actions"><button type="button" class="btn" data-act="playtestRestore">自分の進行に戻す</button></div></div>`;
   }
-  return `<div class="card playtest"><h2>試遊用：資金10万Gで試す</h2>
-    <p class="note">船の買い替えや装備をすぐ試せる進行（小型和船・曳縄具付き・資金100,000G）に切り替えます。${app ? '今の進行は別に残し、あとで「自分の進行に戻す」で戻せます。' : ''}</p>
-    <div class="actions"><button type="button" class="btn" data-act="playtestLoad">試遊用セーブ（資金10万G）で遊ぶ</button></div></div>`;
+  return `<div class="card playtest"><h2>試遊用：資金30万Gで試す</h2>
+    <p class="note">船の買い替えや高い装備（ソナー・サイドビュー魚探など）をすぐ試せる進行（小型和船・曳縄具付き・資金300,000G）に切り替えます。${app ? '今の進行は別に残し、あとで「自分の進行に戻す」で戻せます。' : ''}</p>
+    <div class="actions"><button type="button" class="btn" data-act="playtestLoad">試遊用セーブ（資金30万G）で遊ぶ</button></div></div>`;
 }
 
 export function saveProblemScreen(res) {
@@ -346,7 +346,10 @@ function sounderEffect(cur, item) {
   <tr><td>ビームの幅（狭いほど反応を分けて映す）</td><td class="num">${a.halfAngleDeg * 2}°</td><td class="num up">${b.halfAngleDeg * 2}°</td></tr>
   <tr><td>表示の細かさ</td><td class="num">${a.binSize}m</td><td class="num up">${b.binSize}m</td></tr>
   <tr><td>探れる深さ</td><td class="num">${a.maxRange}m</td><td class="num up">${b.maxRange}m</td></tr>
-  <tr><td>弱い反応</td><td class="num">標準</td><td class="num up">よく拾う</td></tr></table></div>`;
+  <tr><td>弱い反応</td><td class="num">${a.gainK >= 800 ? 'よく拾う' : '標準'}</td><td class="num ${b.gainK > a.gainK ? 'up' : ''}">${b.gainK >= 800 ? 'よく拾う' : '標準'}</td></tr>
+  <tr><td>反応の深さの数字</td><td class="num">${a.readout ? 'あり' : 'なし'}</td><td class="num ${b.readout && !a.readout ? 'up' : ''}">${b.readout ? 'あり' : 'なし'}</td></tr>
+  <tr><td>左右の帯（サイドビュー）</td><td class="num">${a.side ? `左右${a.side.range}m` : 'なし'}</td><td class="num ${b.side && !a.side ? 'up' : ''}">${b.side ? `左右${b.side.range}mずつ` : 'なし'}</td></tr>
+  <tr><td>デプスマッピング</td><td class="num">${a.mapping ? 'あり' : 'なし'}</td><td class="num ${b.mapping && !a.mapping ? 'up' : ''}">${b.mapping ? 'あり（10mごと）' : 'なし'}</td></tr></table></div>`;
 }
 
 /** Which boat model has a slot this item fits (for "not on this boat" notes). */
@@ -414,7 +417,7 @@ function boatSpecRows(cur, next) {
     ${row('全速', kt(cur), kt(next), next.speeds[next.steps.full] > cur.speeds[cur.steps.full])}
     ${row('燃料', `${cur.fuelPerKm}G/km`, `${next.fuelPerKm}G/km`, next.fuelPerKm < cur.fuelPerKm)}
     ${row('一本釣りの竿受け', `${reelSlots(cur)}か所`, `${reelSlots(next)}か所`, reelSlots(next) > reelSlots(cur))}
-    ${row('大型魚探（ES-2）', has(cur, 'sounder_l'), has(next, 'sounder_l'), has(next, 'sounder_l') === '可' && has(cur, 'sounder_l') !== '可')}
+    ${row('大型の魚探（ES-2・SV-1）', has(cur, 'sounder_l'), has(next, 'sounder_l'), has(next, 'sounder_l') === '可' && has(cur, 'sounder_l') !== '可')}
     ${row('アウトリガー（TR-2）', has(cur, 'troll_l'), has(next, 'troll_l'), has(next, 'troll_l') === '可' && has(cur, 'troll_l') !== '可')}
     ${row('行ける範囲', esc(cur.range.label), esc(next.range.label), cur.range.maxY != null && next.range.maxY == null)}
     ${row('風での流されやすさ', `${Math.round(cur.windage * 1000) / 10}%`, `${Math.round(next.windage * 1000) / 10}%`, next.windage < cur.windage)}</table></div>`;

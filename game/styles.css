@@ -266,3 +266,18 @@ textarea.paste { width: 100%; min-height: 90px; background: var(--panel-solid); 
 .sdemo figure { margin: 0; }
 .sdemo canvas { width: 100%; height: 130px; display: block; border-radius: 6px; background: #05122b; }
 .sdemo figcaption { font-size: 12px; color: var(--sub); text-align: center; margin-top: 2px; }
+.hud-sounder canvas.sideview { display: block; }
+/* item 4: sonar panel (desktop: under the chart; phones: in the chart's place) */
+.hud-sonar { position: absolute; top: 300px; left: 8px; width: 256px; z-index: 3; }
+.hud-sonar canvas { display: block; width: 240px; height: 240px; margin: 7px; cursor: crosshair; }
+#hud.phone-port .hud-sonar { top: 8px; left: 8px; width: 166px; }
+#hud.phone-port .hud-sonar canvas { width: 150px; height: 150px; }
+#hud.phone-land .hud-sonar { top: 4px; left: 4px; width: 146px; }
+#hud.phone-land .hud-sonar canvas { width: 132px; height: 132px; margin: 6px; }
+#hud.phone-land.op-mode .hud-sonar { left: 262px; width: 128px; }
+#hud.phone-land.op-mode .hud-sonar canvas { width: 114px; height: 114px; }
+@media (max-width: 360px) { #hud.phone-port .hud-sonar { width: 146px; } #hud.phone-port .hud-sonar canvas { width: 132px; height: 132px; margin: 6px; } }
+/* panel heads: the title gives way, the buttons always stay whole (phones included) */
+.panel-head > span:first-child { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.panel-head > span:last-child { flex: none; white-space: nowrap; overflow: visible; }
+#hud.phone-land .panel-head .mini, #hud.phone-port .panel-head .mini { padding: 1px 5px; }

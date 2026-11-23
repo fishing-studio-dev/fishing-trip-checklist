@@ -188,12 +188,12 @@ test('a tampered M0 save is rejected before migration (checksum on the original 
   assert.ok(st.getItem(KEYS.quarantinePrefix + 5));
 });
 
-test('the built-in playtest save is a valid current-format save with 100,000G, identical to the e2e fixture', () => {
+test('the built-in playtest save is a valid current-format save with 300,000G, identical to the e2e fixture', () => {
   const r = checkImport(PLAYTEST_SAVE);
   assert.ok(r.ok, r.error);
   assert.equal(r.migratedFrom, null, 'already in the current format');
   assert.equal(r.envelope.schemaVersion, SAVE_SCHEMA);
-  assert.equal(r.profile.funds, 100000);
+  assert.equal(r.profile.funds, 300000);
   assert.equal(r.profile.boat.model, 'skiff_1');
   assert.equal(r.profile.activeVoyage, null);
   assert.deepEqual(validateProfile(r.profile), []);
