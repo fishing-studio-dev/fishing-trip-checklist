@@ -7,7 +7,7 @@
 import { PEERS, SPECIES, TIME, BRIEFING_T, METHODS } from './data.js';
 import { createWorld, schoolPose, schoolTotal, activityAt, offBottomAt } from './world.js';
 import { HABITATS, SAWARA_ZONES, MADAI_GROUNDS } from './season.js';
-import { areaNameAt, fmtClock, makeDayConditions, forecastOf, tideClass, compass8, CHART_LABELS } from './sea.js';
+import { areaNameAt, fmtClock, makeDayConditions, forecastOf, tideClass, compass8, CHART_LABELS, weatherOf } from './sea.js';
 import { hashFloat } from './rng.js';
 
 const cache = new Map();
@@ -246,14 +246,21 @@ function rules(seed, d, hadSawara) {
 /** Reports a player hears in port on the morning of day d (before acquisition stamps). */
 export function briefingReports(seed, d) {
   const out = [];
-  if (d - 1 >= 0) {
+  const stormYesterday = d - 1 >= 1 && weatherOf(seed, d - 1).storm;
+  const stormToday = weatherOf(seed, d).storm;
+  if (stormYesterday) out.push(report({ originId: `O${d}-gen-storm-y`, speaker: 'gen', kind: 'rule', methodId: null, obsDay: d - 1, obsT: BRIEFING_T, text: '昨日は時化で、誰も出られなかった。' }));
+  if (stormToday) {
+    out.push(report({ originId: `O${d}-gen-storm`, speaker: 'gen', kind: 'rule', methodId: null, obsDay: d, obsT: BRIEFING_T, text: '今日は時化だ。こんな日に出るもんじゃない。' }));
+    return out.map((r, i) => ({ ...r, id: `R${d}-${i}-${r.speaker}` }));
+  }
+  if (d - 1 >= 0 && !stormYesterday) {
     const spot = genSpot(seed, d);
     const tGen = round10min((7 + hashFloat(seed, d, 301) * 2.5) * 3600);
     out.push(genFishing(seed, d - 1, spot, tGen, 'y'));
     const tHam = (6 + hashFloat(seed, d, 302) * 0.8) * 3600;
     out.push(hamadaTrolling(seed, d - 1, tHam, 'y'));
   }
-  if (d >= PEERS.matsu.fromDay) {
+  if (d >= PEERS.matsu.fromDay && !stormYesterday) {
     const tMat = round10min((9 + hashFloat(seed, d, 503) * 1.5) * 3600);
     out.push(matsuLongline(seed, d - 1, tMat, 'y'));
   }
@@ -280,6 +287,7 @@ export function briefingReports(seed, d) {
 export function radioReports(seed, d) {
   // calls made over the radio while the player is out: what each peer has right now
   const out = [];
+  if (weatherOf(seed, d).storm) return out; // nobody is out in a storm
   const tH = round10min((6 + hashFloat(seed, d, 311) * 1.2) * 3600);
   out.push(hamadaTrolling(seed, d, tH, 'r', 0));
   const spot = genSpot(seed, d + 1); // today's choice: where he did well yesterday

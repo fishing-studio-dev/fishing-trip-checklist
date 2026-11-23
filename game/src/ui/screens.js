@@ -96,7 +96,7 @@ function evidenceLine(e, today) {
   return `<li class="${e.superseded ? 'old' : ''}"><b>${esc(l.who)}</b>：${esc(l.when)}「${esc(r.text)}」<span class="note">${esc(l.heard)}${esc(relayed)}${e.superseded ? '・同じ人の新しい話があるため参考のみ' : ''}</span></li>`;
 }
 
-function candidateCard(c, today, profile) {
+function candidateCard(c, today, profile, storm = false) {
   const live = c.evidence.filter((e) => !e.superseded);
   const main = live.slice(0, 2).map((e) => evidenceLine(e, today)).join('');
   const neg = c.negatives.filter((e) => !e.superseded).map((e) => evidenceLine(e, today)).join('');
@@ -114,7 +114,7 @@ function candidateCard(c, today, profile) {
     <div class="labels">${c.labels.map(labelHtml).join('')}</div>
     <ul class="basis">${main || '<li class="note">仲間からの具体的な話はまだない</li>'}${neg}${own}${notes}${feas}</ul>
     <details><summary>詳しく</summary><ul class="basis">${details}</ul></details>
-    <div class="actions"><button type="button" class="btn ${c.feasible.ok ? 'primary' : ''}" data-act="departPlan" data-key="${esc(c.key)}" ${c.feasible.ok ? '' : 'disabled'}>${c.letter}を狙って出港</button></div>
+    <div class="actions"><button type="button" class="btn ${c.feasible.ok ? 'primary' : ''}" data-act="departPlan" data-key="${esc(c.key)}" ${c.feasible.ok && !storm ? '' : 'disabled'}>${c.letter}を狙って出港</button></div>
   </div>`;
 }
 
@@ -213,10 +213,11 @@ export function portScreen(app) {
       <div class="brief-chart"><canvas id="portChart" width="380" height="380"></canvas>
         <p class="note">● 水揚げ ◎ 魚探の反応 △ 目撃 × 反応なし（仲間が観測した地点・時刻。今の魚の位置ではありません）　A〜D 候補${(p.marks || []).length ? '　黄色は自分の印（▲現在地 ■魚探 ◆左右 ✚ソナー）' : ''}</p>
         <div class="actions"><button type="button" class="btn small" data-act="marks">自分の印の一覧（${(p.marks || []).length}）</button></div></div>
-      <div class="cands">${cands.map((c) => candidateCard(c, today, p)).join('')}</div>
+      <div class="cands">${cands.map((c) => candidateCard(c, today, p, !!(app.forecast && app.forecast.weather && app.forecast.weather.storm))).join('')}</div>
     </div>
-    ${crewChoice(app)}${nightChoice(app)}
-    <div class="actions"><button type="button" class="btn" data-act="depart">狙いを決めずに出港</button><button type="button" class="btn" data-act="help">操作説明</button></div>
+    ${app.forecast && app.forecast.weather && app.forecast.weather.storm ? `<div class="card storm"><h2>時化のため出漁中止</h2><p>風が強く海が荒れています（${app.forecast.windSpeed.toFixed(0)}m/s前後）。仲間も今日は出ません。港で休んで明日に備えます。</p>
+      <div class="actions"><button type="button" class="btn primary" data-act="restDay">今日は休む（翌朝へ）</button><button type="button" class="btn" data-act="help">操作説明</button></div></div>` : `${crewChoice(app)}${nightChoice(app)}
+    <div class="actions"><button type="button" class="btn" data-act="depart">狙いを決めずに出港</button><button type="button" class="btn" data-act="help">操作説明</button></div>`}
   </div>
   <div class="grid">
     ${peersCard(p, today)}

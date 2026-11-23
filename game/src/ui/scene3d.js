@@ -220,8 +220,13 @@ export function createScene(canvas) {
     const rt = st.realTime;
     const hour = st.gameTime / 3600;
     const sky = lerpColor(SKY, hour);
+    // fog (霧): the visibility from the simulation closes the view in and greys the sky
+    const vis = st.visibility != null ? st.visibility : 3000;
+    if (vis < 2500) sky.lerp(new THREE.Color(0xb8c2c8), Math.min(0.8, (2500 - vis) / 2000));
     scene.background = sky;
     scene.fog.color.copy(sky);
+    scene.fog.near = vis < 2500 ? vis * 0.15 : 500;
+    scene.fog.far = vis < 2500 ? vis * 1.1 : 3200;
     skyMat.uniforms.horizon.value.copy(sky);
     skyMat.uniforms.top.value.copy(lerpColor(SKY_TOP, hour));
     seaMat.color.copy(lerpColor(SEA_COL, hour));

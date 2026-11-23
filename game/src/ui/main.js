@@ -1,6 +1,6 @@
 // App controller: boot, screens, input, main loop.
 import { TIME, BOATS, PORT, EQUIPMENT, METHODS, SIM, SPECIES, CREW, GUIDES, sellValue } from '../core/data.js';
-import { createProfile, markDeparture, resolveInterruptedVoyage } from '../core/profile.js';
+import { createProfile, markDeparture, resolveInterruptedVoyage, restDay } from '../core/profile.js';
 import { settleVoyage, purchaseEquipment, purchasePreview, equipFromStorage, unmountToStorage, sellStored, buyBoat, planBoatPurchase } from '../core/economy.js';
 import { loadSave, writeSave, exportSave, checkImport, memoryStorage, KEYS } from '../core/save.js';
 import {
@@ -15,7 +15,7 @@ import { acquireBriefing, buildCandidates, planSummary } from '../core/knowledge
 import { reportLine, peerName } from '../core/reports.js';
 import { trollLineLabel } from '../core/troll.js';
 import { linePhaseLabel, recentPace } from '../core/fishing.js';
-import { fmtClock, compass8, areaNameAt, currentAt, makeDayConditions, forecastOf } from '../core/sea.js';
+import { fmtClock, compass8, areaNameAt, currentAt, makeDayConditions, forecastOf, visibilityAt } from '../core/sea.js';
 import { levelFromXp } from '../core/progress.js';
 import { schoolCenter } from '../core/world.js';
 import { buildStaticMap, drawChart, drawBriefingChart, chartToWorld, worldToChart, bathyCanvas } from './chart.js';
@@ -925,6 +925,14 @@ document.addEventListener('click', (e) => {
     case 'depart':
       depart();
       break;
+    case 'restDay': {
+      if (!app.profile || app.profile.activeVoyage) break;
+      commit(restDay(app.profile), '時化で休んだ');
+      app.notice = `${app.profile.day}日目は時化で港で休みました。`;
+      show('port');
+      toast('港で休みました（翌朝）');
+      break;
+    }
     case 'departPlan':
       depart(b.dataset.key);
       break;
@@ -1310,6 +1318,9 @@ function updateHud(now) {
     html += chip('魚倉', `${v.hold.kg.toFixed(1)}/${v.capacityKg}kg`, v.hold.kg > v.capacityKg * 0.9 ? 'warn' : '');
   }
   if (v.crew) html += chip('手', `2人（${CREW.label}）`);
+  const vis = visibilityAt(v.world.cond, v.world.time);
+  if (vis < 1500) html += chip('霧', `視界 約${Math.round(vis / 50) * 50}m`, 'warn');
+  else if (v.world.cond.weather && v.world.cond.weather.rough) html += chip('海況', `やや時化（風${v.world.cond.windSpeed.toFixed(0)}m/s）`, 'warn');
   html += chip('時間', `×${scale}${app.paused ? ' 停止中' : ''}`, app.paused ? 'warn' : '');
   if (hudMode().tuck) html += '<button type="button" class="chip chip-btn" data-act="chart">海図を見る</button>';
   if (b.grounded) html += chip('注意', '浅瀬・陸', 'warn');
@@ -1554,6 +1565,7 @@ function frame(now) {
     scene.render({
       mode: atSea ? 'sea' : 'port',
       cues: atSea ? cuesNow : [],
+      visibility: atSea ? visibilityAt(v.world.cond, v.world.time) : 3000,
       lightsOn: !!(atSea && v.equip.lights && isOperating(v) && METHODS[v.op.methodId].lights),
       boat: atSea ? v.boat : { x: PORT.dock.x, y: PORT.dock.y + 20, heading: 0, speed: 0, vx: 0, vy: 0 },
       gameTime: atSea ? v.world.time : app.screen === 'receipt' ? 13 * 3600 : TIME.DEPART + 1800,

@@ -186,7 +186,7 @@ test('松じい knows the season: in 乗っ込み he fishes 北の瀬 and says s
       const reps = briefingReports(seed, d).filter((r) => r.speaker === 'matsu' && !r.relayedFrom);
       if (nk && reps.some((r) => r.kind === 'rule' && /乗っ込み/.test(r.text))) saidIt += 1;
       const radio = radioReports(seed, d).find((r) => r.speaker === 'matsu');
-      if (nk && radio.kind === 'catch') assert.equal(radio.area, '北の瀬');
+      if (nk && radio && radio.kind === 'catch') assert.equal(radio.area, '北の瀬'); // (no radio on a storm day)
     }
   }
   assert.ok(saidIt > 0);

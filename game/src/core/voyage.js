@@ -26,7 +26,7 @@ import {
   longlineTargetSpeed,
   longlineHelmTarget,
 } from './longline.js';
-import { depthAt, areaNameAt, currentAt, windAt, fmtClock, bottomIsRocky } from './sea.js';
+import { depthAt, areaNameAt, currentAt, windAt, fmtClock, bottomIsRocky, visibilityAt } from './sea.js';
 import { levelFromXp } from './progress.js';
 import { radioReports, peerName } from './reports.js';
 import { logTags } from './knowledge.js';
@@ -354,7 +354,8 @@ function gatherSquid(v) {
 function lookout(v) {
   if (!v.seenCues) v.seenCues = {};
   const t = v.world.time;
-  for (const c of visibleCues(surfaceCues(v.world, t), v.boat.x, v.boat.y)) {
+  const vis = visibilityAt(v.world.cond, t); // in fog only what is close can be seen
+  for (const c of visibleCues(surfaceCues(v.world, t), v.boat.x, v.boat.y).filter((x) => cueDistance(x, v.boat.x, v.boat.y) <= vis)) {
     const last = v.seenCues[c.id];
     v.seenCues[c.id] = t;
     if (last != null && t - last < 1800) continue;
@@ -690,6 +691,11 @@ export function startOperation(v) {
     hands: 1 + v.crew,
   });
   v.op.startConditions = conditionsSnapshot(v);
+  // a rough sea (やや時化): the boat pitches, baiting and unhooking take longer
+  if (v.world.cond.weather && v.world.cond.weather.rough) {
+    v.op.skill = { ...v.op.skill, rebait: v.op.skill.rebait * 1.25, unhook: v.op.skill.unhook * 1.25 };
+    say(v, '海が荒れていて、手元の作業に時間がかかります。', 'warn');
+  }
   if (depth > v.equip.reel.maxDepth) say(v, `水深${depth.toFixed(0)}mはリールの対応水深${v.equip.reel.maxDepth}mを超えています。届く深さまでで操業します。`, 'warn');
   if (hookMethod === 'ika') say(v, `パラアンカーを入れ、集魚灯を点けてイカ釣り開始（${areaNameAt(v.boat.x, v.boat.y)}・水深${depth.toFixed(0)}m）。${v.world.time < 17.5 * 3600 ? 'まだ明るいので灯の効きは弱い。暗くなるにつれて寄ってくる。' : '暗くなるにつれて、まわりのイカが船の下に寄ってくる。'}`);
   else if (hookMethod === 'oyogase') say(v, `泳がせ釣り開始（${areaNameAt(v.boat.x, v.boat.y)}・水深${depth.toFixed(0)}m）。魚倉の活きアジ（残り${baitInHold(v, 'aji')}尾）を1尾ずつ使います。`);

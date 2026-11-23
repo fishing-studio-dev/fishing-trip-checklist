@@ -953,6 +953,29 @@ const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
     await shot('99-ika-failure').catch(() => {});
   }
 
+  // ---------------------------------------------------------------- 天候 (item 10): a storm day keeps everyone in port
+  try {
+    const pg = page;
+    await pg.goto(`http://localhost:${port}/?dev=1&seed=77`);
+    await pg.waitForSelector('#portChart');
+    // (test convenience: move the own progress to the eve of a storm; seed 77 has one on day 8)
+    await pg.evaluate(() => { window.__ryoshi.app.profile = { ...window.__ryoshi.app.profile, day: 7 }; });
+    await pg.click('[data-act=log]');
+    await pg.click('[data-act=toPort]');
+    await pg.waitForSelector('#portChart');
+    const portS = await pg.textContent('#screen');
+    const disabled = await pg.evaluate(() => [...document.querySelectorAll('[data-act=departPlan]')].every((b) => b.disabled) && !document.querySelector('[data-act=depart]'));
+    check('天候: on a storm day port says 出漁中止, departures are disabled, and the peers stayed in', /時化のため出漁中止/.test(portS) && /天気：時化/.test(portS) && disabled && /時化/.test(portS));
+    await shot('34-storm');
+    await pg.click('[data-act=restDay]');
+    await pg.waitForSelector('#portChart');
+    const after = await st();
+    check('天候: 今日は休む passes the day (saved) and the next morning is shown', after.day === 8 && after.saveStatus.ok && /8日目は時化で港で休みました/.test(await pg.textContent('#screen')), `day ${after.day}`);
+  } catch (e) {
+    check('天候 playthrough', false, e.message);
+    await shot('99-weather-failure').catch(() => {});
+  }
+
   check('no page errors or console errors', errors.length === 0, errors.slice(0, 5).join(' | '));
   await browser.close();
   server.kill();

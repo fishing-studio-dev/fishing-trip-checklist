@@ -115,6 +115,15 @@ export function markDeparture(profile, now = new Date().toISOString(), plan = nu
   return p;
 }
 
+/** Stay in port for the day (e.g. a storm): the day passes, nothing else changes. */
+export function restDay(profile) {
+  if (profile.activeVoyage) throw new Error('航海中です。');
+  const p = clone(profile);
+  p.day += 1;
+  p.stats.restDays = (p.stats.restDays || 0) + 1;
+  return p;
+}
+
 /**
  * A voyage marker left in the save means the page closed at sea. M0 does not
  * restore voyages at sea: the voyage is recorded as interrupted (no catch, no

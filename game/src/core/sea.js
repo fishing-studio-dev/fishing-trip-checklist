@@ -186,6 +186,35 @@ export function seasonOf(worldSeed, day) {
   return { label, trend, nokkomi: trend >= 0.03 && t >= 17.9 && t <= 19.3 };
 }
 
+/**
+ * The day's weather (本作設定), a pure function of (seed, day). The early
+ * season (scripted days) is fair. 時化 (storm) can last into a second day;
+ * nobody goes out. やや時化: a strong wind (the boat drifts fast, the sea is
+ * rough). 霧: morning fog that lifts between 7:30 and 10:30.
+ */
+export function weatherOf(worldSeed, day) {
+  if (SEASON_SCRIPT[day] || day < 1) return { kind: 'fine', label: '晴れ', storm: false, rough: false, fog: null };
+  const stormStart = (d) => hashFloat(worldSeed, d, 701) < 0.06;
+  const storm = stormStart(day) || (stormStart(day - 1) && hashFloat(worldSeed, day, 704) < 0.5 && !SEASON_SCRIPT[day - 1]);
+  if (storm) return { kind: 'storm', label: '時化（出漁中止）', storm: true, rough: true, fog: null };
+  if (hashFloat(worldSeed, day, 703) < 0.12) return { kind: 'rough', label: 'やや時化（風が強い）', storm: false, rough: true, fog: null };
+  if (hashFloat(worldSeed, day, 702) < 0.16) {
+    const until = Math.round((7.5 + hashFloat(worldSeed, day, 705) * 3) * 3600);
+    const vis = Math.round(150 + hashFloat(worldSeed, day, 706) * 250);
+    return { kind: 'fog', label: `朝霧（${Math.floor(until / 3600)}時ごろまで）`, storm: false, rough: false, fog: { until, vis } };
+  }
+  return { kind: hashFloat(worldSeed, day, 707) < 0.35 ? 'cloudy' : 'fine', label: hashFloat(worldSeed, day, 707) < 0.35 ? 'くもり' : '晴れ', storm: false, rough: false, fog: null };
+}
+
+/** How far one can see at time t (m): the fog lifts over half an hour; otherwise clear. */
+export function visibilityAt(cond, t) {
+  const f = cond.weather && cond.weather.fog;
+  if (!f) return 3000;
+  if (t >= f.until) return 3000;
+  const k = Math.max(0, Math.min(1, (f.until - t) / 1800));
+  return f.vis + (3000 - f.vis) * (1 - k);
+}
+
 export function makeDayConditions(worldSeed, day) {
   const [tideName, tideAmp] = tideOfDay(day);
   const highWater = (day * 50 * 60 + Math.floor(hashFloat(worldSeed, day, 11) * 3600)) % TIDE_PERIOD;
@@ -198,8 +227,12 @@ export function makeDayConditions(worldSeed, day) {
     if (script.cond.windDirDeg != null) windDir = (script.cond.windDirDeg * Math.PI) / 180;
     if (script.cond.waterTemp != null) waterTemp = script.cond.waterTemp;
   }
+  const weather = weatherOf(worldSeed, day);
+  if (weather.storm) windSpeed = 11 + hashFloat(worldSeed, day, 708) * 4;
+  else if (weather.rough) windSpeed = 8 + hashFloat(worldSeed, day, 708) * 2.5;
   const axis = (40 * Math.PI) / 180; // flood current flows toward NE
   return {
+    weather,
     day,
     tideName,
     tideAmp,
@@ -270,6 +303,7 @@ export function compass8(vx, vy) {
 /** Short human forecast for the port screen (from the day's conditions only). */
 export function forecastText(cond) {
   const lines = [];
+  if (cond.weather) lines.push(`天気：${cond.weather.label}`);
   lines.push(`潮回り：${cond.tideName}`);
   const from = compass8(-Math.sin(cond.windDir), -Math.cos(cond.windDir));
   lines.push(`風：${from}の風 ${cond.windSpeed.toFixed(1)}m/s 前後`);
