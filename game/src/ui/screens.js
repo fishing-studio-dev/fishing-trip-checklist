@@ -169,6 +169,14 @@ function skillCard(profile) {
 }
 
 /** Hire a deckhand for today's trip (optional; the fisher can always go alone). */
+function nightChoice(app) {
+  const lamp = Object.values(app.profile.boat.slots).find((x) => x && EQUIPMENT[x.itemId].type === 'lights');
+  if (!lamp) return '';
+  return `<div class="crew-choice"><label><input type="checkbox" id="nightTrip" ${app.nightTrip ? 'checked' : ''}>
+    今日は夕方から出る（イカ釣り・${fmtClock(TIME.NIGHT.DEPART)}出港、${fmtClock(TIME.NIGHT.END)}までに帰港）</label>
+    <p class="note">${esc(EQUIPMENT[lamp.itemId].name)}で、暗くなるとイカが船の下に寄ります。イカの候補（D）を選んで出港しても夕方になります。朝の無線は聞けません。</p></div>`;
+}
+
 function crewChoice(app) {
   const can = app.profile.funds >= CREW.wage;
   return `<div class="crew-choice"><label><input type="checkbox" id="hireCrew" ${app.hireCrew && can ? 'checked' : ''} ${can ? '' : 'disabled'}>
@@ -197,7 +205,7 @@ export function portScreen(app) {
   const today = p.day + 1;
   const cands = app.candidates || [];
   return `<div class="sheet wide">
-  <h1>港 <span class="tag">${today}日目の朝・${fmtClock(TIME.DEPART)} 出港</span></h1>
+  <h1>港 <span class="tag">${app.nightTrip ? `${today}日目・夕方${fmtClock(TIME.NIGHT.DEPART)} 出港（イカ釣り）` : `${today}日目の朝・${fmtClock(TIME.DEPART)} 出港`}</span></h1>
   <p class="lead">仲間の話・自分の日誌・今日の予報から狙いを決め、海では魚探で確かめて場所を決めます。候補は自分が聞いた・記録した情報だけから作っています。候補以外の場所へ行くのも自由です。</p>
   ${app.notice ? `<div class="card" style="margin-bottom:12px;border-color:var(--warn)"><p>${esc(app.notice)}</p></div>` : ''}
   <div class="card full brief"><h2>今日の海図 — 狙いの候補</h2>
@@ -207,7 +215,7 @@ export function portScreen(app) {
         <div class="actions"><button type="button" class="btn small" data-act="marks">自分の印の一覧（${(p.marks || []).length}）</button></div></div>
       <div class="cands">${cands.map((c) => candidateCard(c, today, p)).join('')}</div>
     </div>
-    ${crewChoice(app)}
+    ${crewChoice(app)}${nightChoice(app)}
     <div class="actions"><button type="button" class="btn" data-act="depart">狙いを決めずに出港</button><button type="button" class="btn" data-act="help">操作説明</button></div>
   </div>
   <div class="grid">
@@ -540,7 +548,7 @@ export function saveScreen(app) {
     : '<button type="button" class="btn" data-act="export">セーブを書き出す（JSON）</button><button type="button" class="btn" data-act="copySave">文字列としてコピー</button>';
   return `<div class="sheet"><h1>セーブ管理</h1>
   <div class="grid"><div class="card"><h2>現在のセーブ</h2>
-    ${p ? `<dl class="kv"><dt>日数</dt><dd>${p.day}日目まで</dd><dt>資金</dt><dd>${money(p.funds)}</dd><dt>一本釣り</dt><dd>Lv ${levelFromXp(p.methods.handline.xp)}</dd><dt>曳縄</dt><dd>Lv ${levelFromXp(p.methods.troll.xp)}</dd><dt>延縄</dt><dd>Lv ${levelFromXp(p.methods.longline.xp)}</dd><dt>根魚釣り</dt><dd>Lv ${levelFromXp((p.methods.negyo || { xp: 0 }).xp)}</dd><dt>泳がせ釣り</dt><dd>Lv ${levelFromXp((p.methods.oyogase || { xp: 0 }).xp)}</dd><dt>操業記録</dt><dd>${p.logs.length}件</dd><dt>聞いた話</dt><dd>${p.knowledge.reports.length}件</dd><dt>保存回数</dt><dd>${app.revision}</dd></dl>` : '<p class="note">プロフィールがありません。</p>'}
+    ${p ? `<dl class="kv"><dt>日数</dt><dd>${p.day}日目まで</dd><dt>資金</dt><dd>${money(p.funds)}</dd><dt>一本釣り</dt><dd>Lv ${levelFromXp(p.methods.handline.xp)}</dd><dt>曳縄</dt><dd>Lv ${levelFromXp(p.methods.troll.xp)}</dd><dt>延縄</dt><dd>Lv ${levelFromXp(p.methods.longline.xp)}</dd><dt>根魚釣り</dt><dd>Lv ${levelFromXp((p.methods.negyo || { xp: 0 }).xp)}</dd><dt>泳がせ釣り</dt><dd>Lv ${levelFromXp((p.methods.oyogase || { xp: 0 }).xp)}</dd><dt>イカ釣り</dt><dd>Lv ${levelFromXp((p.methods.ika || { xp: 0 }).xp)}</dd><dt>操業記録</dt><dd>${p.logs.length}件</dd><dt>聞いた話</dt><dd>${p.knowledge.reports.length}件</dd><dt>保存回数</dt><dd>${app.revision}</dd></dl>` : '<p class="note">プロフィールがありません。</p>'}
     <p class="note">${saveLine(app.saveStatus)}</p>
     <p class="note">このブラウザの保存領域（localStorage）に保存しています。直前のセーブを1つバックアップとして残します。以前の版（M0）のセーブを読み込んだときは、元のデータも別に残しています。ブラウザのデータ消去で消えるため、大事な進行は書き出して保管してください。</p>
     ${app.hosted ? '<p class="note">この公開ページではファイルのダウンロードができないため、セーブは文字列としてコピーして保管してください（メモアプリなどに貼り付け）。</p>' : ''}
@@ -559,7 +567,7 @@ export function helpModal() {
   return `<div class="card"><h2>操作説明</h2><ul>
   <li><b>W / ↑</b> 増速、<b>S / ↓</b> 減速（後進・停止・極微速・微速・半速・全速）</li>
   <li><b>A / ←</b>・<b>D / →</b> 押している間だけ舵を切る</li>
-  <li><b>T</b> 漁法の切替（一本釣り／根魚釣り／曳縄／延縄。曳縄・延縄は装備を積んでいるとき）。<b>根魚釣り</b>は根・漁礁の真上か少し潮上で停船して Space。底を切って自動で釣り、外れたら R で流し直し。<b>泳がせ釣り</b>は先に一本釣りで釣ったアジを活きエサにして、根・瀬の周りやベイトの反応の下で青物（ブリ・ヒラマサ）を狙う。</li>
+  <li><b>T</b> 漁法の切替（一本釣り／根魚釣り／曳縄／延縄。曳縄・延縄は装備を積んでいるとき）。<b>根魚釣り</b>は根・漁礁の真上か少し潮上で停船して Space。底を切って自動で釣り、外れたら R で流し直し。<b>泳がせ釣り</b>は先に一本釣りで釣ったアジを活きエサにして、根・瀬の周りやベイトの反応の下で青物（ブリ・ヒラマサ）を狙う。<b>イカ釣り</b>は集魚灯を付けた船で港の「夕方から出る」を選び、沖の深い所で暗くなってから。</li>
   <li><b>Space</b> 操業開始／回収して終了（一本釣りは停船してから。曳縄は走りながら開始）</li>
   <li><b>R</b> 流し直し（一本釣り：回収→流し始めの地点へ自動で戻って再開）</li>
   <li><b>C</b> 海図の拡大。拡大した海図をクリックすると航路の経由点を追加（曳縄は曳く航路、延縄は縄を張る向き、ほかは移動の行き先）、<b>X</b> で航路を消去</li>

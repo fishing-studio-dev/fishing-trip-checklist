@@ -17,9 +17,9 @@ function lerpColor(stops, h) {
   }
   return new THREE.Color(stops[stops.length - 1][1]);
 }
-const SKY = [[4.5, 0x56618a], [5.2, 0xe8b08c], [6.5, 0xb9cfe0], [8, 0x9ccbe8], [14, 0x96c6e6], [15.5, 0xc9c0a8], [16.6, 0xec9b5c], [17.5, 0x3a3550]];
-const SKY_TOP = [[4.5, 0x1e2c52], [5.4, 0x5577a8], [7, 0x3f7fc4], [15, 0x3f7fc4], [16.6, 0x4a5a8a], [17.5, 0x1e2244]];
-const SEA_COL = [[4.5, 0x24405c], [5.5, 0x2d5672], [7, 0x1f6385], [15, 0x1d5a7a], [16.6, 0x3b4a5a]];
+const SKY = [[4.5, 0x56618a], [5.2, 0xe8b08c], [6.5, 0xb9cfe0], [8, 0x9ccbe8], [14, 0x96c6e6], [15.5, 0xc9c0a8], [16.6, 0xec9b5c], [17.5, 0x3a3550], [18.5, 0x151a2e], [19.5, 0x080b16]];
+const SKY_TOP = [[4.5, 0x1e2c52], [5.4, 0x5577a8], [7, 0x3f7fc4], [15, 0x3f7fc4], [16.6, 0x4a5a8a], [17.5, 0x1e2244], [18.5, 0x0a0f22], [19.5, 0x04060e]];
+const SEA_COL = [[4.5, 0x24405c], [5.5, 0x2d5672], [7, 0x1f6385], [15, 0x1d5a7a], [16.6, 0x3b4a5a], [18, 0x1a2633], [19.5, 0x0a121b]];
 
 export function createScene(canvas) {
   const renderer = new THREE.WebGLRenderer({ canvas, antialias: true });
@@ -167,6 +167,22 @@ export function createScene(canvas) {
     for (; si < splashes.length; si++) splashes[si].visible = false;
     for (; li < shiomeObjs.length; li++) shiomeObjs[li].visible = false;
   }
+
+  // 集魚灯: a bright lamp over the boat and the lit water around it (イカ釣り)
+  const lampLight = new THREE.PointLight(0xe6fff2, 0, 160, 1.4);
+  scene.add(lampLight);
+  const glowGeo = new THREE.CircleGeometry(1, 40);
+  glowGeo.rotateX(-Math.PI / 2);
+  const glow = new THREE.Mesh(glowGeo, new THREE.MeshBasicMaterial({ color: 0x8ff0c8, transparent: true, opacity: 0, depthWrite: false, blending: THREE.AdditiveBlending }));
+  glow.visible = false;
+  scene.add(glow);
+  const bulbs = new THREE.Group();
+  for (let i = 0; i < 6; i++) {
+    const b = new THREE.Mesh(new THREE.SphereGeometry(0.18, 8, 6), new THREE.MeshBasicMaterial({ color: 0xf4fff8 }));
+    b.position.set(((i % 3) - 1) * 0.55, 0.25, i < 3 ? 0.45 : -0.45);
+    bulbs.add(b);
+  }
+  bulbs.visible = false;
 
   // walking on deck (a view of the boat; never touches the simulation)
   const walk = { on: false, x: 0, z: 0, yaw: 0 };
@@ -364,6 +380,20 @@ export function createScene(canvas) {
     });
 
     drawCues(st.mode === 'sea' ? st.cues || [] : [], rt, amp);
+
+    // the lamp: stronger as it gets dark
+    const lampOn = st.mode === 'sea' && st.lightsOn;
+    const darkK = Math.max(0.25, Math.min(1, (hour - 16.8) / 1.5));
+    lampLight.intensity = lampOn ? 70 * darkK : 0;
+    glow.visible = bulbs.visible = lampOn;
+    if (bulbs.parent !== g) g.add(bulbs); // the lamps sit on the wheelhouse roof of whichever boat
+    bulbs.position.set(0, boat.roofY, boat.houseZ);
+    if (lampOn) {
+      lampLight.position.set(g.position.x, 5, g.position.z);
+      glow.position.set(g.position.x, 0.08, g.position.z);
+      glow.scale.setScalar(22);
+      glow.material.opacity = 0.07 * darkK;
+    }
 
     // heading chevrons ahead of the bow (helm view at sea)
     chevrons.forEach((m, i) => {
@@ -860,6 +890,8 @@ function buildBoat(modelId = 'skiff_1') {
   return {
     group,
     modelId,
+    roofY,
+    houseZ: H.houseZ,
     stations,
     fishBox,
     setReels,

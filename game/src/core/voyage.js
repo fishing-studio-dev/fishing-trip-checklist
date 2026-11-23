@@ -3,7 +3,7 @@
 // player decides where, which method, which route, when to move or stop; the
 // repetitive work is automatic.
 import { SIM, TIME, PORT, BOATS, EQUIPMENT, METHODS, SPECIES, CREW } from './data.js';
-import { createWorld } from './world.js';
+import { createWorld, normalizeSchool, schoolCenter, schoolTotal, takeFish } from './world.js';
 import { createBoatRuntime, stepBoat, autopilotCommand, routeToPort, clearPath } from './boat.js';
 import { createObservation, pingColumn, pushColumn } from './sounder.js';
 import { sideColumn } from './sideview.js';
@@ -43,7 +43,9 @@ export function createVoyage(profile, opts = {}) {
   const av = profile.activeVoyage;
   if (!av) throw new Error('createVoyage: profile has no active voyage');
   const model = BOATS[profile.boat.model];
-  const world = createWorld(profile.worldSeed, av.day, TIME.DEPART, opts.scenario || null);
+  // an evening trip (イカ釣り) leaves at 16:00 and is home by 23:00
+  const night = !!(opts.night != null ? opts.night : av.night);
+  const world = createWorld(profile.worldSeed, av.day, night ? TIME.NIGHT.DEPART : TIME.DEPART, opts.scenario || null);
   const start = opts.start || { x: PORT.dock.x, y: PORT.dock.y + 20, heading: 0 };
   const slot = (id) => (profile.boat.slots[id] ? profile.boat.slots[id].itemId : null);
   const sounderId = slot('helm_sounder');
@@ -57,7 +59,9 @@ export function createVoyage(profile, opts = {}) {
   const longlineId = ofType('longline');
   const haulerId = ofType('hauler');
   const sonarId = ofType('sonar');
-  const radio = opts.radio !== undefined ? opts.radio : opts.scenario ? [] : radioReports(profile.worldSeed, av.day);
+  const lightsId = ofType('lights');
+  // the peers' radio calls are in the morning: nobody hears them on an evening trip
+  const radio = opts.radio !== undefined ? opts.radio : opts.scenario || night ? [] : radioReports(profile.worldSeed, av.day);
   const v = {
     id: av.id,
     day: av.day,
@@ -77,10 +81,15 @@ export function createVoyage(profile, opts = {}) {
       haulerId,
       hauler: haulerId ? EQUIPMENT[haulerId].hauler : null,
       sonarId,
+      lightsId,
+      lights: lightsId ? EQUIPMENT[lightsId].lights : null,
     },
     sonar: sonarId ? createSonar(EQUIPMENT[sonarId].sonar) : null,
+    night,
+    warnT: night ? TIME.NIGHT.WARN : TIME.WARN,
+    endT: night ? TIME.NIGHT.END : TIME.END,
     levels: Object.fromEntries(Object.keys(METHODS).map((m) => [m, levelFromXp((profile.methods[m] || { xp: 0 }).xp)])),
-    method: opts.method || planMethod(av.plan, { troll: trollId, longline: longlineId }),
+    method: opts.method || planMethod(av.plan, { troll: trollId, longline: longlineId, lights: lightsId }),
     plan: av.plan || null,
     plannedRoute: [],
     obs: createObservation(),
@@ -117,6 +126,7 @@ function planMethod(plan, gear) {
   if (m === 'troll' && gear.troll) return 'troll';
   if (m === 'longline' && gear.longline) return 'longline';
   if (m === 'negyo' || m === 'oyogase') return m; // the reels are always on board (泳がせ needs アジ in the hold)
+  if (m === 'ika' && gear.lights) return 'ika';
   return 'handline';
 }
 
@@ -198,7 +208,7 @@ export function stepVoyage(v) {
     if (v.autopilot && !isOperating(v)) runAutopilot(v, model);
   }
 
-  const mode = isOperating(v) && METHODS[v.op.methodId].drift ? 'drift' : 'manual';
+  const mode = isOperating(v) && METHODS[v.op.methodId].drift ? (METHODS[v.op.methodId].lights ? 'anchor' : 'drift') : 'manual';
   stepBoat(v.boat, model, w.cond, w.time, dt, mode);
 
   // the sonar turns one bearing per step (display only; it reads the world, never changes it)
@@ -247,6 +257,11 @@ export function stepVoyage(v) {
       else if (v.op.methodId === 'longline') stepLonglineOperation(v.op, v.line, ctx, dt);
       else stepOperation(v.op, ctx, dt);
       v.opSeconds += dt;
+      // イカ釣り: the squid drawn in follow the lit boat; every 10 s more come in from the water around
+      if (METHODS[v.op.methodId].lights && v.op.state !== 'ended') {
+        for (const s of w.schools) if (s.light && s.opId === v.op.id) s.a = s.b = { x: v.boat.x, y: v.boat.y };
+        if (v.op.state === 'running' && w.step % 100 === 0) gatherSquid(v);
+      }
       // 根魚釣り: tell once per drift when the boat has drifted off the rocks (the sounder's bottom echo thins)
       if (v.op.methodId === 'negyo' && v.op.state === 'running' && w.step % 10 === 0) {
         const rock = bottomIsRocky(v.boat.x, v.boat.y);
@@ -281,14 +296,57 @@ export function stepVoyage(v) {
     v.nextTrackT += SIM.TRACK_EVERY_S;
   }
 
-  if (!v.flags.warned && w.time >= TIME.WARN) {
+  if (!v.flags.warned && w.time >= (v.warnT || TIME.WARN)) {
     v.flags.warned = true;
-    say(v, `${fmtClock(TIME.WARN)}です。${fmtClock(TIME.END)}には帰港を始めます。`, 'warn');
+    say(v, `${fmtClock(v.warnT || TIME.WARN)}です。${fmtClock(v.endT || TIME.END)}には帰港を始めます。`, 'warn');
   }
-  if (!v.flags.dayEnd && w.time >= TIME.END) {
+  if (!v.flags.dayEnd && w.time >= (v.endT || TIME.END)) {
     v.flags.dayEnd = true;
-    say(v, '日暮れが近いので帰港します。', 'warn');
+    say(v, v.night ? '夜も更けたので帰港します。' : '日暮れが近いので帰港します。', 'warn');
     returnToPort(v, true);
+  }
+}
+
+/** The school of squid gathered under this operation's light (one per species). */
+function lightSchool(v, species) {
+  const id = `LIGHT-${v.op.id}-${species}`;
+  let s = v.world.schools.find((x) => x.id === id);
+  if (!s) {
+    s = normalizeSchool({ id, species, light: true, opId: v.op.id, habitat: 'light', area: areaNameAt(v.boat.x, v.boat.y), a: { x: v.boat.x, y: v.boat.y }, counts: { s: 0, m: 0, l: 0 }, sigmaH: 25, sigmaZ: 5, orbitR: 0, noiseSeed: 7 });
+    v.world.schools.push(s);
+  }
+  return s;
+}
+
+/**
+ * 集魚灯: once it is dark, squid from the water around are drawn in under the
+ * boat — taken from their school one by one (expected numbers accumulate with
+ * game time), so the light never makes squid out of nothing.
+ */
+function gatherSquid(v) {
+  const w = v.world;
+  const m = METHODS.ika;
+  const dark = Math.max(0, Math.min(1, (w.time / 3600 - 17.3) / 1.2));
+  const power = v.equip.lights ? v.equip.lights.power : 0;
+  if (dark <= 0 || power <= 0) return;
+  if (!v.op.gatherAcc) v.op.gatherAcc = {};
+  for (let i = 0; i < w.schools.length; i++) {
+    const s = w.schools[i];
+    if (s.light || SPECIES[s.species].habit !== 'squid' || schoolTotal(s) <= 0) continue;
+    const c = schoolCenter(s, w.time);
+    const reach = s.sigmaH + m.gatherReach;
+    const d = Math.hypot(c.x - v.boat.x, c.y - v.boat.y);
+    const wgt = Math.exp(-(d * d) / (2 * reach * reach));
+    if (wgt < 0.01) continue;
+    let acc = (v.op.gatherAcc[s.id] || 0) + m.gatherRate * 10 * schoolTotal(s) * wgt * dark * power;
+    while (acc >= 1 && schoolTotal(s) > 0) {
+      const f = takeFish(w, i);
+      if (!f) break;
+      lightSchool(v, s.species).counts[f.size] += 1;
+      v.op.stats.gathered = (v.op.stats.gathered || 0) + 1;
+      acc -= 1;
+    }
+    v.op.gatherAcc[s.id] = acc;
   }
 }
 
@@ -519,6 +577,7 @@ export function setMethod(v, methodId) {
   if (isOperating(v)) return { ok: false, reason: '操業中は漁法を変えられません。回収してからにしてください。' };
   if (methodId === 'troll' && !v.equip.troll) return { ok: false, reason: '曳縄具を積んでいません（港の「装備・船」で取り付け）。' };
   if (methodId === 'longline' && !v.equip.longline) return { ok: false, reason: '延縄具を積んでいません（港の「装備」で取り付け）。' };
+  if (methodId === 'ika' && !v.equip.lights) return { ok: false, reason: '集魚灯を積んでいません（港の「装備」で屋根に取り付け）。' };
   v.method = methodId;
   return { ok: true };
 }
@@ -547,6 +606,7 @@ export function canStartOperation(v) {
   if (Math.abs(v.boat.speed) > m.maxStartSpeed) return { ok: false, reason: '船を止めてから操業を始めます（停止まで減速）。' };
   if (!v.obs.cols.length) return { ok: false, reason: '魚探の反応を待っています。' };
   if (depth < 6) return { ok: false, reason: `浅すぎて${m.name}の仕掛けを流せません。` };
+  if (m.lights && !v.equip.lights) return { ok: false, reason: '集魚灯を積んでいません。' };
   if (m.liveBait && baitInHold(v, m.liveBait) < 1) return { ok: false, reason: '活きエサのアジがありません。先に一本釣りでアジを釣ってください（魚倉のアジを1尾ずつ使います）。' };
   return { ok: true };
 }
@@ -631,7 +691,8 @@ export function startOperation(v) {
   });
   v.op.startConditions = conditionsSnapshot(v);
   if (depth > v.equip.reel.maxDepth) say(v, `水深${depth.toFixed(0)}mはリールの対応水深${v.equip.reel.maxDepth}mを超えています。届く深さまでで操業します。`, 'warn');
-  if (hookMethod === 'oyogase') say(v, `泳がせ釣り開始（${areaNameAt(v.boat.x, v.boat.y)}・水深${depth.toFixed(0)}m）。魚倉の活きアジ（残り${baitInHold(v, 'aji')}尾）を1尾ずつ使います。`);
+  if (hookMethod === 'ika') say(v, `パラアンカーを入れ、集魚灯を点けてイカ釣り開始（${areaNameAt(v.boat.x, v.boat.y)}・水深${depth.toFixed(0)}m）。${v.world.time < 17.5 * 3600 ? 'まだ明るいので灯の効きは弱い。暗くなるにつれて寄ってくる。' : '暗くなるにつれて、まわりのイカが船の下に寄ってくる。'}`);
+  else if (hookMethod === 'oyogase') say(v, `泳がせ釣り開始（${areaNameAt(v.boat.x, v.boat.y)}・水深${depth.toFixed(0)}m）。魚倉の活きアジ（残り${baitInHold(v, 'aji')}尾）を1尾ずつ使います。`);
   else if (hookMethod === 'negyo') say(v, `根魚釣り開始（${areaNameAt(v.boat.x, v.boat.y)}・水深${depth.toFixed(0)}m）。底を切って流します。根の真上を通るように流し直し（R）を使ってください。`);
   else say(v, `操業開始（${areaNameAt(v.boat.x, v.boat.y)}・水深${depth.toFixed(0)}m）。投入から回収まで自動で行います。`);
   return { ok: true };
@@ -922,6 +983,7 @@ function makeOperationLog(v, op) {
     log.snags = st.snags || 0;
     log.lostFish = st.lostFish || 0;
     if (METHODS[op.methodId].liveBait) log.baits = st.baits || 0;
+    if (METHODS[op.methodId].lights) log.gathered = st.gathered || 0;
   }
   log.tags = logTags(log);
   return log;

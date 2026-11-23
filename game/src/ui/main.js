@@ -74,6 +74,7 @@ const app = {
   lastFeed: '',
   hosted: !!BUILD.hosted,
   hireCrew: false, // today's choice at port (a deckhand for one voyage)
+  nightTrip: false, // today's choice at port: leave in the evening for イカ釣り (lamp fitted)
   markSel: null, // the mark picked in the list ('s:M3' saved / 'v:5' today's), ringed on the charts
 };
 
@@ -227,7 +228,10 @@ function depart(planKey = null) {
     if (c) plan = { ...planSummary(c, app.profile.day + 1), methodId: c.methodId };
   }
   const crew = app.hireCrew && app.profile.funds >= CREW.wage ? 1 : 0;
-  const p = markDeparture(app.profile, new Date().toISOString(), plan, { crew });
+  const hasLamp = Object.values(app.profile.boat.slots).some((x) => x && EQUIPMENT[x.itemId].type === 'lights');
+  const night = hasLamp && (app.nightTrip || (plan && plan.methodId === 'ika')) ? 1 : 0;
+  const p = markDeparture(app.profile, new Date().toISOString(), plan, { crew, night });
+  app.nightTrip = false;
   const r = commit(p, '出港を記録');
   if (!r.ok) toast('出港の記録を保存できませんでした（このまま出港します）');
   let scenario = null;
@@ -531,7 +535,7 @@ function cmd(name) {
       const avail = availableMethods(v);
       const next = avail[(avail.indexOf(v.method) + 1) % avail.length];
       r = setMethod(v, next);
-      const tip = { oyogase: `（魚倉の活きアジ${baitInHold(v, 'aji')}尾。根・瀬の周りやベイトの反応の下で停船してSpace）`, negyo: '（根・漁礁の真上か少し潮上で停船してSpace。外れたら R で流し直し）', troll: '（海図 C をクリックして航路、Spaceで開始）', longline: lineInWater(v) ? '（Spaceで揚げ縄）' : '（今の向きか海図 C で張る向きを決めて、Spaceで投縄）' };
+      const tip = { ika: v.world.time < 17.5 * 3600 ? '（暗くなるほど集魚灯が効く。沖の深い所で停船してSpace）' : '（沖の深い所で停船してSpace。集魚灯でイカを寄せる）', oyogase: `（魚倉の活きアジ${baitInHold(v, 'aji')}尾。根・瀬の周りやベイトの反応の下で停船してSpace）`, negyo: '（根・漁礁の真上か少し潮上で停船してSpace。外れたら R で流し直し）', troll: '（海図 C をクリックして航路、Spaceで開始）', longline: lineInWater(v) ? '（Spaceで揚げ縄）' : '（今の向きか海図 C で張る向きを決めて、Spaceで投縄）' };
       if (r.ok) toast(`漁法：${METHODS[v.method].name}${tip[v.method] || ''}`);
       break;
     }
@@ -655,7 +659,7 @@ function haulConfirm(then) {
 
 /** Methods whose gear is on board, in the order T cycles through them. */
 function availableMethods(v) {
-  return ['handline', 'negyo', 'oyogase', ...(v.equip.troll ? ['troll'] : []), ...(v.equip.longline ? ['longline'] : [])];
+  return ['handline', 'negyo', 'oyogase', ...(v.equip.lights ? ['ika'] : []), ...(v.equip.troll ? ['troll'] : []), ...(v.equip.longline ? ['longline'] : [])];
 }
 
 /** Click on the big chart while trolling / longline is selected: add a route point there. */
@@ -889,6 +893,11 @@ $('sonar').addEventListener('click', (ev) => {
 document.addEventListener('change', (e) => {
   if (e.target && e.target.id === 'hireCrew') {
     app.hireCrew = e.target.checked;
+    return;
+  }
+  if (e.target && e.target.id === 'nightTrip') {
+    app.nightTrip = e.target.checked;
+    show('port');
     return;
   }
   const sel = e.target.closest && e.target.closest('[data-filter]');
@@ -1257,6 +1266,7 @@ function layoutHud() {
 const STEPS = {
   handline: [['prep', '準備'], ['drop', '投入'], ['fish', '誘い'], ['retrieve', '回収'], ['unhook', '取込']],
   negyo: [['prep', '準備'], ['drop', '投入'], ['fish', '底を切る'], ['retrieve', '巻上げ'], ['unhook', '取込']],
+  ika: [['prep', '準備'], ['drop', '投入'], ['fish', 'シャクリ'], ['retrieve', '巻上げ'], ['unhook', '取込']],
   oyogase: [['prep', 'エサ付け'], ['drop', '投入'], ['fish', '泳がせ'], ['fight', 'やり取り'], ['retrieve', '巻上げ'], ['unhook', '取込']],
   troll: [['deploy', '出す'], ['tow', '曳く'], ['fight', '掛かり'], ['haul', '手繰り'], ['unhook', '取込']],
   longline: [['set', '投縄'], ['soak', '浸け'], ['haul', '揚げ'], ['unhook', '取込']],
@@ -1287,7 +1297,7 @@ function updateHud(now) {
   const last = v.obs.cols[v.obs.cols.length - 1];
   const sit = v.autopilot ? 'auto' : isOperating(v) ? 'operate' : 'sail';
   const scale = TIME.SCALE[sit] * TIME.USER_MULT[app.speedIdx];
-  const late = v.world.time >= TIME.WARN;
+  const late = v.world.time >= (v.warnT || TIME.WARN);
   const opMode = isOperating(v);
   let html = chip(`${v.day}日目`, fmtClock(v.world.time), late ? 'warn' : '');
   // heading: an arrow that turns with the bow (north up, like the chart)
@@ -1343,15 +1353,19 @@ function updateHud(now) {
     panel.hidden = false;
     const neg = op.methodId === 'negyo';
     const oyo = op.methodId === 'oyogase';
+    const ika = op.methodId === 'ika';
+    const under = ika ? v.world.schools.filter((s) => s.light && s.opId === op.id).reduce((a, s) => a + s.counts.s + s.counts.m + s.counts.l, 0) : 0;
     const drifting = sog > 0.03 ? `${compass8(b.vx, b.vy)}へ${(sog * 1.944).toFixed(1)}ktで流れている` : 'ほぼ流れていない';
     const bySp = Object.entries(op.landedBy || {}).map(([sp, c]) => `${SPECIES[sp].name}${c.s + c.m + c.l}`).join('・');
-    const note = oyo
+    const note = ika
+      ? `集魚灯 点灯中・タナ ${line.tana != null ? `${line.tana.toFixed(0)}m（${line.tanaSource === 'echo' ? '魚探の反応に合わせる' : '中層'}）` : '—'}・船の下に寄ったイカ 約${under}杯（寄せた合計${op.stats.gathered || 0}）${bySp ? `・${bySp}` : ''}・${drifting}`
+      : oyo
       ? `タナ ${line.tana != null ? `${line.tana.toFixed(0)}m（${line.tanaSource === 'echo' ? '魚探の反応に合わせる' : '反応がないので中層'}）` : '—'}・活きアジ残り${baitInHold(v, 'aji')}尾・エサ交換${op.stats.baitSwaps}回${bySp ? `・${bySp}` : ''}・${drifting}`
       : neg
       ? `底から${METHODS.negyo.bottomLift}m（底を切る）・水深${line.tana != null ? line.tana.toFixed(0) : '—'}m${op.stats.snags ? `・根掛かり${op.stats.snags}回` : ''}${bySp ? `・${bySp}` : ''}・${drifting}`
       : `タナ ${line.tana != null ? `${line.tana.toFixed(0)}m（${line.tanaSource === 'echo' ? '魚探の反応に合わせる' : '底から少し上'}）` : '—'}・${drifting}`;
     panel.innerHTML = `<div class="op-head"><span>${METHODS[op.methodId].name} <b>Lv${op.level}</b></span><span class="op-clock">${clock(v.world.time - op.startT)}</span></div>
-      ${op.lines.map((l, i) => stepRow(oyo ? 'oyogase' : neg ? 'negyo' : 'handline', l, l.label || (i === 0 ? '右舷' : '左舷'), linePhaseLabel(l))).join('')}
+      ${op.lines.map((l, i) => stepRow(ika ? 'ika' : oyo ? 'oyogase' : neg ? 'negyo' : 'handline', l, l.label || (i === 0 ? '右舷' : '左舷'), linePhaseLabel(l))).join('')}
       ${bigNums([['この流し', op.landedCount, SPECIES[op.species].unit, `${op.landedKg.toFixed(1)}kg`], ['直近10分', pace.perMin.toFixed(1), `${SPECIES[op.species].unit}/分`, `${pace.n}${SPECIES[op.species].unit}`], holdNum])}
       <div class="op-note">${note}</div>${lineNote}
       <div class="feed">${S.esc(app.lastFeed)}</div>`;
@@ -1373,7 +1387,7 @@ function updateHud(now) {
       <div class="row"><span>${fmtClock(l.startT)}〜 ${S.esc(l.area)}</span><span>${Math.round(l.durationS / 60)}分</span></div>
       <div class="row"><span>漁獲</span><span>${l.count}${u}・${l.kg.toFixed(1)}kg</span></div>
       <div class="row"><span>この航海の合計</span><span>${v.hold.count}匹・${v.hold.kg.toFixed(1)}kg</span></div>${lineNote}
-      <div class="feed">${canStartOperation(v).ok ? ({ troll: 'Spaceで曳縄を開始できます', longline: lineInWater(v) ? 'Spaceで揚げ縄' : 'Spaceで投縄できます', negyo: '停船中：Spaceで根魚釣り（根・漁礁の真上で）', oyogase: `停船中：Spaceで泳がせ釣り（活きアジ${baitInHold(v, 'aji')}尾）` }[v.method] || '停船中：Spaceで操業開始できます') : ''}</div>`;
+      <div class="feed">${canStartOperation(v).ok ? ({ troll: 'Spaceで曳縄を開始できます', longline: lineInWater(v) ? 'Spaceで揚げ縄' : 'Spaceで投縄できます', negyo: '停船中：Spaceで根魚釣り（根・漁礁の真上で）', oyogase: `停船中：Spaceで泳がせ釣り（活きアジ${baitInHold(v, 'aji')}尾）`, ika: '停船中：Spaceで集魚灯を点けてイカ釣り' }[v.method] || '停船中：Spaceで操業開始できます') : ''}</div>`;
   } else if (v.method === 'troll') {
     const rt = trollRouteFrom(v);
     panel.hidden = false;
@@ -1540,6 +1554,7 @@ function frame(now) {
     scene.render({
       mode: atSea ? 'sea' : 'port',
       cues: atSea ? cuesNow : [],
+      lightsOn: !!(atSea && v.equip.lights && isOperating(v) && METHODS[v.op.methodId].lights),
       boat: atSea ? v.boat : { x: PORT.dock.x, y: PORT.dock.y + 20, heading: 0, speed: 0, vx: 0, vy: 0 },
       gameTime: atSea ? v.world.time : app.screen === 'receipt' ? 13 * 3600 : TIME.DEPART + 1800,
       windSpeed: atSea ? v.world.cond.windSpeed : 3,

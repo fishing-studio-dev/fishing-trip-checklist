@@ -217,6 +217,56 @@ export function blueSchools(seed, d) {
   return out;
 }
 
+// イカ（本作設定）: the deeper offshore water where squid spread for a few days
+export const SQUID_GROUNDS = [
+  { id: 'okideep', x: 650, y: 2600, spread: 400 },
+  { id: 'kita_oki', x: 2350, y: 2700, spread: 250 },
+  { id: 'oki_n', x: 1150, y: 3500, spread: 400 },
+];
+
+/** Squid on day d (a pure function of seed and day). */
+export function squidSchools(seed, d) {
+  const out = [];
+  const temp = makeDayConditions(seed, d).waterTemp;
+  SQUID_GROUNDS.forEach((g, gi) => {
+    let start = 0;
+    let ep = null;
+    for (let i = 0; i < 2000; i++) {
+      const len = 3 + Math.floor(hashFloat(seed, gi, i, 601) * 5);
+      if (d < start + len) {
+        ep = { i, present: hashFloat(seed, gi, i, 602) < 0.6 };
+        break;
+      }
+      start += len;
+    }
+    if (!ep || !ep.present) return;
+    const r = (j) => hashFloat(seed, gi, d, j, 611);
+    const pKensaki = Math.max(0.15, Math.min(0.85, 0.5 + (temp - 18.6) * 0.6));
+    const species = hashFloat(seed, gi, ep.i, 603) < pKensaki ? 'kensaki' : 'yari';
+    const n = Math.round(400 + hashFloat(seed, gi, ep.i, 604) * 600);
+    const cx = g.x + (r(1) - 0.5) * g.spread;
+    const cy = g.y + (r(2) - 0.5) * g.spread;
+    out.push({
+      id: `D${d}-squid-${g.id}`,
+      species,
+      habitat: g.id,
+      area: areaNameAt(cx, cy),
+      a: { x: cx, y: cy },
+      b: { x: cx + (r(3) - 0.5) * 300, y: cy + (r(4) - 0.5) * 300 },
+      moveStart: 8 * 3600,
+      moveEnd: 20 * 3600,
+      orbitR: 40 + r(5) * 60,
+      orbitPeriod: (60 + r(6) * 60) * 60,
+      orbitPhase: r(7) * Math.PI * 2,
+      sigmaH: 120 + r(8) * 80,
+      sigmaZ: 4,
+      noiseSeed: Math.floor(r(9) * 1e9),
+      counts: splitCounts(n, 0.2, 0.35),
+    });
+  });
+  return out;
+}
+
 const habIndex = (id) => HABITATS.findIndex((h) => h.id === id);
 const zoneIndex = (id) => SAWARA_ZONES.findIndex((z) => z.id === id);
 
@@ -399,6 +449,7 @@ export function dayPlan(seed, d) {
     schools.push(...madaiSchools(seed, d));
     schools.push(...reefSchools(seed, d));
     schools.push(...blueSchools(seed, d));
+    schools.push(...squidSchools(seed, d));
     return { schools, scripted: true };
   }
   HABITATS.forEach((h, hi) => schools.push(...ajiFromEpisode(seed, d, h, hi)));
@@ -415,5 +466,6 @@ export function dayPlan(seed, d) {
   schools.push(...madaiSchools(seed, d));
   schools.push(...reefSchools(seed, d));
   schools.push(...blueSchools(seed, d));
+  schools.push(...squidSchools(seed, d));
   return { schools, scripted: false };
 }

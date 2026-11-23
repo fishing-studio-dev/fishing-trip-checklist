@@ -897,6 +897,62 @@ const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
     await shot('99-oyogase-failure').catch(() => {});
   }
 
+  // ---------------------------------------------------------------- イカ釣り (item 9): an evening trip with the 集魚灯
+  try {
+    const pg = page;
+    await pg.goto(`http://localhost:${port}/?dev=1&seed=77`);
+    await pg.waitForSelector('#portChart');
+    const own = await st();
+    await pg.click('[data-act=market]');
+    await pg.click('[data-act=playtestLoad]');
+    await pg.click('[data-act=playtestLoadConfirm]');
+    await pg.click('[data-act=toPort]');
+    check('イカ: without a lamp there is no evening trip at port', !(await pg.isVisible('#nightTrip')));
+    await pg.click('[data-act=equip]');
+    await pg.click('[data-act=buy][data-item=lights_ld1][data-slot=roof_lights]');
+    const confL = await pg.textContent('#modal');
+    await pg.click('[data-act=buyConfirm]');
+    await sleep(200);
+    if (await pg.isVisible('#modal [data-act=closeModal]').catch(() => false)) await pg.click('#modal [data-act=closeModal]');
+    await pg.click('[data-act=toPort]');
+    await pg.waitForSelector('#nightTrip');
+    await pg.check('#nightTrip');
+    await pg.waitForSelector('#portChart');
+    check('イカ: with the lamp fitted, port offers leaving in the evening (16:00, home by 23:00)', /夕方から出る/.test(confL) && /夕方16:00 出港（イカ釣り）/.test(await pg.textContent('h1')));
+    await pg.click('[data-act=depart]');
+    await waitFor((x) => x.screen === 'sea', 'at sea (イカ)');
+    const t0 = await pg.evaluate(() => window.__ryoshi.app.voyage.world.time);
+    check('イカ: the evening trip starts at 16:00', Math.abs(t0 - 16 * 3600) < 5, `${t0}`);
+    // to the nearest squid within the small boat's zone (dev: read only to head there)
+    const sq = await pg.evaluate(() => window.__ryoshi.schoolCenters().filter((s) => s.species === 'kensaki' || s.species === 'yari').sort((a, b) => a.y - b.y)[0]);
+    await press('c');
+    await sleep(200);
+    await clickChart(sq.x, Math.min(sq.y, 2950));
+    await press('c');
+    await press('g');
+    for (let i = 0; i < 60 && (await st()).voyage.autopilot; i++) await ff(20);
+    for (let i = 0; i < 8 && (await st()).voyage.method !== 'ika'; i++) await press('t');
+    await press('Space');
+    await waitFor((x) => x.voyage.operating, 'イカ釣り started');
+    for (let i = 0; i < 26; i++) await ff(600);
+    const opI = await pg.textContent('#opPanel');
+    const ika = await pg.evaluate(() => ({ gathered: window.__ryoshi.app.voyage.op ? window.__ryoshi.app.voyage.op.stats.gathered : 0, landed: window.__ryoshi.app.voyage.op ? window.__ryoshi.app.voyage.op.landedCount : 0 }));
+    check('イカ: after dark the lamp draws squid in under the boat and they are jigged up', ika.gathered > 5 && ika.landed > 0 && /集魚灯 点灯中/.test(opI), JSON.stringify(ika));
+    await shot('33-ika-night');
+    await returnAndLand('イカ');
+    const rcI = await pg.textContent('#screen');
+    check('イカ: squid are sold by the 杯 at landing', /ケンサキイカ|ヤリイカ/.test(rcI) && /杯/.test(rcI));
+    await pg.click('[data-act=toPort]');
+    await pg.click('[data-act=openSave]');
+    await pg.click('[data-act=playtestRestore]');
+    await pg.click('[data-act=playtestRestoreConfirm]');
+    await pg.waitForSelector('#portChart');
+    check('back to the own progress after the イカ playtest', (await st()).funds === own.funds);
+  } catch (e) {
+    check('イカ playthrough', false, e.message);
+    await shot('99-ika-failure').catch(() => {});
+  }
+
   check('no page errors or console errors', errors.length === 0, errors.slice(0, 5).join(' | '));
   await browser.close();
   server.kill();

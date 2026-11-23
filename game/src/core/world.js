@@ -30,7 +30,7 @@ export function createWorld(worldSeed, day, startTime, scenario = null) {
   };
 }
 
-function normalizeSchool(s) {
+export function normalizeSchool(s) {
   const counts = { s: 0, m: 0, l: 0, ...(s.counts || {}) };
   const b = s.b || s.a;
   return {
@@ -103,6 +103,14 @@ export function schoolPose(school, t) {
     const z = Math.min(pelagicDepthAt(school, t), Math.max(2, bottom - 3));
     return { x: c.x, y: c.y, z, bottom };
   }
+  if (SPECIES[school.species].habit === 'squid') {
+    // イカ（本作設定）: near the bottom by day, rising at dusk to about a third of the depth at night
+    const h = t / 3600;
+    const u = Math.max(0, Math.min(1, (h - 17) / 2.5));
+    const rise = u * u * (3 - 2 * u);
+    const z = (bottom - 4) * (1 - rise) + bottom * (0.35 + 0.05 * noise1(school.noiseSeed, t / 1500)) * rise;
+    return { x: c.x, y: c.y, z: Math.max(3, Math.min(bottom - 2, z)), bottom };
+  }
   if (SPECIES[school.species].habit === 'roam') {
     // 青物（本作設定）: under the bait school they follow, or in mid water around a reef
     let z;
@@ -129,6 +137,12 @@ export function activityAt(world, school, t) {
     const todS = 0.6 + 0.6 * Math.exp(-(((h - 6) / 1.5) ** 2)) + 0.35 * Math.exp(-(((h - 16.5) / 1.3) ** 2));
     const warm = Math.max(0.6, Math.min(1.2, 0.8 + (world.cond.waterTemp - 18.8) * 0.3));
     return Math.max(0.3, Math.min(1.4, todS * (0.8 + 0.25 * Math.min(1, sp / 0.22)) * warm * wobble));
+  }
+  if (SPECIES[school.species].habit === 'squid') {
+    // イカ（本作設定）: feed after dark; a gentle tide is best
+    const night = Math.max(0, Math.min(1, (h - 17.5) / 1.5));
+    const tideI = 0.8 + 0.3 * Math.min(1, sp / 0.2) - 0.3 * Math.max(0, (sp - 0.25) / 0.1);
+    return Math.max(0.3, Math.min(1.4, (0.35 + 0.85 * night) * Math.max(0.5, tideI) * wobble));
   }
   if (SPECIES[school.species].habit === 'roam') {
     // 青物（本作設定）: strongest at dawn and dusk and when the tide runs; ブリ like it

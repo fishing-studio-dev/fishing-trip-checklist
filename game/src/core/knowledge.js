@@ -154,6 +154,7 @@ const GROUNDS = {
   longline: ['沖の平場', '東の駆け上がり', '西の根', '北の瀬', '沖の瀬'],
   negyo: ['西の根', '北の瀬', '沖の瀬'],
   oyogase: ['北の瀬', '沖の瀬'],
+  ika: ['沖の深み'],
 };
 // grounds outside the coastal zone (general knowledge: geography, not fish)
 const FAR_NOTE = { 沖の瀬: '沖の瀬：港から約4km。遠くて人が少なく、群れが大きく大型が多いと言われる（一般的な目安）。中型漁船でないと行けない' };
@@ -161,11 +162,12 @@ const GENERAL = {
   handline: 'アジは瀬・根・駆け上がりなど起伏のある場所に付きやすい（一般的な目安）',
   troll: 'サワラは水温が上がると沖や駆け上がりに回ってくる（一般的な目安）',
   longline: 'マダイは水深30〜60mの平場や駆け上がりの底に、広く散って付く（一般的な目安）',
+  ika: 'イカは昼は沖の深い所の底近くにいて、暗くなると浮いてくる。集魚灯で船の下に寄せて釣る（一般的な目安）',
   oyogase: '青物（ブリ・ヒラマサ）は瀬や大きな根の周り、ベイト（イワシ）の群れの下を回る。先に一本釣りでアジを釣って活きエサにする（一般的な目安）',
   negyo: 'カサゴ・キジハタは岩礁・根・漁礁の際の底に居着く。海図にない小さな根や漁礁は、魚探・ソナー・サイドビューで探して印を付ける（一般的な目安）',
 };
 // a peer's catch count regarded as good / poor for the method (for weighting only)
-const REPORT_COUNTS = { handline: [25, 15], troll: [3, 2], longline: [6, 3], negyo: [8, 4], oyogase: [3, 1] };
+const REPORT_COUNTS = { handline: [25, 15], troll: [3, 2], longline: [6, 3], negyo: [8, 4], oyogase: [3, 1], ika: [40, 20] };
 const KIND_W = { catch: 3, echo: 2, sighting: 2 };
 
 function freshW(obsDay, today) {
@@ -252,7 +254,7 @@ export function buildCandidates({ knowledge, logs, today, forecast, profile }) {
     score += Math.min(3, own.similar.filter(isGood).length * 1.5);
     score -= Math.min(1.5, (own.similar.length - own.good) * 0.5);
     if (own.withCatch) score += 0.8;
-    if ((c.methodId === 'negyo' || c.methodId === 'oyogase') && !own.same.length) score -= 0.05; // without own records it is a long shot
+    if ((c.methodId === 'negyo' || c.methodId === 'oyogase' || c.methodId === 'ika') && !own.same.length) score -= 0.05; // without own records it is a long shot
     const ruleNotes = c.rules.map((r) => r);
     if (ruleNotes.length) score += 0.4;
     // feasibility with the current boat & gear
@@ -337,6 +339,11 @@ function conditionNotes(methodId, fc) {
     else if (tc === '小潮系') notes.push(`${fc.tideName}：潮がゆるく流しやすいが、潮が動かない時間は食いが落ちやすい`);
     else notes.push('中潮：ほどよく潮が動く');
     if (fc.windSpeed >= 6) notes.push(`風${fc.windSpeed}m/s（予報）：船が流されやすい`);
+  } else if (methodId === 'ika') {
+    notes.push('夕方に出る漁（16時出港・23時までに帰港）');
+    if (tc === '大潮') notes.push('大潮：流されやすく、寄せたイカから離れやすい');
+    else notes.push(`${fc.tideName}：流れが緩いと集魚灯の下にイカがたまりやすい`);
+    notes.push(fc.waterTemp >= 18.6 ? `水温${fc.waterTemp}℃：ケンサキイカの多い頃（一般的な目安）` : `水温${fc.waterTemp}℃：ヤリイカの多い頃（一般的な目安）`);
   } else if (methodId === 'oyogase') {
     if (tc === '小潮系') notes.push(`${fc.tideName}：潮が緩く、青物の食いが立ちにくい`);
     else notes.push(`${tc}：潮が動き、青物の食いが立ちやすい`);

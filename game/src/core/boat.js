@@ -65,9 +65,12 @@ export function routeToPort(from) {
 
 /**
  * Advance boat by dt game seconds.
- * `mode`: 'manual' | 'drift' (engine idle while handline fishing) | 'docked'
+ * `mode`: 'manual' | 'drift' (engine idle while handline fishing) | 'anchor'
+ * (drifting on a sea anchor — パラアンカー, イカ釣り: a quarter of the drift) | 'docked'
  */
 export function stepBoat(boat, model, cond, t, dt, mode) {
+  const anchored = mode === 'anchor';
+  if (anchored) mode = 'drift';
   if (mode === 'docked') {
     boat.speed = 0;
     boat.vx = 0;
@@ -83,8 +86,9 @@ export function stepBoat(boat, model, cond, t, dt, mode) {
   boat.heading = wrapAngle(boat.heading + rudder * model.maxTurn * turnFactor * dt * Math.sign(boat.speed || 1));
   const c = currentAt(cond, t);
   const w = windAt(cond, t);
-  const vx = Math.sin(boat.heading) * boat.speed + c.x + w.x * model.windage;
-  const vy = Math.cos(boat.heading) * boat.speed + c.y + w.y * model.windage;
+  const k = anchored ? 0.25 : 1;
+  const vx = Math.sin(boat.heading) * boat.speed + (c.x + w.x * model.windage) * k;
+  const vy = Math.cos(boat.heading) * boat.speed + (c.y + w.y * model.windage) * k;
   const nx = boat.x + vx * dt;
   const ny = boat.y + vy * dt;
   boat.grounded = false;

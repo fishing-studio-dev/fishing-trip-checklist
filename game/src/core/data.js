@@ -13,6 +13,8 @@ export const TIME = {
   DEPART: 5 * 3600, // 05:00 departure
   WARN: 15 * 3600, // 15:00 return warning
   END: 16 * 3600, // 16:00 forced return (auto)
+  // an evening trip for イカ釣り (集魚灯 fitted): out at 16:00, home by 23:00
+  NIGHT: { DEPART: 16 * 3600, WARN: 22 * 3600, END: 23 * 3600 },
   // game seconds per real second, by situation. Changing scale never changes
   // results for the same elapsed game time (fixed-step simulation).
   SCALE: { sail: 6, operate: 15, auto: 18 },
@@ -125,6 +127,35 @@ export const SPECIES = {
     unit: '尾',
     bait: true,
   },
+  // イカ（本作設定）: by day near the bottom of the deeper water, at dusk they rise
+  // and at night they come up under a lit boat (集魚灯). ケンサキイカ in the
+  // warmer water, ヤリイカ in the cooler.
+  kensaki: {
+    id: 'kensaki',
+    name: 'ケンサキイカ',
+    sizes: {
+      s: { label: '小ケンサキ', kg: 0.1, pricePerKg: 1000 },
+      m: { label: 'ケンサキイカ', kg: 0.18, pricePerKg: 1400 },
+      l: { label: '大ケンサキ', kg: 0.3, pricePerKg: 1800 },
+    },
+    sizeOrder: ['s', 'm', 'l'],
+    habit: 'squid',
+    unit: '杯',
+    group: 'ika',
+  },
+  yari: {
+    id: 'yari',
+    name: 'ヤリイカ',
+    sizes: {
+      s: { label: '小ヤリイカ', kg: 0.08, pricePerKg: 800 },
+      m: { label: 'ヤリイカ', kg: 0.15, pricePerKg: 1200 },
+      l: { label: '大ヤリイカ', kg: 0.25, pricePerKg: 1500 },
+    },
+    sizeOrder: ['s', 'm', 'l'],
+    habit: 'squid',
+    unit: '杯',
+    group: 'ika',
+  },
   // 青物（本作設定）: big, fast fish that roam around reefs and pinnacles and
   // under bait schools, in mid water. ブリ in the cooler water, ヒラマサ in the
   // warmer. Taken with a live アジ (泳がせ釣り).
@@ -216,6 +247,33 @@ export const METHODS = {
     gearType: 'reel',
     drift: true,
     goodRate: 2,
+  },
+  // イカ釣り（本作設定）: in the evening the lamps are lit and the boat drifts;
+  // squid from the water around are drawn in under the light over time (they
+  // are taken from their school as they come, so nothing is created). Jigs
+  // (イカ角) on each reel are worked at the squid's layer automatically.
+  ika: {
+    id: 'ika',
+    name: 'イカ釣り',
+    detail: '集魚灯を点けて船の下にイカを寄せ、イカ角（擬似餌）を並べた仕掛けをシャクって釣る。夕方から夜の漁（集魚灯が要る）',
+    target: 'kensaki',
+    targets: ['kensaki', 'yari'],
+    hooks: 5,
+    hookSpacing: 1.2,
+    biteRateMax: 0.02,
+    densityHalf: 0.003,
+    oiWait: 20,
+    retuneAfter: 60,
+    defaultOffBottom: 0,
+    defaultFrac: 0.4, // with no echo the jigs work at 40% of the depth (the squid's night layer)
+    echoThreshold: 0.3,
+    lights: true,
+    gatherRate: 0.000012, // squid drawn in per squid in the area per second under full darkness
+    gatherReach: 250, // m added to a school's spread: how far the light reaches
+    maxStartSpeed: 0.6,
+    gearType: 'lights',
+    drift: true,
+    goodRate: 20,
   },
   // 根魚釣り（本作設定）: a short two-hook rig with the sinker kept just off the
   // bottom (底を切る) right over a structure. The rig follows the bottom by
@@ -419,6 +477,15 @@ export const EQUIPMENT = {
     desc: '延縄を機械で巻き上げる。揚げ縄の速さが腕前によらず毎秒1.3mになる（手で揚げるとLv1で0.45、Lv10で0.9m）。魚を外すのは手作業のまま。延縄具がないと使い道はない。',
     hauler: { haul: 1.3 },
   },
+  lights_ld1: {
+    id: 'lights_ld1',
+    type: 'lights',
+    mount: 'lights',
+    name: 'LED集魚灯 LD-1',
+    price: 40000,
+    desc: '屋根に付ける集魚灯。夕方から夜に点けると、まわりのイカが船の下に寄ってくる。これがあると港で「夕方から出る（イカ釣り）」を選べ、16時に出て23時まで漁ができる。',
+    lights: { power: 1 },
+  },
 };
 
 // What each upgrade changes and where you will notice it in play — shown when
@@ -477,6 +544,17 @@ export const GUIDES = {
       '漁礁や小さな根の場所の見当を付けてから、魚探・サイドビューで確かめる、という探し方ができる。',
     ],
     note: '魚の種類は表示しません。反応の大きさ・動き・場所から見立てます。',
+  },
+  lights_ld1: {
+    changes: [
+      '港で「夕方から出る（イカ釣り）」を選べるようになる（16時出港・23時までに帰港）。',
+      '漁法に「イカ釣り」が加わる。暗くなると集魚灯の光でまわり数百mのイカが船の下に寄り、各リールのイカ角で自動で釣る。',
+    ],
+    inPlay: [
+      'イカは昼は深い所の底近くにいて、夕方に浮いてくる。イカのいる沖の深い所で灯を点けて、寄ってくるのを待つ。',
+      '寄ったイカは魚探に船の真下の反応として映る。反応が薄ければ場所を変える判断になる。',
+    ],
+    note: 'まだ明るいうちは灯が効きにくい（日没後に効く）。',
   },
   hauler_lh1: {
     changes: ['揚げ縄を機械で巻き上げる（毎秒1.3m、腕前によらない）。魚を外すのは手作業のまま。'],

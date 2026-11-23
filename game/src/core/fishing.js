@@ -31,6 +31,13 @@ function hookDepthOf(method, tana, k) {
   return tana - (method.firstHook != null ? method.firstHook : 1.0) - k * method.hookSpacing;
 }
 
+/** The tana read from the sounder; with no echo, methods that fish mid water use their share of the depth. */
+function readMethodTana(obs, method, maxDepth, bottom) {
+  const r = readTana(obs, method, maxDepth);
+  if (r.tana != null && r.source === 'bottom' && method.defaultFrac) r.tana = Math.min(maxDepth, bottom * method.defaultFrac + 1, bottom - 2);
+  return r;
+}
+
 /** Where the sinker sits when it is kept just off the bottom (根魚釣り). */
 function bottomTana(method, bottom, maxDepth) {
   return Math.max(1, Math.min(maxDepth, bottom - method.bottomLift));
@@ -187,9 +194,8 @@ export function stepOperation(op, ctx, dt) {
             line.phase = 'drop';
             break;
           }
-          const r = readTana(ctx.obs, method, line.maxDepth);
+          const r = readMethodTana(ctx.obs, method, line.maxDepth, bottom);
           if (r.tana == null) break; // no sounder reading yet
-          if (r.source === 'bottom' && method.defaultFrac) r.tana = Math.min(line.maxDepth, bottom * method.defaultFrac + 1, bottom - 2);
           setTana(op, line, r);
           line.phase = 'drop';
         }
@@ -340,7 +346,7 @@ export function stepOperation(op, ctx, dt) {
           line.sinceRetune += dt;
           if (line.sinceRetune >= method.retuneAfter) {
             line.sinceRetune = 0;
-            const r = readTana(ctx.obs, method, line.maxDepth);
+            const r = readMethodTana(ctx.obs, method, line.maxDepth, bottom);
             if (r.tana != null && Math.abs(r.tana - line.tana) > 2.5) {
               line.target = Math.min(r.tana, bottom - 0.5);
               line.tanaSource = r.source;
