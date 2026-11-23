@@ -7,6 +7,8 @@ import { settleVoyage, purchaseEquipment } from '../src/core/economy.js';
 import { summarizeVoyage } from '../src/core/voyage.js';
 import { loadSave, writeSave, memoryStorage, KEYS, exportSave, checkImport, SAVE_SCHEMA } from '../src/core/save.js';
 import { voyageWith, fishFor } from './helpers.js';
+import { PLAYTEST_SAVE } from '../src/ui/playtestSave.js';
+import { readFileSync } from 'node:fs';
 
 const NOW = '2026-11-23T00:00:00.000Z';
 
@@ -184,4 +186,17 @@ test('a tampered M0 save is rejected before migration (checksum on the original 
   const r = loadSave(st, 5);
   assert.equal(r.status, 'unreadable');
   assert.ok(st.getItem(KEYS.quarantinePrefix + 5));
+});
+
+test('the built-in playtest save is a valid current-format save with 100,000G, identical to the e2e fixture', () => {
+  const r = checkImport(PLAYTEST_SAVE);
+  assert.ok(r.ok, r.error);
+  assert.equal(r.migratedFrom, null, 'already in the current format');
+  assert.equal(r.envelope.schemaVersion, SAVE_SCHEMA);
+  assert.equal(r.profile.funds, 100000);
+  assert.equal(r.profile.boat.model, 'skiff_1');
+  assert.equal(r.profile.activeVoyage, null);
+  assert.deepEqual(validateProfile(r.profile), []);
+  assert.equal(PLAYTEST_SAVE, readFileSync(new URL('./e2e/fixtures/m2-rich-save.json', import.meta.url), 'utf8'));
+  assert.ok(KEYS.beforePlaytest.startsWith('ryoshi-game:'));
 });

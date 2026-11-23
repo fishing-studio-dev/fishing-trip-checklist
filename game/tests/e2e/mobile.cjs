@@ -129,13 +129,18 @@ async function layout(page) {
         return a && !a.hidden && a.value.startsWith('{');
       });
       check(`${name}: save can be copied as text on the hosted page`, copied);
-      // M2 by touch: paste a richer save, compare boats, read the quote, buy
+      // M2 by touch: switch to the playtest save, compare boats, read the quote, buy
       if (await page.isVisible('#modal [data-act=closeModal]')) await page.tap('#modal [data-act=closeModal]');
-      await page.fill('#pasteArea', fs.readFileSync(path.join(__dirname, 'fixtures', 'm2-rich-save.json'), 'utf8'));
-      await page.tap('[data-act=importPaste]');
-      await page.tap('[data-act=importConfirm]');
+      await page.tap('[data-act=toPort]');
       await page.waitForSelector('[data-act=market]');
       await page.tap('[data-act=market]');
+      await page.locator('[data-act=playtestLoad]').scrollIntoViewIfNeeded();
+      await page.tap('[data-act=playtestLoad]');
+      await page.tap('[data-act=playtestLoadConfirm]');
+      await page.waitForSelector('[data-act=playtestRestore]');
+      check(`${name}: playtest save (100,000G) loads with one button on the boat market`, (await page.evaluate(() => window.__ryoshi.state().funds)) === 100000);
+      await page.screenshot({ path: path.join(outDir, `${slug}-5a-playtest.png`) });
+      await page.evaluate(() => document.getElementById('screen').scrollTo(0, 0));
       await page.waitForSelector('[data-act=boatQuote][data-offer=used_cruiser_b]');
       const mw = await page.evaluate(() => ({ vw: window.innerWidth, sw: document.documentElement.scrollWidth }));
       check(`${name}: boat market fits the width`, mw.sw <= mw.vw, `${mw.sw}/${mw.vw}`);

@@ -37,7 +37,7 @@ const labelHtml = (l) => `<span class="tag ${LABEL_CLASS[l] || ''}">${esc(l)}</s
 
 export function titleScreen({ storageNote }) {
   return `<div class="sheet">
-  <h1>漁師ゲーム <span class="tag">試作 M1</span></h1>
+  <h1>漁師ゲーム <span class="tag">試作 M2</span></h1>
   <p class="lead">仲間の話・自分の日誌・今日の海況から狙いを決め、魚探を頼りに自分で群れとポイントを探す。操業は自動。漁を重ねて手際が上がり、設備で同じ時間により多く獲れるようになる——その核を確かめる試作です。</p>
   <div class="grid">
     <div class="card"><h2>この試作でできること</h2><ul>
@@ -45,9 +45,9 @@ export function titleScreen({ storageNote }) {
       <li>一本釣り（アジ）：停船して自動操業、流し直し・移動を判断</li>
       <li>曳縄（サワラ）：航路を決めれば航行と仕掛けの作業は自動（曳縄具の購入が必要）</li>
       <li>漁法ごとのレベル（手際）、電動リール・曳縄具、帰港で自動保存</li>
+      <li>船の買い替え（新艇・中古）、装備の付け替え・倉庫・売却、2本仕掛け</li>
     </ul></div>
     <div class="card"><h2>まだ無いもの</h2><ul>
-      <li>船の買い替え（新艇・中古）、視点のさらなる作り込み（M2予定）</li>
       <li>甲板の自由移動、追加の漁法・魚種（M3予定）</li>
       <li>海上での途中保存（帰港時のみ保存）</li>
     </ul></div>
@@ -56,7 +56,23 @@ export function titleScreen({ storageNote }) {
   <p class="note">進行はこのブラウザに保存されます（端末・ブラウザごとに別の進行）。スマホでは画面下のボタンで操作します。横持ちにも対応しています。</p>
   <div class="actions"><button type="button" class="btn primary" data-act="newGame">新しく始める</button>
   <button type="button" class="btn" data-act="openSave">セーブを読み込む</button></div>
+  ${playtestCard(null)}
 </div>`;
+}
+
+/**
+ * The playtest save: one button to try the boat purchase with 100,000G, and
+ * one button back to the player's own progress (kept aside, never deleted).
+ */
+export function playtestCard(app) {
+  if (app && app.inPlaytest) {
+    return `<div class="card playtest"><h2>試遊用セーブで遊んでいます</h2>
+    <p class="note">切り替える前の自分の進行は別に残してあります。いつでも戻せます（試遊用セーブでの進行は消えます）。</p>
+    <div class="actions"><button type="button" class="btn" data-act="playtestRestore">自分の進行に戻す</button></div></div>`;
+  }
+  return `<div class="card playtest"><h2>試遊用：資金10万Gで試す</h2>
+    <p class="note">船の買い替えや装備をすぐ試せる進行（小型和船・曳縄具付き・資金100,000G）に切り替えます。${app ? '今の進行は別に残し、あとで「自分の進行に戻す」で戻せます。' : ''}</p>
+    <div class="actions"><button type="button" class="btn" data-act="playtestLoad">試遊用セーブ（資金10万G）で遊ぶ</button></div></div>`;
 }
 
 export function saveProblemScreen(res) {
@@ -361,6 +377,7 @@ export function marketScreen(app) {
   <p class="lead">使う船は一隻だけです。買い替えると今の船は下取りに出し、付けていた装備は新しい船の合う位置へ移すか、倉庫に入れます。中古船も性能は表示どおりで、隠れた故障はありません（安い代わりに前の持ち主の装備付き）。資金：<b>${money(p.funds)}</b></p>
   <div class="card" style="margin-bottom:12px"><h2>今の船：${esc(p.boat.name)}（${esc(cur.name)}）</h2>
     <p class="note">${cur.slots.map((sl) => `${sl.label}：${itemOf(p, sl.id) ? itemOf(p, sl.id).name : '空き'}`).map(esc).join('／')}</p></div>
+  <div style="margin-bottom:12px">${playtestCard(app)}</div>
   <div class="grid">${cards}</div>
   <div class="actions"><button type="button" class="btn primary" data-act="toPort">港に戻る</button><button type="button" class="btn" data-act="equip">装備</button></div></div>`;
 }
@@ -452,7 +469,8 @@ export function saveScreen(app) {
     <p class="note" style="margin-top:12px">または、コピーしておいたセーブの文字列を貼り付けて読み込む：</p>
     <textarea class="paste" id="pasteArea" placeholder="ここに貼り付け"></textarea>
     <div class="actions"><button type="button" class="btn" data-act="importPaste">貼り付けた内容を読み込む</button></div>
-    <p id="importResult" class="note"></p></div></div>
+    <p id="importResult" class="note"></p></div>
+  ${p ? playtestCard(app) : ''}</div>
   <div class="actions"><button type="button" class="btn primary" data-act="${p ? 'toPort' : 'toTitle'}">戻る</button></div></div>`;
 }
 

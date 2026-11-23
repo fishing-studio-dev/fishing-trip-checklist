@@ -12,6 +12,8 @@ export const KEYS = {
   backup: 'ryoshi-game:save:backup',
   quarantinePrefix: 'ryoshi-game:save:quarantine:',
   preMigrationPrefix: 'ryoshi-game:save:pre-migration:v',
+  // the player's own progress, kept aside while they try the playtest save
+  beforePlaytest: 'ryoshi-game:save:before-playtest',
 };
 
 export function memoryStorage(initial = {}) {
@@ -30,7 +32,7 @@ export function memoryStorage(initial = {}) {
 
 export function makeEnvelope(profile, revision, now = new Date().toISOString()) {
   const data = JSON.stringify(profile);
-  return { format: SAVE_FORMAT, schemaVersion: SAVE_SCHEMA, app: 'M0', revision, savedAt: now, checksum: hashString(data), data: profile };
+  return { format: SAVE_FORMAT, schemaVersion: SAVE_SCHEMA, app: 'M2', revision, savedAt: now, checksum: hashString(data), data: profile };
 }
 
 /** Parse + verify an envelope string. Returns {ok, envelope?, profile?, error?, newer?}. */

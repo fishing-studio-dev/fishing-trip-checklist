@@ -319,15 +319,19 @@ const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
     const pg = page;
     const st3 = st;
     await pg.goto(`http://localhost:${port}/?dev=1&seed=77`);
-    await pg.waitForSelector('#screen');
-    const rich = fs.readFileSync(path.join(__dirname, 'fixtures', 'm2-rich-save.json'), 'utf8');
-    await pg.evaluate((raw) => localStorage.setItem('ryoshi-game:save:main', raw), rich);
-    await pg.reload();
     await pg.waitForSelector('#portChart');
-    let s3 = await st3();
-    const before = { funds: s3.funds, slots: s3.slots, storage: s3.storage };
-    check('M2: test save (M1 progress, 100,000G) opens on the small boat', s3.funds === 100000 && s3.boatModel === 'skiff_1', JSON.stringify(before));
+    const own = await st3(); // the player's own progress from the playthrough above
+    const ownRaw = await pg.evaluate(() => localStorage.getItem('ryoshi-game:save:main'));
+    // the playtest save: one button on the boat market screen
     await pg.click('[data-act=market]');
+    await pg.click('[data-act=playtestLoad]');
+    await pg.click('[data-act=playtestLoadConfirm]');
+    await pg.waitForSelector('[data-act=playtestRestore]');
+    let s3 = await st3();
+    const kept = await pg.evaluate(() => localStorage.getItem('ryoshi-game:save:before-playtest'));
+    const before = { funds: s3.funds, slots: s3.slots, storage: s3.storage };
+    check('playtest save: one button switches to 100,000G on the small boat; own progress kept aside', s3.funds === 100000 && s3.boatModel === 'skiff_1' && s3.saveStatus.ok && kept === ownRaw, JSON.stringify(before));
+    await pg.screenshot({ path: path.join(outDir, '14a-playtest-loaded.png') });
     await pg.waitForSelector('[data-act=boatQuote][data-offer=used_cruiser_a]');
     const mText = await pg.textContent('#screen');
     check('market compares new and used boats with the shown performance and price after trade-in', /新艇/.test(mText) && /中古/.test(mText) && /魚倉/.test(mText) && /一本釣りの竿受け/.test(mText) && /差引の支払い/.test(mText));
@@ -415,6 +419,18 @@ const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
     await pg.waitForSelector('table.data');
     const lg = await pg.textContent('#screen');
     check('logbook records the boat and both reels for the trip', /中型漁船・手巻きリール＋手巻きリール/.test(lg), '');
+    // back to the player's own progress
+    await pg.click('[data-act=toPort]');
+    await pg.click('[data-act=openSave]');
+    await pg.click('[data-act=playtestRestore]');
+    await pg.click('[data-act=playtestRestoreConfirm]');
+    await pg.waitForSelector('#portChart');
+    const back = await st3();
+    const keptAfter = await pg.evaluate(() => localStorage.getItem('ryoshi-game:save:before-playtest'));
+    check('「自分の進行に戻す」 restores the own progress exactly (funds, day, levels, boat, gear)', back.funds === own.funds && back.day === own.day && back.xp === own.xp && back.trollXp === own.trollXp && back.boatModel === own.boatModel && JSON.stringify(back.slots) === JSON.stringify(own.slots) && keptAfter === null && back.saveStatus.ok, JSON.stringify({ own: own.funds, back: back.funds }));
+    await pg.reload();
+    await pg.waitForSelector('#portChart');
+    check('after reload the own progress is still there', (await st3()).funds === own.funds);
   } catch (e) {
     check('M2 boat purchase playthrough', false, e.message);
   }

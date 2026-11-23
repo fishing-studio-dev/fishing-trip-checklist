@@ -17,6 +17,7 @@ import { schoolCenter } from '../core/world.js';
 import { buildStaticMap, drawChart, drawBriefingChart, chartToWorld } from './chart.js';
 import { createSounderView } from './sounderView.js';
 import * as S from './screens.js';
+import { PLAYTEST_SAVE } from './playtestSave.js';
 
 const params = new URLSearchParams(location.search);
 const DEV = params.get('dev') === '1';
@@ -100,6 +101,7 @@ function show(screen) {
     return;
   }
   el.hidden = false;
+  app.inPlaytest = readKey(KEYS.beforePlaytest) != null;
   if (screen === 'port' || screen === 'log') preparePort();
   let html = '';
   switch (screen) {
@@ -693,6 +695,18 @@ document.addEventListener('click', (e) => {
       modal(null);
       show('market');
       break;
+    case 'playtestLoad':
+      playtestLoad();
+      break;
+    case 'playtestLoadConfirm':
+      playtestLoadConfirm();
+      break;
+    case 'playtestRestore':
+      playtestRestore();
+      break;
+    case 'playtestRestoreConfirm':
+      playtestRestoreConfirm();
+      break;
     case 'boatQuote':
       boatQuote(b.dataset.offer);
       break;
@@ -722,6 +736,75 @@ document.addEventListener('click', (e) => {
 });
 
 /** Before starting over on top of a save that couldn't be read, keep a copy. */
+function readKey(key) {
+  try {
+    return store.getItem(key);
+  } catch {
+    return null;
+  }
+}
+
+// ---------------------------------------------------------------- playtest save
+function playtestLoad() {
+  const own = app.profile && !app.inPlaytest;
+  modal(`<div class="card"><h2>試遊用セーブで遊ぶ</h2><p>資金100,000Gの試遊用の進行（小型和船・曳縄具付き、M1まで遊んだ状態）に切り替えます。</p>
+  ${own ? '<p class="note">今の自分の進行は別に残します。「船の買い替え」や「セーブ管理」の「自分の進行に戻す」でいつでも戻せます。</p>' : ''}
+  <div class="actions"><button type="button" class="btn primary" data-act="playtestLoadConfirm">切り替える</button><button type="button" class="btn" data-act="closeModal">やめる</button></div></div>`);
+}
+
+function playtestLoadConfirm() {
+  modal(null);
+  const res = checkImport(PLAYTEST_SAVE);
+  if (!res.ok) {
+    toast(`試遊用セーブを読めませんでした：${res.error}`);
+    return;
+  }
+  // keep the player's own progress aside (once: a second load keeps the original)
+  const raw = readKey(KEYS.main);
+  if (raw != null && readKey(KEYS.beforePlaytest) == null) {
+    try {
+      store.setItem(KEYS.beforePlaytest, raw);
+    } catch {
+      toast('今の進行を残せなかったため、切り替えを中止しました');
+      return;
+    }
+    if (readKey(KEYS.beforePlaytest) !== raw) {
+      toast('今の進行を残せなかったため、切り替えを中止しました');
+      return;
+    }
+  }
+  commit(resolveInterruptedVoyage(res.profile).profile, '試遊用セーブに切り替え');
+  app.notice = '試遊用セーブ（資金100,000G）に切り替えました。港の「船の買い替え」から試せます。';
+  show('market');
+  toast('試遊用セーブ（資金100,000G）に切り替えました');
+}
+
+function playtestRestore() {
+  modal(`<div class="card"><h2>自分の進行に戻す</h2><p>試遊用セーブに切り替える前の、自分の進行に戻します。試遊用セーブで進めた分はなくなります。</p>
+  <div class="actions"><button type="button" class="btn primary" data-act="playtestRestoreConfirm">戻す</button><button type="button" class="btn" data-act="closeModal">やめる</button></div></div>`);
+}
+
+function playtestRestoreConfirm() {
+  modal(null);
+  const raw = readKey(KEYS.beforePlaytest);
+  const res = checkImport(raw);
+  if (!res.ok) {
+    toast(`残しておいた進行を読めませんでした：${res.error}（データはそのまま残しています）`);
+    return;
+  }
+  const w = commit(resolveInterruptedVoyage(res.profile).profile, '自分の進行に戻す');
+  // the kept copy is cleared only once it is safely back in the main save
+  if (w.ok && !storageUnavailable) {
+    try {
+      store.removeItem(KEYS.beforePlaytest);
+    } catch {
+      /* keep it */
+    }
+  }
+  app.notice = '自分の進行に戻しました。';
+  show('port');
+}
+
 function preserveRawMain() {
   try {
     const raw = store.getItem(KEYS.main);
