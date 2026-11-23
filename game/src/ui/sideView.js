@@ -9,6 +9,21 @@ for (let i = 0; i < 256; i++) {
   LUT[i * 3 + 2] = Math.round(Math.min(255, 10 + v * 120));
 }
 
+/**
+ * Which stored line and across-track offset a point on the picture shows
+ * (same layout as drawSideView). Null outside the lines drawn so far.
+ */
+export function sideViewHit(canvas, side, px, py, range = 60) {
+  const W = canvas.clientWidth || canvas.width;
+  const H = canvas.clientHeight || canvas.height;
+  const rows = side || [];
+  const r = Math.floor(py / (H / 240));
+  if (r < 0 || r >= rows.length || px < 0 || px > W) return null;
+  const row = rows[rows.length - 1 - r];
+  if (row.x == null) return null;
+  return { row, offset: -range + (px / W) * 2 * range };
+}
+
 export function drawSideView(canvas, side, range = 60) {
   const dpr = Math.min(window.devicePixelRatio || 1, 2);
   const W = canvas.clientWidth || canvas.width;
@@ -65,4 +80,6 @@ export function drawSideView(canvas, side, range = 60) {
   ctx.fillText('船', W / 2, 11);
   ctx.textAlign = 'left';
   ctx.fillText('↓ 過去', 4, 12);
+  ctx.textAlign = 'right';
+  ctx.fillText('タップで印', W - 4, 12);
 }

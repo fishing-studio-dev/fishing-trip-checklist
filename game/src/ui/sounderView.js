@@ -149,5 +149,19 @@ export function createSounderView(canvas) {
       ctx.fillText(txt, x0 + 5, 16);
     }
   }
-  return { draw };
+  /**
+   * Which ping column and depth a point on the picture shows (same layout as
+   * draw, newest at the right edge). Null outside the picture or the history.
+   */
+  function hit(obs, px, py) {
+    const cssW = canvas.clientWidth || canvas.width;
+    const cssH = canvas.clientHeight || canvas.height;
+    const plotW = Math.max(60, Math.floor(cssW - 34));
+    if (px < 0 || px >= plotW || py < 0 || py >= cssH) return null;
+    const cols = obs.cols;
+    const col = cols[cols.length - plotW + Math.floor(px)];
+    if (!col) return null;
+    return { col, depth: (py / Math.floor(cssH)) * range };
+  }
+  return { draw, hit };
 }

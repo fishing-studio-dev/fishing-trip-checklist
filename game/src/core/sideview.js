@@ -7,6 +7,11 @@ import { depthAt, bottomIsRocky } from './sea.js';
 import { densityAt, posesAt } from './world.js';
 import { hashFloat } from './rng.js';
 
+/** World position of a point on a stored side-view line (offset < 0 = port). */
+export function sideToWorld(row, offset) {
+  return { x: row.x + Math.cos(row.h) * offset, y: row.y - Math.sin(row.h) * offset };
+}
+
 /** One across-track line: {vals: Uint8Array(n), depths: number[], offsets: number[]}. */
 export function sideColumn(world, x, y, heading, spec, pingIndex) {
   const R = spec.side.range;

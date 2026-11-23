@@ -195,7 +195,8 @@ export function portScreen(app) {
   <div class="card full brief"><h2>今日の海図 — 狙いの候補</h2>
     <div class="brief-grid">
       <div class="brief-chart"><canvas id="portChart" width="380" height="380"></canvas>
-        <p class="note">● 水揚げ ◎ 魚探の反応 △ 目撃 × 反応なし（仲間が観測した地点・時刻。今の魚の位置ではありません）　A〜D 候補</p></div>
+        <p class="note">● 水揚げ ◎ 魚探の反応 △ 目撃 × 反応なし（仲間が観測した地点・時刻。今の魚の位置ではありません）　A〜D 候補${(p.marks || []).length ? '　黄色は自分の印（▲現在地 ■魚探 ◆左右 ✚ソナー）' : ''}</p>
+        <div class="actions"><button type="button" class="btn small" data-act="marks">自分の印の一覧（${(p.marks || []).length}）</button></div></div>
       <div class="cands">${cands.map((c) => candidateCard(c, today, p)).join('')}</div>
     </div>
     ${crewChoice(app)}
@@ -552,8 +553,49 @@ export function helpModal() {
   <li><b>G</b> 航路で移動：拡大した海図をクリックして経由点（行き先）を置き、G でその順に走って終点で止まる（どの漁法でも。操船すると取り消し）</li>
   <li><b>L</b> 揚げ縄（延縄：縄を浸けているとき。遠ければブイまで移動補助で向かってから揚げる）</li>
   <li><b>M</b> 海図に印、<b>F</b> 魚探の表示切替、<b>V</b> 視点切替（操船 → 作業 → 甲板を歩く）、<b>1 / 2 / 3</b> 時間の早さ、<b>P</b> 一時停止</li>
+  <li><b>印</b>：<b>M</b> で現在地に印。魚探・サイドビュー・ソナーの画面をタップ（クリック）すると、その反応の位置に印。<b>K</b>（海図の「印」）で印の一覧：名前・メモ・消す・海図で見る・「ここへ」（その印へまっすぐ移動）。印は帰港すると残り、翌日以降の海図と港の海図にも出ます。</li>
+  <li><b>O</b> ソナー（積んでいるとき）。魚探パネルの「左右」でサイドビュー（サイドビュー魚探のとき）。</li>
   <li><b>甲板を歩く</b>：W/S で前後、A/D で向き。画面の持ち場ボタン（操舵席・右舷・船尾・魚倉など）で移動。操業中は釣り人が持ち場で作業するので歩けません。歩いても海や漁獲は変わりません。</li>
   <li><b>スマホ</b>：画面下のボタンで同じ操作ができます。舵のボタンは押している間だけ効きます。曳縄の航路は、海図の「拡大」を押してから海図をタップ。</li></ul>
   <p class="note">探す・決めるのはあなた、作業は自動。一本釣りは魚探の反応の潮上で止まって流す。曳縄は群れがいそうな場所を通る航路を決める（自動航行は決めた航路を走るだけで、魚を探しに行くことはありません）。表示の切替で海や魚が変わることはありません。</p>
   <div class="actions"><button type="button" class="btn primary" data-act="closeModal">閉じる</button></div></div>`;
+}
+
+// ---------------------------------------------------------------- the player's marks (印)
+const KIND_ICON = { manual: '▲', sounder: '■', side: '◆', sonar: '✚' };
+
+/**
+ * The list of marks (saved and, at sea, today's): name, how it was made, when,
+ * the depths read then, distance/bearing from the boat; rename, memo, delete,
+ * and at sea a straight run to it. `editKey` opens the form for one row,
+ * `delKey` asks before deleting one.
+ */
+export function marksList(rows, { atSea = false, editKey = null, delKey = null, kinds = {}, limits = {} } = {}) {
+  const fmtDay = (r) => (r.source === 'voyage' ? '今日' : `${r.day}日目`);
+  const body = rows.length
+    ? rows
+        .map((r) => {
+          const kind = kinds[r.kind] ? kinds[r.kind].label : '印';
+          const depths = [r.depth != null ? `水深${r.depth}m` : '', r.echo != null ? `反応${Math.round(r.echo)}m` : ''].filter(Boolean).join('・');
+          const where = atSea && r.dist != null ? `<span class="mk-dist">${r.dist >= 1000 ? `${(r.dist / 1000).toFixed(1)}km` : `${Math.round(r.dist)}m`} ${r.bearing.name}</span>` : '';
+          let tail = '';
+          if (editKey === r.key) {
+            tail = `<div class="mk-form"><label>名前 <input type="text" id="markName" maxlength="${limits.name || 16}" value="${esc(r.name)}" placeholder="${esc(r.title)}"></label>
+              <label>メモ <input type="text" id="markMemo" maxlength="${limits.memo || 60}" value="${esc(r.memo)}" placeholder="例：朝、底から5mに反応"></label>
+              <div class="actions"><button type="button" class="btn primary small" data-act="markSave" data-key="${esc(r.key)}">保存</button><button type="button" class="btn small" data-act="marks">やめる</button></div></div>`;
+          } else if (delKey === r.key) {
+            tail = `<div class="mk-form"><p>「${esc(r.title)}」を消します。元に戻せません。</p><div class="actions"><button type="button" class="btn warn small" data-act="markDelYes" data-key="${esc(r.key)}">消す</button><button type="button" class="btn small" data-act="marks">やめる</button></div></div>`;
+          }
+          return `<li class="mk-row${r.source === 'voyage' ? ' today' : ''}" data-key="${esc(r.key)}">
+            <div class="mk-main"><span class="mk-icon" title="${esc(kind)}">${KIND_ICON[r.kind] || '▲'}</span><b>${esc(r.title)}</b> <span class="sub">${esc(kind)}・${fmtDay(r)} ${fmtClock(r.t)}${depths ? `・${depths}` : ''}</span> ${where}</div>
+            ${r.memo ? `<div class="mk-memo">${esc(r.memo)}</div>` : ''}
+            <div class="mk-acts">${atSea ? `<button type="button" class="btn small" data-act="markGo" data-key="${esc(r.key)}" title="この印へまっすぐ移動（移動補助）">ここへ</button>` : ''}<button type="button" class="btn small" data-act="markShow" data-key="${esc(r.key)}">海図で見る</button><button type="button" class="btn small" data-act="markEdit" data-key="${esc(r.key)}">名前・メモ</button><button type="button" class="btn small" data-act="markDel" data-key="${esc(r.key)}">消す</button></div>
+            ${tail}</li>`;
+        })
+        .join('')
+    : '<li class="note">まだ印がありません。海で M（現在地）、魚探・サイドビュー・ソナーの画面のタップで付けられます。</li>';
+  return `<div class="card marks-card"><h2>自分の印 <span class="tag">${rows.length}</span></h2>
+    <p class="note">印は見たときの位置・時刻・水深の記録です（今そこに魚がいるとは限りません）。帰港すると残り、翌日以降の海図と港の海図にも出ます。${atSea ? '開いている間、海は止まっています。' : ''}</p>
+    <ul class="mk-list">${body}</ul>
+    <div class="actions"><button type="button" class="btn" data-act="closeModal">閉じる</button></div></div>`;
 }

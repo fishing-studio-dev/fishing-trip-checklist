@@ -6,7 +6,7 @@ import { loadSave, writeSave, exportSave, checkImport, memoryStorage, KEYS } fro
 import {
   createVoyage, advanceVoyage, isOperating, isTrolling, setHelm, setMethod, startOperation, stopOperation, redrift, returnToPort,
   nearPort, addManualMark, summarizeVoyage, canStartOperation, addRoutePoint, clearRoute, trollRouteFrom,
-  isLonglining, lineInWater, haulLongline, lineRouteFrom, runRoute, addMarkAt, cycleSonarRange,
+  isLonglining, lineInWater, haulLongline, lineRouteFrom, runRoute, addMarkAt, cycleSonarRange, editVoyageMark, removeVoyageMark, routeTo,
 } from '../core/voyage.js';
 import { sonarToWorld } from '../core/sonar.js';
 import { longlineLabel, baitLeft, nearestBuoy, buoys } from '../core/longline.js';
@@ -18,7 +18,9 @@ import { fmtClock, compass8, areaNameAt, currentAt, makeDayConditions, forecastO
 import { levelFromXp } from '../core/progress.js';
 import { schoolCenter } from '../core/world.js';
 import { buildStaticMap, drawChart, drawBriefingChart, chartToWorld, worldToChart, bathyCanvas } from './chart.js';
-import { drawSideView } from './sideView.js';
+import { drawSideView, sideViewHit } from './sideView.js';
+import { markList, editSavedMark, removeSavedMark, MARK_KINDS, MARK_LIMITS } from '../core/marks.js';
+import { sideToWorld } from '../core/sideview.js';
 import { drawSonar, sonarTap } from './sonarView.js';
 import { cellsFromBathy } from '../core/bathy.js';
 import { createSounderView } from './sounderView.js';
@@ -71,6 +73,7 @@ const app = {
   lastFeed: '',
   hosted: !!BUILD.hosted,
   hireCrew: false, // today's choice at port (a deckhand for one voyage)
+  markSel: null, // the mark picked in the list ('s:M3' saved / 'v:5' today's), ringed on the charts
 };
 
 function commit(profile, reason) {
@@ -145,7 +148,7 @@ function show(screen) {
   el.scrollTop = 0;
   if (screen === 'port') {
     const c = $('portChart');
-    if (c) drawBriefingChart(c, staticMap, { candidates: app.candidates, reports: chartReports(app.profile.knowledge.reports, app.profile.day + 1), boatModel: app.profile.boat.model, bathy: bathyCanvas(ownCells(), null) });
+    if (c) drawBriefingChart(c, staticMap, { candidates: app.candidates, reports: chartReports(app.profile.knowledge.reports, app.profile.day + 1), boatModel: app.profile.boat.model, bathy: bathyCanvas(ownCells(), null), marks: app.profile.marks, selected: app.markSel });
   }
   if (screen === 'equip') drawSounderDemos(el);
   if (screen === 'save') {
@@ -553,6 +556,76 @@ function cmd(name) {
  * accidental press would end the soak). The sea is paused while the question
  * is open; Space cannot answer it — only a tap / click on the button.
  */
+// ---------------------------------------------------------------- the player's marks
+function marksModal(opts = {}) {
+  if (!app.profile) return;
+  const atSea = app.screen === 'sea' && !!app.voyage;
+  modal(S.marksList(markList(app.profile, atSea ? app.voyage : null), { atSea, kinds: MARK_KINDS, limits: MARK_LIMITS, ...opts }));
+  if (opts.editKey && $('markName')) $('markName').focus();
+}
+
+function markAction(act, key) {
+  const atSea = app.screen === 'sea' && !!app.voyage;
+  const v = atSea ? app.voyage : null;
+  const row = markList(app.profile, v).find((r) => r.key === key);
+  if (!row) {
+    marksModal();
+    toast('その印は見つかりません');
+    return;
+  }
+  const refreshPort = () => app.screen === 'port' && show('port');
+  switch (act) {
+    case 'markEdit':
+      marksModal({ editKey: key });
+      break;
+    case 'markSave': {
+      const name = $('markName') ? $('markName').value : undefined;
+      const memo = $('markMemo') ? $('markMemo').value : undefined;
+      if (row.source === 'voyage') editVoyageMark(v, row.id, { name, memo });
+      else {
+        const r = editSavedMark(app.profile, row.id, { name, memo });
+        if (r.ok) commit(r.profile, '印を編集した');
+      }
+      refreshPort();
+      marksModal();
+      toast('印を保存しました');
+      break;
+    }
+    case 'markDel':
+      marksModal({ delKey: key });
+      break;
+    case 'markDelYes': {
+      if (row.source === 'voyage') removeVoyageMark(v, row.id);
+      else {
+        const r = removeSavedMark(app.profile, row.id);
+        if (r.ok) commit(r.profile, '印を消した');
+      }
+      if (app.markSel === key) app.markSel = null;
+      refreshPort();
+      marksModal();
+      toast(`「${row.title}」を消しました`);
+      break;
+    }
+    case 'markGo': {
+      const r = routeTo(v, { x: row.x, y: row.y });
+      modal(null);
+      app.markSel = key;
+      toast(r.ok ? `「${row.title}」へ向かいます（移動補助・操船で取り消し）` : r.reason);
+      updateHudStatic();
+      break;
+    }
+    case 'markShow':
+      app.markSel = key;
+      modal(null);
+      if (atSea) app.chartBig = true;
+      refreshPort();
+      toast(`「${row.title}」を白い丸で示しています`);
+      if (atSea) updateHudStatic();
+      break;
+    default:
+  }
+}
+
 function haulAsk(then) {
   const v = app.voyage;
   if (!v || !v.line || v.line.state !== 'soaking') {
@@ -631,6 +704,11 @@ function toggle(name) {
 const held = { left: false, right: false, wf: false, wb: false, wl: false, wr: false };
 let lastRudderInput = 0;
 document.addEventListener('keydown', (e) => {
+  if (e.target && (e.target.id === 'markName' || e.target.id === 'markMemo') && e.key === 'Enter') {
+    const save = document.querySelector('[data-act=markSave]');
+    if (save) save.click();
+    return;
+  }
   if (e.target && (e.target.tagName === 'INPUT' || e.target.tagName === 'TEXTAREA')) return;
   if (!$('modal').hidden) {
     if (e.key === 'Escape') modal(null);
@@ -683,6 +761,9 @@ document.addEventListener('keydown', (e) => {
       break;
     case 'o':
       if (app.voyage && app.voyage.sonar) toggle('sonar');
+      break;
+    case 'k':
+      marksModal();
       break;
     case 'g':
       cmd('route');
@@ -770,6 +851,29 @@ document.addEventListener('contextmenu', (e) => {
 document.addEventListener('pointercancel', releaseHold);
 
 $('chart').addEventListener('click', onChartClick);
+// tap the sounder picture: a mark where that column was taken (the boat has moved on since)
+$('sounder').addEventListener('click', (ev) => {
+  const v = app.voyage;
+  if (!v || app.screen !== 'sea') return;
+  const r = $('sounder').getBoundingClientRect();
+  const h = sounderView.hit(v.obs, ev.clientX - r.left, ev.clientY - r.top);
+  if (!h) return;
+  const echo = h.depth < h.col.bottom - 0.3 ? h.depth : null;
+  addMarkAt(v, h.col.x, h.col.y, 'sounder', { echo, bottom: h.col.bottom });
+  const back = Math.round(Math.hypot(v.boat.x - h.col.x, v.boat.y - h.col.y));
+  toast(echo != null ? `魚探の反応（${Math.round(echo)}m）の位置に印・${back}m後ろ` : `魚探のその位置に印・${back}m後ろ`);
+});
+// tap the side view: a mark on that echo to port or starboard
+$('sideview').addEventListener('click', (ev) => {
+  const v = app.voyage;
+  if (!v || app.screen !== 'sea' || !v.equip.sounder.side) return;
+  const r = $('sideview').getBoundingClientRect();
+  const h = sideViewHit($('sideview'), v.obs.side, ev.clientX - r.left, ev.clientY - r.top, v.equip.sounder.side.range);
+  if (!h) return;
+  const p = sideToWorld(h.row, h.offset);
+  addMarkAt(v, p.x, p.y, 'side');
+  toast(`${h.offset < 0 ? '左舷' : '右舷'}${Math.round(Math.abs(h.offset))}mの反応に印`);
+});
 // tap the sonar picture: a mark at that echo
 $('sonar').addEventListener('click', (ev) => {
   const v = app.voyage;
@@ -904,6 +1008,17 @@ document.addEventListener('click', (e) => {
       break;
     case 'haulConfirm':
       haulConfirm(b.dataset.then);
+      break;
+    case 'marks':
+      marksModal();
+      break;
+    case 'markEdit':
+    case 'markSave':
+    case 'markDel':
+    case 'markDelYes':
+    case 'markGo':
+    case 'markShow':
+      markAction(act, b.dataset.key);
       break;
     case 'sounder':
     case 'sonar':
@@ -1351,7 +1466,7 @@ function frame(now) {
       bathyAt = now;
       bathyNow = bathyCanvas(ownCells(), v.bathy && v.bathy.cells);
     }
-    drawChart($('chart'), staticMap, v, { big: app.chartBig, dev: DEV, reports: reps, route, hint, line: showLine, lineLabel: showLine ? longlineLabel(showLine, v.op, v.world.time) : '', bathy: bathyNow });
+    drawChart($('chart'), staticMap, v, { big: app.chartBig, dev: DEV, reports: reps, route, hint, line: showLine, lineLabel: showLine ? longlineLabel(showLine, v.op, v.world.time) : '', bathy: bathyNow, saved: app.profile.marks, selected: app.markSel });
     if (app.sonarOpen && v.sonar && now - sonarAt > 150) {
       sonarAt = now;
       const marks = [...(app.profile.marks || []), ...v.obs.marks.filter((m) => m.kind !== 'auto')];

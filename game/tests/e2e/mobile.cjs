@@ -186,6 +186,17 @@ async function layout(page) {
       await sleep(300);
       const sb = await page.evaluate(() => window.__ryoshi.state());
       check(`${name}: used boat bought by touch and saved`, sb.boatModel === 'cruiser_2' && sb.funds === 300000 - 70000 && sb.saveStatus.ok, `funds ${sb.funds}`);
+      // the marks list (item 5) opens from the port by touch and fits the screen
+      if (await page.isVisible('#modal [data-act=closeModal]')) await page.tap('#modal [data-act=closeModal]'); // the purchase lands on the port screen
+      await page.waitForSelector('#screen [data-act=marks]');
+      await page.locator('#screen [data-act=marks]').scrollIntoViewIfNeeded();
+      await page.tap('#screen [data-act=marks]');
+      await page.waitForSelector('.mk-list');
+      const mk = await page.evaluate(() => {
+        const c = document.querySelector('#modal .card').getBoundingClientRect();
+        return { left: c.left, right: c.right, top: c.top, bottom: c.bottom, vw: window.innerWidth, vh: window.innerHeight };
+      });
+      check(`${name}: the marks list opens by touch and fits the screen`, mk.left >= 0 && mk.right <= mk.vw + 1 && mk.top >= 0 && mk.bottom <= mk.vh + 1, JSON.stringify(mk));
     } catch (e) {
       check(`${name}: playtest ran`, false, e.message);
       await page.screenshot({ path: path.join(outDir, `${slug}-99-failure.png`) }).catch(() => {});

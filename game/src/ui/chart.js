@@ -4,6 +4,55 @@
 import { AREA, PORT, BOATS } from '../core/data.js';
 import { baseDepthAt, isLand, CHART_LABELS, fmtClock, STRUCTURES, STRUCTURE_LABEL } from '../core/sea.js';
 import { schoolCenter, schoolTotal } from '../core/world.js';
+import { markTitle } from '../core/marks.js';
+
+/**
+ * One of the player's marks: the shape tells how it was made (▲ the boat's
+ * place, ■ a sounder echo, ◆ a side-view echo, ✚ a sonar echo). Marks from
+ * earlier days are a little darker. `label` is drawn beside it when given.
+ */
+export function drawMarkSymbol(ctx, m, px, py, { old = false, label = '', selected = false } = {}) {
+  ctx.save();
+  ctx.fillStyle = old ? '#d9b93a' : '#ffe14d';
+  ctx.strokeStyle = 'rgba(10,16,30,0.9)';
+  ctx.lineWidth = 1.5;
+  ctx.beginPath();
+  if (m.kind === 'sounder') ctx.rect(px - 4, py - 4, 8, 8);
+  else if (m.kind === 'side') {
+    ctx.moveTo(px, py - 6);
+    ctx.lineTo(px + 5, py);
+    ctx.lineTo(px, py + 6);
+    ctx.lineTo(px - 5, py);
+    ctx.closePath();
+  } else if (m.kind === 'sonar') {
+    ctx.rect(px - 1.8, py - 6, 3.6, 12);
+    ctx.rect(px - 6, py - 1.8, 12, 3.6);
+  } else {
+    ctx.moveTo(px, py - 6);
+    ctx.lineTo(px + 5, py + 3);
+    ctx.lineTo(px - 5, py + 3);
+    ctx.closePath();
+  }
+  ctx.stroke();
+  ctx.fill();
+  if (selected) {
+    ctx.strokeStyle = '#ffffff';
+    ctx.lineWidth = 2;
+    ctx.beginPath();
+    ctx.arc(px, py, 11, 0, Math.PI * 2);
+    ctx.stroke();
+  }
+  if (label) {
+    ctx.font = '11px sans-serif';
+    ctx.textAlign = 'left';
+    ctx.lineWidth = 3;
+    ctx.strokeStyle = 'rgba(6,14,28,0.85)';
+    ctx.strokeText(label, px + 7, py + 4);
+    ctx.fillStyle = old ? 'rgba(240,222,160,0.95)' : 'rgba(255,240,190,0.98)';
+    ctx.fillText(label, px + 7, py + 4);
+  }
+  ctx.restore();
+}
 
 const RES = 10; // metres per pixel of the static map
 
@@ -265,7 +314,7 @@ function drawLongline(ctx, line, toPx, label) {
 /**
  * Draw the chart at sea. opts: { big, dev, reports: [{r, label}], route: {points, live}, hint, line, lineLabel }
  */
-export function drawChart(canvas, staticMap, v, { big = false, dev = false, reports = [], route = null, hint = '', line = null, lineLabel = '', bathy = null } = {}) {
+export function drawChart(canvas, staticMap, v, { big = false, dev = false, reports = [], route = null, hint = '', line = null, lineLabel = '', bathy = null, saved = [], selected = null } = {}) {
   const dpr = Math.min(window.devicePixelRatio || 1, 2);
   const cssW = canvas.clientWidth || canvas.width;
   const cssH = canvas.clientHeight || canvas.height;
@@ -323,21 +372,29 @@ export function drawChart(canvas, staticMap, v, { big = false, dev = false, repo
   }
   // (no automatic catch records on the chart: the player marks what matters with M)
   // marks: observation points with their time (not current fish positions)
+  // (labels only on the enlarged chart, or when the player named the mark)
   ctx.textAlign = 'left';
+  const off = (px, py) => px < -20 || py < -20 || px > W + 20 || py > H + 20;
+  for (const m of saved) {
+    const [px, py] = toPx(m.x, m.y);
+    if (off(px, py)) continue;
+    drawMarkSymbol(ctx, m, px, py, { old: true, label: big || m.name ? markTitle(m) : '', selected: selected === `s:${m.id}` });
+  }
   for (const m of v.obs.marks) {
     const [px, py] = toPx(m.x, m.y);
-    if (px < -20 || py < -20 || px > W + 20 || py > H + 20) continue;
-    ctx.fillStyle = m.kind === 'auto' ? '#ff9f43' : '#ffe14d';
-    ctx.beginPath();
-    if (m.kind === 'auto') ctx.arc(px, py, 3.5, 0, Math.PI * 2);
-    else {
-      ctx.moveTo(px, py - 6);
-      ctx.lineTo(px + 5, py + 3);
-      ctx.lineTo(px - 5, py + 3);
+    if (off(px, py)) continue;
+    if (m.kind === 'auto') {
+      ctx.fillStyle = '#ff9f43';
+      ctx.beginPath();
+      ctx.arc(px, py, 3.5, 0, Math.PI * 2);
+      ctx.fill();
+      if (big) {
+        ctx.fillStyle = 'rgba(255,230,190,0.9)';
+        ctx.fillText(fmtClock(m.t), px + 5, py + 11);
+      }
+      continue;
     }
-    ctx.fill();
-    ctx.fillStyle = 'rgba(255,230,190,0.95)';
-    ctx.fillText(fmtClock(m.t), px + 5, py + 11);
+    drawMarkSymbol(ctx, m, px, py, { label: big || m.name ? markTitle(m, true) : '', selected: selected === `v:${m.id}` });
   }
   // peers' observations (where and when they were made)
   for (const { r, label } of reports) {
@@ -470,7 +527,7 @@ export function drawChart(canvas, staticMap, v, { big = false, dev = false, repo
 }
 
 /** Port briefing chart: whole area, candidates, peers' observations and own operation spots. */
-export function drawBriefingChart(canvas, staticMap, { candidates = [], reports = [], boatModel = null, bathy = null }) {
+export function drawBriefingChart(canvas, staticMap, { candidates = [], reports = [], boatModel = null, bathy = null, marks = [], selected = null }) {
   const dpr = Math.min(window.devicePixelRatio || 1, 2);
   const cssW = canvas.clientWidth || canvas.width;
   const cssH = canvas.clientHeight || canvas.height;
@@ -504,6 +561,11 @@ export function drawBriefingChart(canvas, staticMap, { candidates = [], reports 
     if (!r.spot) continue;
     const [px, py] = toPx(r.spot.x, r.spot.y);
     drawReportMarker(ctx, r, px, py, label, true);
+  }
+  // the player's own marks (names only when given, to keep the chart readable)
+  for (const m of marks) {
+    const [px, py] = toPx(m.x, m.y);
+    drawMarkSymbol(ctx, m, px, py, { old: true, label: m.name || selected === `s:${m.id}` ? markTitle(m) : '', selected: selected === `s:${m.id}` });
   }
   for (const c of candidates) {
     if (!c.spot) continue;

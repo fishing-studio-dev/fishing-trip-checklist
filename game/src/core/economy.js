@@ -6,6 +6,7 @@ import { addHeardReports } from './knowledge.js';
 import { clone } from './profile.js';
 import { xpForVoyage, levelFromXp } from './progress.js';
 import { mergeBathy } from './bathy.js';
+import { keepVoyageMarks } from './marks.js';
 
 const MAX_LOGS = 500;
 
@@ -69,11 +70,7 @@ export function settleVoyage(profile, summary) {
   if (summary.heard && summary.heard.length) addHeardReports(p, summary.heard);
   // the own depth map and the marks made at sea are kept across days
   if (summary.bathyCells && Object.keys(summary.bathyCells).length) p.bathy = mergeBathy(p.bathy, summary.bathyCells);
-  for (const m of summary.marks || []) {
-    p.markSeq += 1;
-    p.marks.push({ id: `M${p.markSeq}`, x: Math.round(m.x), y: Math.round(m.y), name: m.name || '', memo: m.memo || '', day: summary.day, t: Math.round(m.t), kind: m.kind || 'manual', depth: m.bottom != null ? Math.round(m.bottom * 10) / 10 : m.depth != null ? m.depth : null });
-  }
-  if (p.marks.length > 300) p.marks.splice(0, p.marks.length - 300);
+  keepVoyageMarks(p, summary.marks, summary.day);
 
   p.settledVoyages.push(summary.id);
   if (p.settledVoyages.length > 200) p.settledVoyages.shift();

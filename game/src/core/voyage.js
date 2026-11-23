@@ -7,6 +7,7 @@ import { createWorld } from './world.js';
 import { createBoatRuntime, stepBoat, autopilotCommand, routeToPort, clearPath } from './boat.js';
 import { createObservation, pingColumn, pushColumn } from './sounder.js';
 import { sideColumn } from './sideview.js';
+import { MARK_KINDS, MARK_LIMITS, cleanText, newVoyageMark, pushVoyageMark } from './marks.js';
 import { recordDepth } from './bathy.js';
 import { createSonar, stepSonar } from './sonar.js';
 import { createOperation, stepOperation, requestStop, inFlightKg } from './fishing.js';
@@ -213,7 +214,8 @@ export function stepVoyage(v) {
     if (v.equip.sounder.side) {
       const side = sideColumn(w, v.boat.x, v.boat.y, v.boat.heading, v.equip.sounder, v.obs.pingCount);
       if (!v.obs.side) v.obs.side = [];
-      v.obs.side.push({ t: side.t, vals: side.vals });
+      // where each line was taken, so a tap on the picture can be put back on the chart
+      v.obs.side.push({ t: side.t, vals: side.vals, x: Math.round(v.boat.x * 10) / 10, y: Math.round(v.boat.y * 10) / 10, h: Math.round(v.boat.heading * 1000) / 1000 });
       if (v.obs.side.length > 240) v.obs.side.shift();
       if (v.equip.sounder.mapping) {
         recordDepth(v.bathy.cells, v.boat.x, v.boat.y, col.bottomCenter);
@@ -294,8 +296,7 @@ function maybeAutoMark(v, col) {
   if (col.maxFish < 0.5) return;
   const last = o.marks.filter((m) => m.kind === 'auto').slice(-1)[0];
   if (last && v.world.time - last.t < 90 && Math.hypot(last.x - col.x, last.y - col.y) < 120) return;
-  o.marks.push({ id: o.markSeq++, kind: 'auto', x: col.x, y: col.y, t: col.t, depth: col.fishDepth, bottom: col.bottom });
-  if (o.marks.length > 80) o.marks.shift();
+  pushVoyageMark(o, { id: o.markSeq++, kind: 'auto', x: col.x, y: col.y, t: col.t, depth: col.fishDepth, bottom: col.bottom });
 }
 
 /** Next sonar range (the old picture was drawn at another scale, so it is cleared). */
@@ -307,20 +308,70 @@ export function cycleSonarRange(v) {
   return sn.range;
 }
 
-/** A mark at a chosen point (e.g. a sonar echo), with the depth there. */
-export function addMarkAt(v, x, y, kind = 'manual') {
+/**
+ * A mark at a chosen point: a sonar echo, a side-view echo or a past sounder
+ * column (the boat has moved on since). The depths are what the instruments
+ * showed — the bottom there, and the echo depth when the player picked one.
+ */
+export function addMarkAt(v, x, y, kind = 'manual', { echo = null, bottom = null } = {}) {
   const o = v.obs;
-  o.marks.push({ id: o.markSeq++, kind, x, y, t: v.world.time, depth: null, bottom: Math.round(depthAt(x, y) * 10) / 10 });
-  if (o.marks.length > 80) o.marks.shift();
-  say(v, kind === 'sonar' ? 'ソナーの反応の位置に印を付けました。' : '印を付けました。');
+  const m = newVoyageMark(o, MARK_KINDS[kind] ? kind : 'manual', x, y, v.world.time, { echo, bottom });
+  pushVoyageMark(o, m);
+  say(v, `${(MARK_KINDS[m.kind] || MARK_KINDS.manual).label}の位置に印を付けました。`);
+  return m;
 }
 
+/** M: a mark where the boat is now, with what the sounder shows under it. */
 export function addManualMark(v) {
   const o = v.obs;
   const col = o.cols[o.cols.length - 1];
-  o.marks.push({ id: o.markSeq++, kind: 'manual', x: v.boat.x, y: v.boat.y, t: v.world.time, depth: col ? col.fishDepth : null, bottom: col ? col.bottom : null });
-  if (o.marks.length > 80) o.marks.shift();
+  const m = newVoyageMark(o, 'manual', v.boat.x, v.boat.y, v.world.time, { echo: col ? col.fishDepth : null, bottom: col ? col.bottom : null });
+  pushVoyageMark(o, m);
   say(v, '現在地に印を付けました。');
+  return m;
+}
+
+/** Name / memo for one of today's marks. */
+export function editVoyageMark(v, id, { name, memo }) {
+  const m = v.obs.marks.find((x) => x.id === id && x.kind !== 'auto');
+  if (!m) return { ok: false, reason: 'その印は見つかりません。' };
+  if (name !== undefined) m.name = cleanText(name, MARK_LIMITS.name);
+  if (memo !== undefined) m.memo = cleanText(memo, MARK_LIMITS.memo);
+  return { ok: true };
+}
+
+/** Delete one of today's marks. */
+export function removeVoyageMark(v, id) {
+  const i = v.obs.marks.findIndex((x) => x.id === id && x.kind !== 'auto');
+  if (i < 0) return { ok: false, reason: 'その印は見つかりません。' };
+  v.obs.marks.splice(i, 1);
+  return { ok: true };
+}
+
+/**
+ * Run straight to a point (a mark): the planned route is replaced by this one
+ * point and the boat runs there and stops (movement assistance; steering
+ * cancels it). It never looks for fish.
+ */
+export function routeTo(v, p) {
+  if (isTrolling(v)) return { ok: false, reason: '曳縄中は使えません（曳く航路は海図で決めてください）。' };
+  if (isLonglining(v)) return { ok: false, reason: v.op.kind === 'set' ? '投縄中です。' : '揚げ縄中です。' };
+  const keepRoute = v.plannedRoute;
+  const keepAp = v.autopilot;
+  v.plannedRoute = [];
+  if (v.autopilot && v.autopilot.kind === 'route') v.autopilot = null;
+  const r = addRoutePoint(v, p);
+  if (!r.ok) {
+    v.plannedRoute = keepRoute;
+    v.autopilot = keepAp;
+    return r;
+  }
+  const run = runRoute(v);
+  if (!run.ok) {
+    v.plannedRoute = keepRoute;
+    v.autopilot = keepAp;
+  }
+  return run;
 }
 
 function runAutopilot(v, model) {
