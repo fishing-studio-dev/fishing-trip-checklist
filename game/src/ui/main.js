@@ -16,7 +16,7 @@ import { linePhaseLabel, recentPace } from '../core/fishing.js';
 import { fmtClock, compass8, areaNameAt, currentAt, makeDayConditions, forecastOf } from '../core/sea.js';
 import { levelFromXp } from '../core/progress.js';
 import { schoolCenter } from '../core/world.js';
-import { buildStaticMap, drawChart, drawBriefingChart, chartToWorld } from './chart.js';
+import { buildStaticMap, drawChart, drawBriefingChart, chartToWorld, worldToChart } from './chart.js';
 import { createSounderView } from './sounderView.js';
 import * as S from './screens.js';
 import { PLAYTEST_SAVE } from './playtestSave.js';
@@ -139,7 +139,7 @@ function show(screen) {
   el.scrollTop = 0;
   if (screen === 'port') {
     const c = $('portChart');
-    if (c) drawBriefingChart(c, staticMap, { candidates: app.candidates, reports: chartReports(app.profile.knowledge.reports, app.profile.day + 1), logs: app.profile.logs });
+    if (c) drawBriefingChart(c, staticMap, { candidates: app.candidates, reports: chartReports(app.profile.knowledge.reports, app.profile.day + 1), logs: app.profile.logs, boatModel: app.profile.boat.model });
   }
   if (screen === 'save') {
     const f = $('importFile');
@@ -1058,6 +1058,7 @@ function updateHud(now) {
   if (hudMode().tuck) html += '<button type="button" class="chip chip-btn" data-act="chart">海図を見る</button>';
   if (b.grounded) html += chip('注意', '浅瀬・陸', 'warn');
   if (b.outOfBounds) html += chip('注意', '漁場の外', 'warn');
+  if (b.atRangeLimit) html += chip('注意', '航行区域の境（この船はここまで）', 'warn');
   if (DEV) html += chip('DEV', `${Math.round(b.x)},${Math.round(b.y)}`, 'warn');
   $('hudTop').innerHTML = html;
 
@@ -1078,7 +1079,7 @@ function updateHud(now) {
       ${op.kind === 'set'
         ? bigNums([['張った針', line.hooks.length, `/${line.gear.hooks}本`, ''], ['速さ', (Math.abs(b.speed) * 1.944).toFixed(1), 'kt', ''], holdNum])
         : bigNums([['この縄', op.landedCount, '枚', `${op.landedKg.toFixed(1)}kg`], ['浸け', soakMin, '分', `${op.pos}/${line.gear.hooks}本揚げた`], holdNum])}
-      <div class="op-note">${op.kind === 'set' ? '決めた向きに沿って、餌を付けた針を6m間隔で海底に張っています。' : v.crew ? `縄に沿って進みながら揚げています。掛かったマダイは${CREW.label}が外し、その間も揚げ続けます（${CREW.label}が手一杯のときは自分で外します）。` : '縄に沿って進みながら揚げています。掛かっていたマダイは1枚ずつ取り込みます。'}</div>
+      <div class="op-note">${op.kind === 'haul' ? (op.machine ? `揚げ縄機で巻き上げています（毎秒${op.skill.haul.toFixed(1)}m）。` : `手で揚げています（毎秒${op.skill.haul.toFixed(2)}m）。`) : ''}${op.kind === 'set' ? '決めた向きに沿って、餌を付けた針を6m間隔で海底に張っています。' : v.crew ? `縄に沿って進みながら揚げています。掛かったマダイは${CREW.label}が外し、その間も揚げ続けます（${CREW.label}が手一杯のときは自分で外します）。` : '縄に沿って進みながら揚げています。掛かっていたマダイは1枚ずつ取り込みます。'}</div>
       <div class="feed">${S.esc(app.lastFeed)}</div>`;
   } else if (isTrolling(v)) {
     const op = v.op;
@@ -1252,6 +1253,7 @@ function frame(now) {
     }
     const lineBuoys = atSea && v.line && v.line.state !== 'aboard' ? buoys(v.line).filter((bu, i) => i === 0 || v.line.state !== 'setting') : null;
     const longlineId = atSea ? v.equip.longlineId : Object.values(slots).map((x) => x && x.itemId).find((id) => id && EQUIPMENT[id].type === 'longline') || null;
+    const haulerId = atSea ? v.equip.haulerId : Object.values(slots).map((x) => x && x.itemId).find((id) => id && EQUIPMENT[id].type === 'hauler') || null;
     scene.render({
       mode: atSea ? 'sea' : 'port',
       boat: atSea ? v.boat : { x: PORT.dock.x, y: PORT.dock.y + 20, heading: 0, speed: 0, vx: 0, vy: 0 },
@@ -1264,6 +1266,7 @@ function frame(now) {
       trollLines: tl ? tl.map((l) => ({ active: l.phase === 'tow' || l.phase === 'fight' || (l.phase === 'haul'), offset: l.offset != null ? l.offset : l.side * 3, len: l.phase === 'haul' ? l.haulLeft : 40 })) : null,
       working,
       longlineId,
+      haulerId,
       crew: atSea ? v.crew : 0,
       crewStation,
       crewWorking,
@@ -1371,6 +1374,13 @@ function devApi() {
           lastEcho: v.obs.cols.length ? v.obs.cols[v.obs.cols.length - 1].maxFish : 0,
         },
       };
+    },
+    /** Page coordinates of a world point on the sea chart (tests click the chart like a player). */
+    chartPoint(x, y) {
+      const c = $('chart');
+      const r = c.getBoundingClientRect();
+      const p = worldToChart(c, app.voyage, app.chartBig, x, y);
+      return { x: r.left + p.px, y: r.top + p.py };
     },
     schoolCenters() {
       const v = app.voyage;

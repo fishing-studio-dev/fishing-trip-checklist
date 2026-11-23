@@ -17,6 +17,7 @@ export function createBoatRuntime(model, x, y, heading) {
     distance: 0, // m travelled under power
     grounded: false,
     outOfBounds: false,
+    atRangeLimit: false, // at the edge of the boat's navigation zone (航行区域)
   };
 }
 
@@ -99,6 +100,13 @@ export function stepBoat(boat, model, cond, t, dt, mode) {
   boat.x = Math.max(m, Math.min(AREA.W - m, nx));
   boat.y = Math.max(m, Math.min(AREA.H - m, ny));
   if (boat.x !== nx || boat.y !== ny) boat.outOfBounds = true;
+  // a small boat stays inside its navigation zone (it is held at the line)
+  const maxY = model.range && model.range.maxY;
+  boat.atRangeLimit = false;
+  if (maxY != null && boat.y > maxY) {
+    boat.y = maxY;
+    boat.atRangeLimit = true;
+  }
   boat.vx = vx;
   boat.vy = vy;
   if (mode !== 'drift') boat.distance += Math.abs(boat.speed) * dt;

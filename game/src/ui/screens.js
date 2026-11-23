@@ -4,7 +4,7 @@ import { xpProgress, cycleEstimate, trollCycleEstimate, levelFromXp } from '../c
 import { purchasePreview, boatOffers, planBoatPurchase } from '../core/economy.js';
 import { forecastText, fmtClock } from '../core/sea.js';
 import { reportLine, KIND_LABEL } from '../core/reports.js';
-import { similarLogs, todaysReports, timeBandLabel, logTags, opRate, gearOfType, logGearItems } from '../core/knowledge.js';
+import { similarLogs, todaysReports, timeBandLabel, logTags, opRate, gearOfType, logGearItems, methodGear } from '../core/knowledge.js';
 
 export const esc = (s) => String(s ?? '').replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
 const money = (n) => `${Math.round(n).toLocaleString('ja-JP')}${ECONOMY.currency}`;
@@ -175,11 +175,12 @@ function boatCard(profile) {
   if (!gearOfType(profile, 'reel').includes('reel_electric')) next.push(EQUIPMENT.reel_electric);
   if (!gearOfType(profile, 'troll').length) next.push(EQUIPMENT.troll_tr1);
   if (!gearOfType(profile, 'longline').length) next.push(EQUIPMENT.longline_ll1);
+  else if (!gearOfType(profile, 'hauler').length) next.push(EQUIPMENT.hauler_lh1);
   const goal = next.map((it) => `<p class="note">次の設備：${esc(it.name)}（${money(it.price)}）${profile.funds >= it.price ? '<span class="tag good">購入可能</span>' : ` まであと${money(it.price - profile.funds)}`}</p>`).join('');
   const cheapest = boatOffers(profile).map((o) => o.price - model.tradeIn).sort((a, b) => a - b)[0];
   const boatGoal = cheapest != null ? `<p class="note">船の買い替え：下取り後 ${money(cheapest)} から${profile.funds >= cheapest ? '<span class="tag good">検討できる</span>' : ''}</p>` : '';
   return `<div class="card"><h2>船・装備</h2>
-    <dl class="kv"><dt>船名</dt><dd>${esc(profile.boat.name)}</dd><dt>船体</dt><dd>${esc(model.name)}（${model.length}m）</dd><dt>魚倉</dt><dd>${model.holdKg}kg</dd><dt>全速</dt><dd>${(model.speeds[model.steps.full] * 1.944).toFixed(0)}ノット</dd>${slots}</dl>
+    <dl class="kv"><dt>船名</dt><dd>${esc(profile.boat.name)}</dd><dt>船体</dt><dd>${esc(model.name)}（${model.length}m）</dd><dt>魚倉</dt><dd>${model.holdKg}kg</dd><dt>全速</dt><dd>${(model.speeds[model.steps.full] * 1.944).toFixed(0)}ノット</dd><dt>行ける範囲</dt><dd>${esc(model.range ? model.range.label : '')}</dd>${slots}</dl>
     ${goal}${boatGoal}<div class="actions"><button type="button" class="btn" data-act="equip">装備</button><button type="button" class="btn" data-act="market">船の買い替え</button></div></div>`;
 }
 
@@ -302,6 +303,17 @@ function trollEffect(item) {
   <tr><td>曳く速さ</td><td class="num">約${(t.towSpeed * 1.944).toFixed(0)}ノット</td></tr></table></div>`;
 }
 
+function haulerEffect(profile, item) {
+  const lv = levelFromXp(profile.methods.longline.xp);
+  const hand = longlineSkillForLevel(lv).haul;
+  const m = item.hauler.haul;
+  return `<div class="table-wrap"><table class="data wrap"><tr><th>効果（延縄Lv${lv}）</th><th class="num">手で揚げる</th><th class="num">取り付け後</th></tr>
+  <tr><td>揚げ縄の速さ</td><td class="num">${hand.toFixed(2)}m/秒</td><td class="num up">${m.toFixed(1)}m/秒</td></tr>
+  <tr><td>約594mを揚げる時間（魚なし）</td><td class="num">${sec(594 / hand)}</td><td class="num up">${sec(594 / Math.max(hand, m))}</td></tr>
+  <tr><td>魚を外す</td><td class="num">手作業</td><td class="num">手作業（変わらない）</td></tr></table></div>
+  ${gearOfType(profile, 'longline').length ? '' : '<p class="note">延縄具がないと使い道はありません。</p>'}`;
+}
+
 function longlineEffect(item) {
   const l = item.longline;
   return `<div class="table-wrap"><table class="data wrap"><tr><th>効果</th><th class="num">取り付け後</th></tr>
@@ -340,7 +352,7 @@ export function equipScreen(app) {
       const offerHtml = offers
         .map((it) => {
           const pv = purchasePreview(p, it.id, slot.id);
-          const cmp = it.type === 'reel' ? reelCompare(level, cur ? cur.id : 'reel_hand', it.id) : it.type === 'troll' ? trollEffect(it) : it.type === 'longline' ? longlineEffect(it) : it.type === 'sounder' && cur ? sounderEffect(cur, it) : '';
+          const cmp = it.type === 'reel' ? reelCompare(level, cur ? cur.id : 'reel_hand', it.id) : it.type === 'troll' ? trollEffect(it) : it.type === 'longline' ? longlineEffect(it) : it.type === 'hauler' ? haulerEffect(p, it) : it.type === 'sounder' && cur ? sounderEffect(cur, it) : '';
           return `<div class="card offer"><h2>${esc(it.name)} <span class="tag">${money(it.price)}</span></h2><p class="note">${esc(it.desc)}</p>${cmp}
           <dl class="kv" style="margin-top:8px"><dt>支払総額</dt><dd>${money(it.price)}</dd><dt>購入後の資金</dt><dd>${money(Math.max(0, pv.fundsAfter))}</dd><dt>外す装備</dt><dd>${cur ? `${esc(cur.name)} → 倉庫` : 'なし（空きの取付位置）'}</dd></dl>
           <div class="actions"><button type="button" class="btn primary" data-act="buy" data-item="${esc(it.id)}" data-slot="${esc(slot.id)}" ${pv.ok ? '' : 'disabled'}>購入して取り付ける</button>${pv.ok ? '' : `<span class="note">${esc(pv.reason)}</span>`}</div></div>`;
@@ -387,6 +399,7 @@ function boatSpecRows(cur, next) {
     ${row('一本釣りの竿受け', `${reelSlots(cur)}か所`, `${reelSlots(next)}か所`, reelSlots(next) > reelSlots(cur))}
     ${row('大型魚探（ES-2）', has(cur, 'sounder_l'), has(next, 'sounder_l'), has(next, 'sounder_l') === '可' && has(cur, 'sounder_l') !== '可')}
     ${row('アウトリガー（TR-2）', has(cur, 'troll_l'), has(next, 'troll_l'), has(next, 'troll_l') === '可' && has(cur, 'troll_l') !== '可')}
+    ${row('行ける範囲', esc(cur.range.label), esc(next.range.label), cur.range.maxY != null && next.range.maxY == null)}
     ${row('風での流されやすさ', `${Math.round(cur.windage * 1000) / 10}%`, `${Math.round(next.windage * 1000) / 10}%`, next.windage < cur.windage)}</table></div>`;
 }
 
@@ -441,7 +454,7 @@ export function logScreen(app) {
   const f = app.logFilter || { method: '', area: '' };
   const areas = [...new Set(p.logs.map((l) => l.area))];
   const gearSig = (boat, items) => `${boat}:${items.join('+')}`;
-  const nowSig = (m) => gearSig(p.boat.model, gearOfType(p, METHODS[m].gearType));
+  const nowSig = (m) => gearSig(p.boat.model, methodGear(p, m));
   const logs = p.logs.filter((l) => (!f.method || (l.methodId || 'handline') === f.method) && (!f.area || l.area === f.area)).slice().reverse();
   const rows = logs
     .map((l) => {

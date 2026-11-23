@@ -3,10 +3,10 @@
 // Keys are namespaced so they never collide with the checklist app that lives
 // at the repository root (it uses 'fishing-checklist-v1').
 import { hashString } from './rng.js';
-import { validateProfile, PROFILE_SCHEMA, migrateProfile1to2, migrateProfile2to3, migrateProfile3to4 } from './profile.js';
+import { validateProfile, PROFILE_SCHEMA, migrateProfile1to2, migrateProfile2to3, migrateProfile3to4, migrateProfile4to5 } from './profile.js';
 
 export const SAVE_FORMAT = 'ryoshi-game-save';
-export const SAVE_SCHEMA = 4;
+export const SAVE_SCHEMA = 5;
 export const KEYS = {
   main: 'ryoshi-game:save:main',
   backup: 'ryoshi-game:save:backup',
@@ -32,7 +32,7 @@ export function memoryStorage(initial = {}) {
 
 export function makeEnvelope(profile, revision, now = new Date().toISOString()) {
   const data = JSON.stringify(profile);
-  return { format: SAVE_FORMAT, schemaVersion: SAVE_SCHEMA, app: 'M3', revision, savedAt: now, checksum: hashString(data), data: profile };
+  return { format: SAVE_FORMAT, schemaVersion: SAVE_SCHEMA, app: 'M5', revision, savedAt: now, checksum: hashString(data), data: profile };
 }
 
 /** Parse + verify an envelope string. Returns {ok, envelope?, profile?, error?, newer?}. */
@@ -86,6 +86,14 @@ function migrate(env) {
       return { ok: false, error: `M2形式からの移行に失敗しました: ${e.message}` };
     }
     ver = 4;
+  }
+  if (ver === 4 && data.schema === 4) {
+    try {
+      data = migrateProfile4to5(data);
+    } catch (e) {
+      return { ok: false, error: `M3/M4形式からの移行に失敗しました: ${e.message}` };
+    }
+    ver = 5;
   }
   if (ver === SAVE_SCHEMA && data.schema === PROFILE_SCHEMA) return { ok: true, envelope: { ...env, schemaVersion: ver, data }, from: from !== ver ? from : null };
   return { ok: false, error: `移行できない版です（${env.schemaVersion}/${env.data && env.data.schema}）` };

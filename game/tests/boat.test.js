@@ -32,6 +32,7 @@ function cruiserProfile({ reels = ['reel_hand'], troll = null, sounder = 'sounde
     port_reel: reels[1] ? { uid: 'x3', itemId: reels[1] } : null,
     stern_troll: troll ? { uid: 'x4', itemId: troll } : null,
     deck_longline: null,
+    starboard_hauler: null,
   };
   assert.deepEqual(validateProfile(p), []);
   return p;
@@ -257,7 +258,7 @@ test('an M1 save (format 2) opens in the current format with everything kept, an
   assert.equal(p.schema, PROFILE_SCHEMA);
   assert.equal(p.funds, orig.funds);
   assert.deepEqual(p.methods, { ...orig.methods, longline: { xp: 0 } });
-  assert.deepEqual(p.boat, orig.boat);
+  assert.deepEqual(p.boat, { ...orig.boat, slots: { ...orig.boat.slots, starboard_hauler: null } }, 'the boat as it was, plus the new (empty) hauler mounting');
   assert.deepEqual(p.logs, orig.logs);
   assert.deepEqual(p.knowledge, orig.knowledge);
   assert.deepEqual(p.boatHistory, []);

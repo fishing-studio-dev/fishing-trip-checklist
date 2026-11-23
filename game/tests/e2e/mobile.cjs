@@ -101,6 +101,16 @@ async function layout(page) {
       for (const [a, b] of [['chart', 'sounder'], ['chart', 'top'], ['sounder', 'top'], ['controls', 'top'], ['controls', 'chart'], ['controls', 'sounder']]) if (overlap(ls[a], ls[b])) clashes.push(`${a}/${b}`);
       check(`${name}: HUD panels and controls don't overlap; controls on screen`, !clashes.length && ls.controls && ls.controls.bottom <= ls.vh + 1 && ls.scrollW <= ls.vw, clashes.join(', ') || `controls bottom ${ls.controls && Math.round(ls.controls.bottom)}/${ls.vh}`);
       await page.screenshot({ path: path.join(outDir, `${slug}-2-sea.png`) });
+      // the enlarged chart (the whole sea, taller than wide) fits the screen
+      await page.tap('#chartToggle');
+      await sleep(300);
+      const cb = await page.evaluate(() => {
+        const b = document.getElementById('chartPanel').getBoundingClientRect();
+        return { left: b.left, top: b.top, right: b.right, bottom: b.bottom, vw: window.innerWidth, vh: window.innerHeight };
+      });
+      check(`${name}: the enlarged chart shows the whole sea inside the screen`, cb.left >= 0 && cb.top >= 0 && cb.right <= cb.vw + 1 && cb.bottom <= cb.vh + 1, JSON.stringify(cb));
+      await page.screenshot({ path: path.join(outDir, `${slug}-2a-chart.png`) });
+      await page.tap('#chartToggle');
       // walking the deck by touch: view button twice, the walk pad and the work-position bar
       await page.tap('#btnView');
       await page.tap('#btnView');

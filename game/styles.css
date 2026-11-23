@@ -38,8 +38,8 @@ html { padding: env(safe-area-inset-top, 0px) env(safe-area-inset-right, 0px) en
 .chip.warn { border-color: var(--warn); color: var(--warn); }
 .hud-chart { position: absolute; top: 8px; left: 8px; width: 256px; }
 .hud-chart canvas { display: block; width: 240px; height: 240px; margin: 7px; border-radius: 6px; }
-.hud-chart.big { width: min(92vw, 92vh - 40px); z-index: 5; left: 50%; top: 50%; transform: translate(-50%, -50%); }
-.hud-chart.big canvas { width: calc(100% - 14px); height: auto; aspect-ratio: 1; }
+.hud-chart.big { width: min(92vw, calc((92vh - 60px) * 0.652 + 14px)); z-index: 5; left: 50%; top: 50%; transform: translate(-50%, -50%); }
+.hud-chart.big canvas { width: calc(100% - 14px); height: auto; aspect-ratio: 30 / 46; }
 .hud-sounder { position: absolute; top: 8px; right: 8px; width: 276px; }
 .hud-sounder canvas { display: block; width: 260px; height: 300px; margin: 7px; border-radius: 6px; background: #071735; }
 .sounder-open { position: absolute; top: 8px; right: 8px; background: var(--panel); border: 1px solid var(--line); border-radius: var(--radius); padding: 8px 12px; }
@@ -158,7 +158,7 @@ table.data.spec th:first-child { white-space: normal; }
 .sheet.wide { max-width: 1180px; }
 .brief { margin-bottom: 12px; }
 .brief-grid { display: grid; grid-template-columns: minmax(260px, 380px) 1fr; gap: 14px; align-items: start; }
-.brief-chart canvas { width: 100%; max-width: 380px; aspect-ratio: 1; height: auto; display: block; border-radius: 8px; }
+.brief-chart canvas { width: 100%; max-width: 330px; aspect-ratio: 30 / 46; height: auto; display: block; border-radius: 8px; }
 .cands { display: grid; gap: 10px; }
 .cand { border: 1px solid var(--line); border-radius: 10px; padding: 10px 12px; background: rgba(255,255,255,.03); }
 .cand-head { font-size: 15px; margin-bottom: 4px; }
@@ -257,3 +257,6 @@ textarea.paste { width: 100%; min-height: 90px; background: var(--panel-solid); 
   /* desktop while operating: the sounder is wider, keep the chips between the chart and the sounder */
   #hud.op-mode .hud-top { max-width: calc(100% - 750px); min-width: 300px; }
 }
+/* the enlarged chart (whole sea, taller than wide) wins over the phone / operating layouts */
+#hud.phone-land.op-mode .hud-chart.big, #hud.phone-port.op-mode .hud-chart.big, #hud .hud-chart.big { left: 50%; top: 50%; right: auto; bottom: auto; width: min(92vw, calc((92vh - 60px) * 0.652 + 14px)); transform: translate(-50%, -50%); z-index: 5; }
+#hud.phone-land.op-mode .hud-chart.big canvas, #hud.phone-port.op-mode .hud-chart.big canvas, #hud .hud-chart.big canvas { width: calc(100% - 14px); height: auto; aspect-ratio: 30 / 46; margin: 6px; }

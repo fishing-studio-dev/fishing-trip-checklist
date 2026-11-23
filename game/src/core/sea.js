@@ -7,6 +7,8 @@ export const FEATURES = {
   kitaNoSe: { name: '北の瀬', x: 2000, y: 2250, r: 220, h: 34 },
   nishiNoNe: { name: '西の根', x: 650, y: 1350, r: 120, h: 14 },
   okiDeep: { x: 600, y: 2650, r: 420, h: -9 },
+  // 沖の瀬 (M5): a far reef rising from 70-80 m to about 20 m
+  okiNoSe: { name: '沖の瀬', x: 1650, y: 4050, r: 240, h: 50 },
 };
 
 /** y of the coastline at x (land is south of it). */
@@ -48,6 +50,8 @@ export function depthAt(x, y) {
   d += 12 * smoothstep(2380, 2560, x) * smoothstep(800, 1100, y);
   // 沖の深み
   d -= FEATURES.okiDeep.h * gauss2(x, y, FEATURES.okiDeep);
+  // 沖の瀬: far reef with a rough top
+  d -= FEATURES.okiNoSe.h * gauss2(x, y, FEATURES.okiNoSe) * (1 + 0.06 * Math.sin(x / 19) * Math.sin(y / 27));
   // fine roughness
   d += 0.5 * Math.sin(x / 37) * Math.sin(y / 53);
   return Math.max(1.5, d);
@@ -55,13 +59,15 @@ export function depthAt(x, y) {
 
 /** Bottom type used for sounder echo thickness (visual cue only). */
 export function bottomIsRocky(x, y) {
-  return gauss2(x, y, FEATURES.kitaNoSe) > 0.25 || gauss2(x, y, FEATURES.nishiNoNe) > 0.3;
+  return gauss2(x, y, FEATURES.kitaNoSe) > 0.25 || gauss2(x, y, FEATURES.nishiNoNe) > 0.3 || gauss2(x, y, FEATURES.okiNoSe) > 0.3;
 }
 
 export function areaNameAt(x, y) {
   if (isLand(x, y)) return '陸';
   const dPort = Math.hypot(x - PORT.dock.x, y - PORT.dock.y);
   if (dPort < 450) return '港前';
+  if (Math.hypot(x - FEATURES.okiNoSe.x, y - FEATURES.okiNoSe.y) < 520) return '沖の瀬';
+  if (y > 3200) return '沖合';
   if (Math.hypot(x - FEATURES.kitaNoSe.x, y - FEATURES.kitaNoSe.y) < 420) return '北の瀬';
   if (Math.hypot(x - FEATURES.nishiNoNe.x, y - FEATURES.nishiNoNe.y) < 280) return '西の根';
   if (x > 2330 && y > 850) return '東の駆け上がり';
@@ -78,6 +84,7 @@ export const CHART_LABELS = [
   { name: '沖の深み', x: 600, y: 2650 },
   { name: '沖の平場', x: 1350, y: 1700 },
   { name: '南の浅場', x: 700, y: 520 },
+  { name: '沖の瀬', x: 1650, y: 4050 },
 ];
 
 // ---------------------------------------------------------------------------

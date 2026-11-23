@@ -2,7 +2,7 @@
 // The live sea (WorldState) is NOT part of this; it is regenerated per voyage.
 import { ECONOMY, START_PROFILE, BOATS, EQUIPMENT, METHODS, fits } from './data.js';
 
-export const PROFILE_SCHEMA = 4;
+export const PROFILE_SCHEMA = 5;
 
 export function createProfile({ worldSeed, now = new Date().toISOString() } = {}) {
   const seed = worldSeed != null ? worldSeed >>> 0 : (Math.floor(Math.random() * 0xffffffff) >>> 0);
@@ -29,6 +29,14 @@ export function createProfile({ worldSeed, now = new Date().toISOString() } = {}
     boatSeq: 1,
     boatHistory: [], // boats traded in: {uid, model, name, tradeIn, day}
   };
+}
+
+/** Schema 4 (M3/M4) -> 5 (M5): the line hauler's mounting (empty) on every boat. */
+export function migrateProfile4to5(p4) {
+  const p = clone(p4);
+  p.schema = 5;
+  if (!('starboard_hauler' in p.boat.slots)) p.boat.slots.starboard_hauler = null;
+  return p;
 }
 
 /**

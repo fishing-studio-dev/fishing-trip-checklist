@@ -1,7 +1,7 @@
 // 2D chart (GPS plotter). Shows fixed geography and what the player has
 // observed (track, marks, operation spots). Fish are only drawn in dev mode,
 // clearly labelled, and never in normal play.
-import { AREA, PORT, SPECIES } from '../core/data.js';
+import { AREA, PORT, SPECIES, BOATS } from '../core/data.js';
 import { depthAt, isLand, CHART_LABELS, fmtClock } from '../core/sea.js';
 import { schoolCenter, schoolTotal } from '../core/world.js';
 
@@ -58,17 +58,48 @@ export function buildStaticMap() {
 /**
  * Draw the chart. view: {big:boolean}. data: {voyage, dev}
  */
-function viewOf(v, big, W) {
-  const span = big ? AREA.W : 1300;
-  return { cx: big ? AREA.W / 2 : v.boat.x, cy: big ? AREA.H / 2 : v.boat.y, scale: W / span };
+function viewOf(v, big, W, H = W) {
+  // enlarged: the whole sea fitted into the canvas; small: 1.3 km around the boat
+  if (big) return { cx: AREA.W / 2, cy: AREA.H / 2, scale: Math.min(W / AREA.W, H / AREA.H) };
+  return { cx: v.boat.x, cy: v.boat.y, scale: W / 1300 };
 }
 
 /** World coordinates of a click on the chart canvas (CSS pixels). */
 export function chartToWorld(canvas, v, big, px, py) {
   const W = canvas.clientWidth || canvas.width;
   const H = canvas.clientHeight || canvas.height;
-  const { cx, cy, scale } = viewOf(v, big, W);
+  const { cx, cy, scale } = viewOf(v, big, W, H);
   return { x: (px - W / 2) / scale + cx, y: cy - (py - H / 2) / scale };
+}
+
+/** Canvas position (CSS pixels) of a world point (the inverse of chartToWorld). */
+export function worldToChart(canvas, v, big, x, y) {
+  const W = canvas.clientWidth || canvas.width;
+  const H = canvas.clientHeight || canvas.height;
+  const { cx, cy, scale } = viewOf(v, big, W, H);
+  return { px: (x - cx) * scale + W / 2, py: H / 2 - (y - cy) * scale };
+}
+
+/** The navigation-zone line of a boat model (only small boats have one). */
+function drawRangeLimit(ctx, modelId, toPx, W, small) {
+  const r = BOATS[modelId] && BOATS[modelId].range;
+  if (!r || r.maxY == null) return;
+  const [, py] = toPx(0, r.maxY);
+  if (py < -10 || py > ctx.canvas.height) return;
+  ctx.save();
+  ctx.strokeStyle = 'rgba(255,150,120,0.9)';
+  ctx.lineWidth = 1.5;
+  ctx.setLineDash([6, 4]);
+  ctx.beginPath();
+  ctx.moveTo(0, py);
+  ctx.lineTo(W, py);
+  ctx.stroke();
+  ctx.setLineDash([]);
+  ctx.fillStyle = 'rgba(255,190,170,0.95)';
+  ctx.font = `${small ? 10 : 11}px sans-serif`;
+  ctx.textAlign = 'left';
+  ctx.fillText(`${BOATS[modelId].name}の航行区域の境`, 6, py - 4);
+  ctx.restore();
 }
 
 const SPECIES_COLOR = { aji: '#ffd84d', sawara: '#ff8a5c', madai: '#ff6f91' };
@@ -196,7 +227,7 @@ export function drawChart(canvas, staticMap, v, { big = false, dev = false, repo
   ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
   const W = cssW;
   const H = cssH;
-  const { cx, cy, scale } = viewOf(v, big, W);
+  const { cx, cy, scale } = viewOf(v, big, W, H);
   const toPx = (x, y) => [(x - cx) * scale + W / 2, H / 2 - (y - cy) * scale];
   ctx.fillStyle = '#0a244e';
   ctx.fillRect(0, 0, W, H);
@@ -212,6 +243,7 @@ export function drawChart(canvas, staticMap, v, { big = false, dev = false, repo
     const [px, py] = toPx(l.x, l.y);
     ctx.fillText(l.name, px, py);
   }
+  drawRangeLimit(ctx, v.modelId, toPx, W, !big);
   // port
   {
     const [px, py] = toPx(PORT.dock.x, PORT.dock.y);
@@ -356,12 +388,16 @@ export function drawChart(canvas, staticMap, v, { big = false, dev = false, repo
       ctx.save();
       ctx.font = '11px sans-serif';
       ctx.textAlign = 'right';
+      // legend under the hint line, top left (open deep water; away from the harbour and the reef names)
+      ctx.textAlign = 'left';
+      const narrow = W < 420; // phones: a compact legend that stays clear of the reef names
+      if (narrow) ctx.font = '10px sans-serif';
       ctx.fillStyle = 'rgba(0,0,0,0.55)';
-      ctx.fillRect(W - 186, H - 40, 180, 34);
+      ctx.fillRect(6, 34, narrow ? 104 : 180, narrow ? 30 : 34);
       ctx.fillStyle = '#ffd84d';
-      ctx.fillText('━ 船首の向き', W - 10, H - 26);
+      ctx.fillText('━ 船首の向き', 12, 47);
       ctx.fillStyle = '#7cf2ff';
-      ctx.fillText('┅ 実際に進む向き（潮・風込み）', W - 10, H - 12);
+      ctx.fillText(narrow ? '┅ 実際の進路' : '┅ 実際に進む向き（潮・風込み）', 12, narrow ? 59 : 61);
       ctx.restore();
     }
   }
@@ -375,7 +411,13 @@ export function drawChart(canvas, staticMap, v, { big = false, dev = false, repo
   ctx.fillText('N↑', W - 6, 14);
   if (hint) {
     ctx.textAlign = 'left';
-    ctx.font = `${big ? 13 : 10}px sans-serif`;
+    // shrink the hint until it fits the chart's width (narrow phones)
+    let fs = big ? 13 : 10;
+    ctx.font = `${fs}px sans-serif`;
+    while (fs > 8 && ctx.measureText(hint).width + 24 > W) {
+      fs -= 0.5;
+      ctx.font = `${fs}px sans-serif`;
+    }
     ctx.fillStyle = 'rgba(0,0,0,0.55)';
     const w = ctx.measureText(hint).width + 12;
     ctx.fillRect(6, 6, w, big ? 22 : 16);
@@ -385,7 +427,7 @@ export function drawChart(canvas, staticMap, v, { big = false, dev = false, repo
 }
 
 /** Port briefing chart: whole area, candidates, peers' observations and own operation spots. */
-export function drawBriefingChart(canvas, staticMap, { candidates = [], reports = [], logs = [] }) {
+export function drawBriefingChart(canvas, staticMap, { candidates = [], reports = [], logs = [], boatModel = null }) {
   const dpr = Math.min(window.devicePixelRatio || 1, 2);
   const cssW = canvas.clientWidth || canvas.width;
   const cssH = canvas.clientHeight || canvas.height;
@@ -395,9 +437,15 @@ export function drawBriefingChart(canvas, staticMap, { candidates = [], reports 
   ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
   const W = cssW;
   const H = cssH;
-  const scale = W / AREA.W;
-  const toPx = (x, y) => [x * scale, H - y * scale];
-  ctx.drawImage(staticMap, 0, 0, W, H);
+  // the whole sea, fitted and centred (it is taller than it is wide)
+  const scale = Math.min(W / AREA.W, H / AREA.H);
+  const ox = (W - AREA.W * scale) / 2;
+  const oy = (H - AREA.H * scale) / 2;
+  const toPx = (x, y) => [ox + x * scale, oy + (AREA.H - y) * scale];
+  ctx.fillStyle = '#0a244e';
+  ctx.fillRect(0, 0, W, H);
+  ctx.drawImage(staticMap, ox, oy, AREA.W * scale, AREA.H * scale);
+  if (boatModel) drawRangeLimit(ctx, boatModel, toPx, W, true);
   ctx.font = '11px sans-serif';
   ctx.textAlign = 'center';
   ctx.fillStyle = 'rgba(255,255,255,0.7)';

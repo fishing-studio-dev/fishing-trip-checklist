@@ -50,6 +50,7 @@ export function createVoyage(profile, opts = {}) {
   const ofType = (type) => model.slots.map((sl) => slot(sl.id)).find((id) => id && EQUIPMENT[id].type === type) || null;
   const trollId = ofType('troll');
   const longlineId = ofType('longline');
+  const haulerId = ofType('hauler');
   const radio = opts.radio !== undefined ? opts.radio : opts.scenario ? [] : radioReports(profile.worldSeed, av.day);
   const v = {
     id: av.id,
@@ -67,6 +68,8 @@ export function createVoyage(profile, opts = {}) {
       troll: trollId ? EQUIPMENT[trollId].troll : null,
       longlineId,
       longline: longlineId ? EQUIPMENT[longlineId].longline : null,
+      haulerId,
+      hauler: haulerId ? EQUIPMENT[haulerId].hauler : null,
     },
     levels: {
       handline: levelFromXp(profile.methods.handline.xp),
@@ -521,7 +524,7 @@ function startHaul(v) {
   if (b.dist > METHODS.longline.nearBuoy * 1.5) return { ok: false, reason: 'ブイから離れています。' };
   v.autopilot = null;
   v.opSeq += 1;
-  v.op = createHaulOperation({ id: `${v.id}-op${v.opSeq}`, voyageId: v.id, level: v.levels.longline, set: v.line, fromEnd: b.end, startT: v.world.time, x: v.boat.x, y: v.boat.y, hands: 1 + v.crew });
+  v.op = createHaulOperation({ id: `${v.id}-op${v.opSeq}`, voyageId: v.id, level: v.levels.longline, set: v.line, fromEnd: b.end, startT: v.world.time, x: v.boat.x, y: v.boat.y, hands: 1 + v.crew, machineHaul: v.equip.hauler ? v.equip.hauler.haul : 0 });
   if (v.afterHaul) {
     v.after = v.afterHaul;
     v.afterHaul = null;
@@ -548,8 +551,15 @@ function checkRoutePoints(points, from) {
 }
 
 /** Add a waypoint to the route (trolling / where the longline goes / plain movement; applied at once while trolling). */
+/** Is this point inside the boat's navigation zone (航行区域)? */
+export function inRange(v, p) {
+  const r = boatModel(v).range;
+  return !r || r.maxY == null || p.y <= r.maxY;
+}
+
 export function addRoutePoint(v, p) {
   if (v.plannedRoute.length >= MAX_ROUTE_POINTS) return { ok: false, reason: `航路の点は${MAX_ROUTE_POINTS}つまでです。` };
+  if (!inRange(v, p)) return { ok: false, reason: `${boatModel(v).name}の航行区域（${boatModel(v).range.label}）の外です。沖の瀬へは中型漁船で行けます。` };
   const pt = { x: Math.round(p.x), y: Math.round(p.y) };
   let next = [...v.plannedRoute, pt];
   // from inside the harbour, a route goes out through the harbour mouth first
@@ -803,7 +813,7 @@ function makeLonglineLog(v, op, set) {
       maxEcho: Math.round(Math.max(ss.maxEcho, hs.maxEcho) * 100) / 100,
       echoDepth: echoPings ? round1((ss.echoDepthSum + hs.echoDepthSum) / echoPings) : null,
     },
-    gear: { boat: v.modelId, sounder: v.equip.sounderId, reel: v.equip.reelId, reels: v.equip.rigs.map((r) => r.reelId), troll: v.equip.trollId, longline: set.gearId },
+    gear: { boat: v.modelId, sounder: v.equip.sounderId, reel: v.equip.reelId, reels: v.equip.rigs.map((r) => r.reelId), troll: v.equip.trollId, longline: set.gearId, hauler: v.equip.haulerId },
     level: op.level,
     plan: set.plan || null,
     crew: v.crew,

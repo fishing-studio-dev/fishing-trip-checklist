@@ -157,7 +157,7 @@ function hamadaTrolling(seed, od, t0, idBase, stepS = 2700) {
  */
 function matsuGround(seed, od) {
   if (makeDayConditions(seed, od).season.nokkomi) return MADAI_GROUNDS.find((g) => g.nokkomi);
-  const usual = MADAI_GROUNDS.filter((g) => !g.nokkomi);
+  const usual = MADAI_GROUNDS.filter((g) => !g.nokkomi && !g.far); // his old boat stays near the coast
   return usual[Math.floor(hashFloat(seed, od, 501) * usual.length)];
 }
 

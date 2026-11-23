@@ -19,7 +19,9 @@ export const TIME = {
   USER_MULT: [1, 2, 4],
 };
 
-export const AREA = { W: 3000, H: 3000 };
+// The sea of the game: the coastal grounds (y < 3000) and, further out, 沖の瀬
+// (M5). Small boats are limited to the coastal zone (BOATS[].range).
+export const AREA = { W: 3000, H: 4600 };
 
 export const PORT = {
   name: '港',
@@ -243,6 +245,15 @@ export const EQUIPMENT = {
     desc: '餌付きの針100本を6m間隔に並べた縄（約600m）と、両端のブイ。海底に張って浸け、あとで揚げる。小型和船では船尾に付けるので、曳縄具とは付け替えになる。',
     longline: { hooks: 100, spacing: 6, maxDepth: 120 },
   },
+  hauler_lh1: {
+    id: 'hauler_lh1',
+    type: 'hauler',
+    mount: 'hauler',
+    name: '揚げ縄機 LH-1',
+    price: 18000,
+    desc: '延縄を機械で巻き上げる。揚げ縄の速さが腕前によらず毎秒1.3mになる（手で揚げるとLv1で0.45、Lv10で0.9m）。魚を外すのは手作業のまま。延縄具がないと使い道はない。',
+    hauler: { haul: 1.3 },
+  },
 };
 
 /** Can this item be mounted on this boat slot? */
@@ -271,10 +282,12 @@ export const BOATS = {
     windage: 0.025, // drift fraction of wind speed
     fuelPerKm: 40,
     tradeIn: 15000,
+    range: { maxY: 3000, label: '沿岸（港から約3km、沖の平場まで）' }, // 航行区域 (game setting)
     slots: [
       { id: 'helm_sounder', label: '操舵席（魚探）', accepts: ['sounder'] },
       { id: 'starboard_reel', label: '右舷 竿受け', accepts: ['reel'], rig: '右舷' },
       { id: 'stern_troll', label: '船尾（曳縄・延縄）', accepts: ['troll', 'longline'], optional: true },
+      { id: 'starboard_hauler', label: '右舷前（揚げ縄機）', accepts: ['hauler'], optional: true },
     ],
   },
   cruiser_2: {
@@ -290,12 +303,14 @@ export const BOATS = {
     windage: 0.018, // heavier hull: the wind pushes it less
     fuelPerKm: 60,
     tradeIn: 55000,
+    range: { maxY: null, label: '沖の瀬まで（港から約4.5km）' },
     slots: [
       { id: 'helm_sounder', label: '操舵室（魚探・大型可）', accepts: ['sounder', 'sounder_l'] },
       { id: 'starboard_reel', label: '右舷 竿受け', accepts: ['reel'], rig: '右舷' },
       { id: 'port_reel', label: '左舷 竿受け', accepts: ['reel'], optional: true, rig: '左舷' },
       { id: 'stern_troll', label: '船尾 曳縄（アウトリガー可）', accepts: ['troll', 'troll_l'], optional: true },
       { id: 'deck_longline', label: '後部甲板（延縄）', accepts: ['longline'], optional: true },
+      { id: 'starboard_hauler', label: '右舷前（揚げ縄機）', accepts: ['hauler'], optional: true },
     ],
   },
 };
@@ -332,7 +347,7 @@ export const ECONOMY = {
 export const START_PROFILE = {
   boatModel: 'skiff_1',
   boatName: 'はやせ丸',
-  slots: { helm_sounder: 'sounder_es1', starboard_reel: 'reel_hand', stern_troll: null },
+  slots: { helm_sounder: 'sounder_es1', starboard_reel: 'reel_hand', stern_troll: null, starboard_hauler: null },
 };
 
 // ---- Tide (潮回り) table by day number modulo 15 (game calendar) ----

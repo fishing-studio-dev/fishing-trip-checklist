@@ -34,6 +34,7 @@ function llProfile({ level = 1, boat = 'skiff_1', seed = 5 } = {}) {
       port_reel: null,
       stern_troll: null,
       deck_longline: { uid: 'L1', itemId: 'longline_ll1' },
+      starboard_hauler: null,
     };
   }
   assert.deepEqual(validateProfile(p), []);
@@ -291,26 +292,28 @@ function m2Save() {
   v3.schema = 3;
   delete v3.methods.longline;
   delete v3.boat.slots.deck_longline;
+  delete v3.boat.slots.starboard_hauler;
   v3.methods.handline.xp = 222;
   v3.funds = 43210;
   const data = JSON.stringify(v3);
   return { v3, raw: JSON.stringify({ format: 'ryoshi-game-save', schemaVersion: 3, app: 'M2', revision: 4, savedAt: NOW, checksum: hashString(data), data: v3 }) };
 }
 
-test('A12 (移行): an M2 save (format 3) opens in M3: the longline method starts at 0, the medium boat gets an empty longline deck, everything else kept', () => {
+test('A12 (移行): an M2 save (format 3) opens in the current format: the longline method starts at 0, the medium boat gets an empty longline deck (and hauler mounting), everything else kept', () => {
   const st = memoryStorage();
   const { v3, raw } = m2Save();
   st.setItem(KEYS.main, raw);
   const r = loadSave(st);
   assert.equal(r.status, 'ok', r.error);
   assert.equal(r.migratedFrom, 3);
-  assert.equal(SAVE_SCHEMA, 4);
+  assert.ok(SAVE_SCHEMA >= 4);
   const p = r.profile;
   assert.equal(p.schema, PROFILE_SCHEMA);
   assert.equal(p.funds, 43210);
   assert.equal(p.methods.handline.xp, 222);
   assert.equal(p.methods.longline.xp, 0);
   assert.equal(p.boat.slots.deck_longline, null);
+  assert.equal(p.boat.slots.starboard_hauler, null);
   assert.deepEqual(p.boat.slots.starboard_reel, v3.boat.slots.starboard_reel);
   assert.deepEqual(validateProfile(p), []);
   assert.equal(st.getItem(r.preMigrationKey), raw);

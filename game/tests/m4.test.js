@@ -25,6 +25,7 @@ function cruiser({ reels = ['reel_hand', 'reel_hand'], troll = null, longline = 
     port_reel: reels[1] ? { uid: 'x3', itemId: reels[1] } : null,
     stern_troll: troll ? { uid: 'x4', itemId: troll } : null,
     deck_longline: longline ? { uid: 'x5', itemId: longline } : null,
+    starboard_hauler: null,
   };
   assert.deepEqual(validateProfile(p), []);
   return p;

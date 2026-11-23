@@ -82,15 +82,21 @@ function gearSig(boat, items) {
   return `${boat}:${items.join('+')}`;
 }
 
+/** The items fitted now that a method uses (the longline also counts the line hauler). */
+export function methodGear(profile, methodId) {
+  const items = gearOfType(profile, METHODS[methodId].gearType);
+  return methodId === 'longline' ? [...items, ...gearOfType(profile, 'hauler')] : items;
+}
+
 function currentGearSig(profile, methodId) {
-  return gearSig(profile.boat.model, gearOfType(profile, METHODS[methodId].gearType));
+  return gearSig(profile.boat.model, methodGear(profile, methodId));
 }
 
 /** The items a logged operation used for its method (old logs: one reel). */
 export function logGearItems(log) {
   const g = log.gear || {};
   if (log.methodId === 'troll') return [g.troll].filter(Boolean);
-  if (log.methodId === 'longline') return [g.longline].filter(Boolean);
+  if (log.methodId === 'longline') return [g.longline, g.hauler].filter(Boolean);
   return g.reels || [g.reel].filter(Boolean);
 }
 
@@ -143,10 +149,12 @@ export function similarLogs(logs, { methodId, area, forecast, profile }) {
 
 // Fishing grounds known to everybody (geography + general knowledge, not fish).
 const GROUNDS = {
-  handline: ['北の瀬', '西の根', '東の駆け上がり'],
+  handline: ['北の瀬', '西の根', '東の駆け上がり', '沖の瀬'],
   troll: ['東の駆け上がり', '沖の平場', '北の瀬'],
-  longline: ['沖の平場', '東の駆け上がり', '西の根', '北の瀬'],
+  longline: ['沖の平場', '東の駆け上がり', '西の根', '北の瀬', '沖の瀬'],
 };
+// grounds outside the coastal zone (general knowledge: geography, not fish)
+const FAR_NOTE = { 沖の瀬: '沖の瀬：港から約4km。遠くて人が少なく、群れが大きく大型が多いと言われる（一般的な目安）。中型漁船でないと行けない' };
 const GENERAL = {
   handline: 'アジは瀬・根・駆け上がりなど起伏のある場所に付きやすい（一般的な目安）',
   troll: 'サワラは水温が上がると沖や駆け上がりに回ってくる（一般的な目安）',
@@ -250,6 +258,10 @@ export function buildCandidates({ knowledge, logs, today, forecast, profile }) {
         .sort((a, b) => a.price - b.price)[0];
       feasible = { ok: false, reason: item ? `${item.name}が必要（未搭載・${item.price.toLocaleString('ja-JP')}G）` : 'この船ではできない漁法です' };
     }
+    // can the boat reach the ground? (small boats keep to the coastal zone)
+    const a = anchor(c.area);
+    const range = BOATS[profile.boat.model].range;
+    if (feasible.ok && a && range && range.maxY != null && a.y > range.maxY) feasible = { ok: false, reason: `${BOATS[profile.boat.model].name}の航行区域の外（中型漁船が必要）` };
     const live = evidence.filter((e) => !e.superseded);
     const freshest = live.reduce((a, e) => Math.max(a, e.origin.obsDay), -1);
     const labels = [];
@@ -261,8 +273,9 @@ export function buildCandidates({ knowledge, logs, today, forecast, profile }) {
     if (negatives.some((e) => !e.superseded && e.origin.obsDay >= today - 1)) labels.push('反応なしの報告あり');
     if (live.length <= 1 && !own.same.length) labels.push('情報が少ない');
     if (!own.same.length) labels.push('未経験');
-    if (!feasible.ok) labels.push('装備が必要');
+    if (!feasible.ok) labels.push(/航行区域/.test(feasible.reason) ? '船の買い替えが必要' : '装備が必要');
     const notes = conditionNotes(c.methodId, forecast);
+    if (FAR_NOTE[c.area]) notes.push(FAR_NOTE[c.area]);
     const spot = c.spots.length ? { x: c.spots.reduce((a, p) => a + p.x, 0) / c.spots.length, y: c.spots.reduce((a, p) => a + p.y, 0) / c.spots.length } : anchor(c.area);
     out.push({
       key: c.key,

@@ -124,7 +124,8 @@ export function createSetOperation({ id, voyageId, level, set, route, startT, x,
 }
 
 /** Hauling the line from one end (an operation: the boat follows the line). */
-export function createHaulOperation({ id, voyageId, level, set, fromEnd, startT, x, y, hands = 1 }) {
+export function createHaulOperation({ id, voyageId, level, set, fromEnd, startT, x, y, hands = 1, machineHaul = 0 }) {
+  const skill = longlineSkillForLevel(level);
   const n = set.hooks.length;
   const order = Array.from({ length: n }, (_, k) => (fromEnd === 'end' ? n - 1 - k : k));
   return {
@@ -134,7 +135,9 @@ export function createHaulOperation({ id, voyageId, level, set, fromEnd, startT,
     kind: 'haul',
     species: M().target,
     level,
-    skill: longlineSkillForLevel(level),
+    // a line hauler (揚げ縄機) winds the line at its own speed; unhooking stays handwork
+    skill: { ...skill, haul: Math.max(skill.haul, machineHaul) },
+    machine: machineHaul > 0,
     setId: set.id,
     fromEnd,
     order,

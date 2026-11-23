@@ -16,6 +16,8 @@ export const HABITATS = [
   { id: 'higashi_s', area: '東の駆け上がり', x: 2460, y: 1450, drift: [2470, 1650], weight: 0.8, big: 0.2 },
   { id: 'higashi_n', area: '東の駆け上がり', x: 2480, y: 2000, drift: [2450, 1850], weight: 0.6, big: 0.2 },
   { id: 'minami', area: '南の浅場', x: 1050, y: 700, drift: [1150, 760], weight: 0.6, big: 0.05 },
+  // 沖の瀬 (M5): far, lightly fished — bigger schools with more large fish (game setting)
+  { id: 'okise', area: '沖の瀬', x: 1650, y: 4080, drift: [1740, 3990], weight: 1.2, big: 0.5, rich: 1.5, far: true },
 ];
 
 // Open-water zones where サワラ waves pass (game setting).
@@ -32,6 +34,8 @@ export const MADAI_GROUNDS = [
   { id: 'nishi', area: '西の根', x: 820, y: 1520, spread: 150, weight: 0.6 },
   // only in the 乗っ込み season (warming water): マダイ gather on the flank of 北の瀬
   { id: 'kita', area: '北の瀬', x: 2150, y: 2060, spread: 180, weight: 0, nokkomi: true },
+  // 沖の瀬 (M5): around the far reef, more large fish
+  { id: 'okise', area: '沖の瀬', x: 1560, y: 3930, spread: 260, weight: 0.9, big: 0.3, far: true },
 ];
 
 const habIndex = (id) => HABITATS.findIndex((h) => h.id === id);
@@ -182,10 +186,24 @@ function madaiSchools(seed, d) {
     if (!ep.present) return;
     let n = (70 + hashFloat(seed, gi, ep.i, 403) * 90) * (0.9 + 0.2 * hashFloat(seed, gi, d, 404));
     if (ep.last) n *= 0.6;
-    if (nokkomi) n *= 0.6; // many have moved up onto the reef flank
-    out.push(madaiSchool(seed, d, g.id, Math.round(n), ep.i));
+    if (nokkomi && !g.far) n *= 0.6; // many have moved up onto the reef flank
+    const s = madaiSchool(seed, d, g.id, Math.round(n), ep.i);
+    if (g.big) s.counts = splitCounts(Math.round(n), g.big, 0.2);
+    out.push(s);
   });
   return out;
+}
+
+/** The マアジ of one habitat on day d, from its multi-day episodes ([] when absent). */
+function ajiFromEpisode(seed, d, h, hi) {
+  const ep = ajiEpisode(seed, hi, d);
+  if (!ep.present) return [];
+  const base = 300 + hashFloat(seed, hi, ep.i, 103) * 600;
+  let n = base * (0.9 + 0.2 * hashFloat(seed, hi, d, 104)) * (h.rich || 1);
+  if (ep.last) n *= 0.45; // thinning out before leaving
+  if (makeDayConditions(seed, d).waterTemp <= 18.0) n *= 0.7; // fewer アジ on the grounds in cold water (本作設定)
+  const big = Math.min(0.6, Math.max(0, h.big + (hashFloat(seed, hi, ep.i, 105) - 0.4) * 0.25));
+  return [ajiSchool(seed, d, h.id, Math.round(n), big, ep.i)];
 }
 
 /** All school specs for day d. */
@@ -194,20 +212,15 @@ export function dayPlan(seed, d) {
   const schools = [];
   if (script) {
     for (const [hid, n, big] of script.aji) schools.push(ajiSchool(seed, d, hid, n, big, 'script'));
+    // the far ground is not part of the early-season script: it follows its own episodes
+    HABITATS.forEach((h, hi) => {
+      if (h.far) schools.push(...ajiFromEpisode(seed, d, h, hi));
+    });
     script.sawara.forEach(([zid, n], k) => schools.push(sawaraSchool(seed, d, zid, n, k)));
     schools.push(...madaiSchools(seed, d));
     return { schools, scripted: true };
   }
-  HABITATS.forEach((h, hi) => {
-    const ep = ajiEpisode(seed, hi, d);
-    if (!ep.present) return;
-    const base = 300 + hashFloat(seed, hi, ep.i, 103) * 600;
-    let n = base * (0.9 + 0.2 * hashFloat(seed, hi, d, 104));
-    if (ep.last) n *= 0.45; // thinning out before leaving
-    if (makeDayConditions(seed, d).waterTemp <= 18.0) n *= 0.7; // fewer アジ on the grounds in cold water (本作設定)
-    const big = Math.min(0.6, Math.max(0, h.big + (hashFloat(seed, hi, ep.i, 105) - 0.4) * 0.25));
-    schools.push(ajiSchool(seed, d, h.id, Math.round(n), big, ep.i));
-  });
+  HABITATS.forEach((h, hi) => schools.push(...ajiFromEpisode(seed, d, h, hi)));
   const temp = makeDayConditions(seed, d).waterTemp;
   const wave = sawaraWave(seed, d);
   if (wave.present && temp >= SPECIES.sawara.arriveTemp) {

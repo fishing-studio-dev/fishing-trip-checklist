@@ -1,4 +1,4 @@
-// End-to-end playthrough in headless Chromium (M0 + M1 + M2 + M3).
+// End-to-end playthrough in headless Chromium (M0 to M5).
 // Steering, stopping, choosing a plan, switching method, setting a trolling
 // route on the chart, starting/stopping operations, returning, buying and
 // departing are all done with the game's own keys/buttons/clicks.
@@ -123,12 +123,8 @@ const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 
   /** Click a world point on the enlarged chart (the player's route input). */
   async function clickChart(x, y) {
-    const box = await page.evaluate(() => {
-      const r = document.getElementById('chart').getBoundingClientRect();
-      return { left: r.left, top: r.top, w: r.width, h: r.height };
-    });
-    const scale = box.w / 3000;
-    await page.mouse.click(box.left + (x - 1500) * scale + box.w / 2, box.top + box.h / 2 - (y - 1500) * scale);
+    const p = await page.evaluate(([wx, wy]) => window.__ryoshi.chartPoint(wx, wy), [x, y]);
+    await page.mouse.click(p.x, p.y);
     await sleep(150);
   }
 
@@ -471,6 +467,10 @@ const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
     // move there along a route drawn on the chart (G), not by steering
     await press('c');
     await sleep(200);
+    await clickChart(1650, 4050);
+    const farRefused = (await st()).voyage.route.length === 0 && /航行区域/.test(await pg.textContent('#toast'));
+    check('M5: the small boat cannot plan a route to 沖の瀬 (outside its navigation zone)', farRefused);
+    await sleep(1200);
     await clickChart(md.x, md.y - 330);
     const planned = (await st()).voyage.route.slice(-1)[0];
     await press('c');
@@ -541,6 +541,82 @@ const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
   } catch (e) {
     check('M3 longline playthrough', false, e.message);
     await shot('99-m3-failure').catch(() => {});
+  }
+
+  // ---------------------------------------------------------------- M5: 沖の瀬 on the medium boat, with the line hauler
+  try {
+    const pg = page;
+    await pg.goto(`http://localhost:${port}/?dev=1&seed=77`);
+    await pg.waitForSelector('#portChart');
+    const own = await st();
+    await pg.click('[data-act=market]');
+    await pg.click('[data-act=playtestLoad]');
+    await pg.click('[data-act=playtestLoadConfirm]');
+    await pg.waitForSelector('[data-act=boatQuote][data-offer=used_cruiser_b]');
+    const mk = await pg.textContent('#screen');
+    check('M5: the boat comparison shows where each boat can go', /行ける範囲/.test(mk) && /沖の瀬まで/.test(mk));
+    await pg.click('[data-act=boatQuote][data-offer=used_cruiser_b]');
+    await pg.click('[data-act=buyBoatConfirm]');
+    await pg.click('[data-act=closeModal]');
+    await pg.click('[data-act=equip]');
+    await pg.click('[data-act=buy][data-item=longline_ll1][data-slot=deck_longline]');
+    await pg.click('[data-act=buyConfirm]');
+    await pg.waitForSelector('[data-act=buy][data-item=hauler_lh1]');
+    const eq5 = await pg.textContent('#screen');
+    check('M5: the line hauler is offered for its own mounting with its effect', /右舷前（揚げ縄機）/.test(eq5) && /揚げ縄の速さ/.test(eq5));
+    await pg.click('[data-act=buy][data-item=hauler_lh1]');
+    await pg.click('[data-act=buyConfirm]');
+    await sleep(200);
+    let s5 = await st();
+    check('M5: medium boat with longline deck and hauler, saved', s5.boatModel === 'cruiser_2' && s5.slots.deck_longline.startsWith('longline_ll1') && s5.slots.starboard_hauler.startsWith('hauler_lh1') && s5.saveStatus.ok, JSON.stringify(s5.slots));
+    await pg.click('[data-act=toPort]');
+    await pg.waitForSelector('#portChart');
+    await pg.click('[data-act=depart]');
+    await waitFor((x) => x.screen === 'sea', 'at sea (M5)');
+    // out to 沖の瀬 along a chart route
+    await press('c');
+    await sleep(200);
+    await clickChart(1600, 3820);
+    await press('c');
+    await press('g');
+    await waitFor((x) => x.voyage.autopilot === 'route', 'route to 沖の瀬');
+    for (let i = 0; i < 80 && (await st()).voyage.autopilot; i++) await ff(20);
+    s5 = await st();
+    const area5 = await pg.textContent('#hudTop');
+    check('M5: the medium boat runs out to 沖の瀬 (beyond the small boat\'s zone)', s5.voyage.boat.y > 3500 && /沖の瀬/.test(area5), `y ${Math.round(s5.voyage.boat.y)}`);
+    await shot('24-okinose');
+    // lay the longline northward over the reef and haul it with the machine
+    for (let i = 0; i < 3 && (await st()).voyage.method !== 'longline'; i++) await press('t');
+    await pg.evaluate(() => {
+      // face north for a straight line over the reef (a test convenience: the player would steer)
+      window.__ryoshi.app.voyage.boat.heading = 0;
+    });
+    await press('Space');
+    s5 = await waitFor((x) => x.voyage.line && x.voyage.line.state === 'setting', 'setting on 沖の瀬');
+    await ff(900);
+    await ff(1800);
+    await press('l');
+    await waitFor((x) => x.voyage.line && x.voyage.line.state === 'hauling', 'hauling with the machine', 60000);
+    await ff(60);
+    const opText5 = await pg.textContent('#opPanel');
+    check('M5: the line hauler winds the line (shown in the panel)', /揚げ縄機で巻き上げています/.test(opText5), opText5.slice(0, 80));
+    await shot('25-hauler');
+    await ff(2400);
+    s5 = await returnAndLand('M5');
+    await pg.click('[data-act=toPort]');
+    await pg.click('[data-act=log]');
+    await pg.waitForSelector('table.data');
+    const lg5 = await pg.textContent('#screen');
+    check('M5: the logbook records 沖の瀬 and the line hauler', /沖の瀬/.test(lg5) && /揚げ縄機 LH-1/.test(lg5));
+    await pg.click('[data-act=toPort]');
+    await pg.click('[data-act=openSave]');
+    await pg.click('[data-act=playtestRestore]');
+    await pg.click('[data-act=playtestRestoreConfirm]');
+    await pg.waitForSelector('#portChart');
+    check('back to the own progress after the M5 playtest', (await st()).funds === own.funds);
+  } catch (e) {
+    check('M5 playthrough', false, e.message);
+    await shot('99-m5-failure').catch(() => {});
   }
 
   check('no page errors or console errors', errors.length === 0, errors.slice(0, 5).join(' | '));

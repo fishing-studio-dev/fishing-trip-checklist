@@ -30,7 +30,10 @@ function playVoyage(profile) {
   advanceVoyage(v, 5);
   // choose the biggest school; set up 70 m up-current of it so the drift
   // carries the boat across it (what the port screen advises the player)
-  const best = v.world.schools.slice().sort((a, b) => schoolTotal(b) - schoolTotal(a))[0];
+  // (the skiff keeps to its coastal zone, so only schools it can reach count)
+  const best = v.world.schools
+    .filter((s) => s.species === 'aji' && schoolCenter(s, v.world.time).y < 2900)
+    .sort((a, b) => schoolTotal(b) - schoolTotal(a))[0];
   const eta = v.world.time + 400;
   const c = schoolCenter(best, eta);
   const cur = currentAt(v.world.cond, eta);

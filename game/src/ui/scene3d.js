@@ -142,6 +142,7 @@ export function createScene(canvas) {
     boat.setReels(st.reels || { starboard: 'reel_hand' });
     boat.setTroll(st.trollId || null);
     boat.setLongline(st.longlineId || null);
+    boat.setHauler(st.haulerId || null);
     boat.setCrew(!!st.crew && st.mode === 'sea');
 
     const amp = Math.min(1.6, 0.35 + (st.windSpeed || 3) / 6);
@@ -270,7 +271,7 @@ export function createScene(canvas) {
       llLine.obj.geometry.attributes.position.needsUpdate = true;
       llLine.obj.visible = true;
     } else llLine.obj.visible = false;
-    boat.spinHauler(st.llMode === 'haul' && st.working !== 'unhook' ? rt : null);
+    boat.spinHauler(st.haulerId && st.llMode === 'haul' && st.working !== 'unhook' ? rt : null);
     buoyObjs.forEach((b, i) => {
       const spec = st.mode === 'sea' && st.buoys && st.buoys[i];
       b.visible = !!spec;
@@ -540,7 +541,9 @@ function buildBoat(modelId = 'skiff_1') {
   const haulerTip = new THREE.Object3D();
   haulerTip.position.set(0.25, 0.3, 0);
   hauler.add(haulerTip);
-  llGroup.add(hauler);
+  group.add(hauler); // the mounting point is always there; the machine only when fitted
+  hBase.visible = false;
+  hDrum.visible = false;
   llGroup.visible = false;
   group.add(llGroup);
 
@@ -739,6 +742,10 @@ function buildBoat(modelId = 'skiff_1') {
   function setLongline(itemId) {
     llGroup.visible = !!itemId;
   }
+  function setHauler(itemId) {
+    hBase.visible = !!itemId;
+    hDrum.visible = !!itemId;
+  }
   function spinHauler(rt) {
     if (rt != null) hDrum.rotation.x = rt * 6;
   }
@@ -777,6 +784,7 @@ function buildBoat(modelId = 'skiff_1') {
     animateWorker,
     setTroll,
     setLongline,
+    setHauler,
     setCrew,
     moveCrewTo,
     spinHauler,
