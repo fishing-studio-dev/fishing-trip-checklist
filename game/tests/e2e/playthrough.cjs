@@ -140,8 +140,9 @@ const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
     const a1 = s.candidates.find((c) => c.key === 'handline:北の瀬');
     check('M1 scenario 1: 北の瀬 is a candidate from a peer\'s report, shown as untried (not unsuitable)', a1 && a1.labels.includes('昨日の情報あり') && a1.labels.includes('未経験'), JSON.stringify(s.candidates));
     const portText = await page.textContent('#screen');
-    check('peers\' talk shows observation time and the time it was heard', /昨日\d\d:\d\dの水揚げ/.test(portText) && /今朝04:30に港で聞いた/.test(portText));
-    check('M4: the forecast tells the season (water temperature trend)', /季節：水温の/.test(portText));
+    check('peers\' talk shows observation time and the time it was heard', /昨日\d\d:\d\dの水揚げ/.test(portText) && /今朝03:30に港で聞いた/.test(portText));
+    check('M4: the forecast tells the season (water temperature trend)', /季節：春 1日目（4月1日ごろ）・水温の/.test(portText));
+    check('R2: the season card shows the date, the sun and the fish in season', /春になりました/.test(portText) && /日の出・日の入り/.test(portText) && /旬の魚/.test(portText) && /朝05:00 出港/.test(portText));
     await shot('02-port-briefing');
 
     // ---------------------------------------------------------------- day 1: plan A, handline at 北の瀬
