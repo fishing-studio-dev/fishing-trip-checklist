@@ -483,7 +483,7 @@ function drawLongline(ctx, line, toPx, label) {
 /**
  * Draw the chart at sea. opts: { big, dev, reports: [{r, label}], route: {points, live}, hint, line, lineLabel }
  */
-export function drawChart(canvas, staticMap, v, { big = false, span = null, dev = false, reports = [], route = null, hint = '', line = null, lineLabel = '', bathy = null, saved = [], selected = null } = {}) {
+export function drawChart(canvas, staticMap, v, { big = false, span = null, dev = false, reports = [], route = null, hint = '', line = null, lineLabel = '', lines = null, bathy = null, saved = [], selected = null } = {}) {
   if (!canvas.getClientRects().length) return; // not on screen (display:none): its size would read as 0
   const dpr = Math.min(window.devicePixelRatio || 1, 2);
   const cssW = canvas.clientWidth || canvas.width;
@@ -571,7 +571,9 @@ export function drawChart(canvas, staticMap, v, { big = false, span = null, dev 
   }
   // trolling route / where the longline would be laid (planned or being run)
   if (route) drawRoute(ctx, route.points, toPx, route.live ? { color: '#7cf2d6', width: 2.5 } : { color: route.color || 'rgba(124,242,214,0.85)', dash: [6, 4] });
-  if (line) drawLongline(ctx, line, toPx, lineLabel);
+  // every longline in the water, each with its number and state (several lines: R07)
+  if (lines) for (const l of lines) drawLongline(ctx, l.line, toPx, l.label);
+  else if (line) drawLongline(ctx, line, toPx, lineLabel);
   // dev overlay
   if (dev) {
     ctx.strokeStyle = '#ff5cf0';

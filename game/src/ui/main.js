@@ -1,18 +1,18 @@
 // App controller: boot, screens, input, main loop.
 import { TIME, BOATS, PORT, EQUIPMENT, METHODS, SIM, SPECIES, CREW, GUIDES, sellValue } from '../core/data.js';
 import { createProfile, markDeparture, resolveInterruptedVoyage, restDay } from '../core/profile.js';
-import { settleVoyage, purchaseEquipment, purchasePreview, equipFromStorage, unmountToStorage, sellStored, buyBoat, planBoatPurchase } from '../core/economy.js';
+import { settleVoyage, purchaseEquipment, purchasePreview, equipFromStorage, unmountToStorage, sellStored, buyBoat, planBoatPurchase, purchaseExtraLine } from '../core/economy.js';
 import { loadSave, writeSave, exportSave, checkImport, memoryStorage, KEYS } from '../core/save.js';
 import {
   createVoyage, advanceVoyage, isOperating, isTrolling, setHelm, setMethod, startOperation, stopOperation, redrift, returnToPort,
   nearPort, addManualMark, summarizeVoyage, canStartOperation, addRoutePoint, clearRoute, trollRouteFrom,
-  isLonglining, lineInWater, haulLongline, lineRouteFrom, runRoute, addMarkAt, cycleSonarRange, baitInHold, editVoyageMark, removeVoyageMark, routeTo,
+  isLonglining, lineInWater, haulLongline, lineRouteFrom, runRoute, addMarkAt, cycleSonarRange, baitInHold, editVoyageMark, removeVoyageMark, routeTo, liveBaitSteps, soakingLines, lineNo,
 } from '../core/voyage.js';
 import { sonarToWorld } from '../core/sonar.js';
 import { surfaceCues } from '../core/surface.js';
 import { loadGuide, saveGuide, guideView, guideNow } from './guide.js';
 import { createSound, loadSoundLevel, saveSoundLevel, nextSoundLevel, SOUND_LEVELS } from './sound.js';
-import { longlineLabel, baitLeft, nearestBuoy, buoys } from '../core/longline.js';
+import { longlineLabel, baitLeft, buoys } from '../core/longline.js';
 import { acquireBriefing, buildCandidates, planSummary } from '../core/knowledge.js';
 import { reportLine, peerName } from '../core/reports.js';
 import { trollLineLabel } from '../core/troll.js';
@@ -528,7 +528,7 @@ function cmd(name) {
   switch (name) {
     case 'op':
       if (isOperating(v)) r = stopOperation(v, 'player');
-      else if (v.method === 'longline' && v.line && v.line.state === 'soaking') haulAsk('haul');
+      else if (v.method === 'longline' && canStartOperation(v).haul) haulAsk('haul');
       else r = startOperation(v);
       break;
     case 'redrift':
@@ -536,7 +536,7 @@ function cmd(name) {
       break;
     case 'port':
       // going home with the line in the water hauls it first: ask once
-      if (v.line && v.line.state === 'soaking' && !(v.autopilot && v.autopilot.kind === 'return')) haulAsk('port');
+      if (soakingLines(v).length && !(v.autopilot && v.autopilot.kind === 'return')) haulAsk('port');
       else r = returnToPort(v);
       break;
     case 'mark':
@@ -650,26 +650,33 @@ function markAction(act, key) {
 
 function haulAsk(then) {
   const v = app.voyage;
-  if (!v || !v.line || v.line.state !== 'soaking') {
+  const soak = v ? soakingLines(v) : [];
+  if (!soak.length) {
     const r = haulLongline(v);
     if (!r.ok) toast(r.reason);
     return;
   }
-  const soakMin = Math.floor((v.world.time - v.line.setEndT) / 60);
-  const bait = Math.round(baitLeft(v.line, v.world.time) * 100);
-  const b = nearestBuoy(v.line, v.boat.x, v.boat.y);
-  const what = then === 'port' ? '縄を揚げてから帰港します' : '縄を揚げます';
+  const what = then === 'port' ? (soak.length > 1 ? `縄${soak.length}本を近い順に揚げてから帰港します` : '縄を揚げてから帰港します') : '縄を揚げます';
+  const rows = soak
+    .map(({ line, buoy }) => {
+      const n = lineNo(v, line);
+      const soakMin = Math.floor((v.world.time - line.setEndT) / 60);
+      const bait = Math.round(baitLeft(line, v.world.time) * 100);
+      const btn = then === 'port' ? '' : `<button type="button" class="btn ${buoy === soak[0].buoy ? 'primary' : ''}" data-act="haulConfirm" data-then="haul" data-line="${n}">${n}番を揚げる</button>`;
+      return `<tr><td>${n}番</td><td class="num">${soakMin}分</td><td class="num">${bait}%</td><td class="num">${Math.round(buoy.dist)}m</td><td>${btn}</td></tr>`;
+    })
+    .join('');
   modal(`<div class="card"><h2>${what}。よろしいですか？</h2>
-  <dl class="kv"><dt>浸けた時間</dt><dd>${soakMin}分</dd><dt>餌の残り（目安）</dt><dd>${bait}%</dd><dt>近いブイまで</dt><dd>${Math.round(b.dist)}m</dd></dl>
-  <p class="note">揚げ縄は途中でやめられません（最後まで揚げます）。${b.dist > METHODS.longline.nearBuoy ? 'ブイまでは移動補助で向かいます。' : ''}まだ浸けておくなら「やめる」。</p>
-  <div class="actions"><button type="button" class="btn primary" data-act="haulConfirm" data-then="${then}">${then === 'port' ? '揚げて帰港する' : '揚げる'}</button><button type="button" class="btn" data-act="closeModal">やめる（浸けておく）</button></div></div>`);
+  <div class="table-wrap"><table class="data"><tr><th>縄</th><th class="num">浸けた時間</th><th class="num">餌の残り（目安）</th><th class="num">近いブイまで</th><th></th></tr>${rows}</table></div>
+  <p class="note">揚げ縄は途中でやめられません（最後まで揚げます）。ブイから離れていれば移動補助で向かいます。まだ浸けておくなら「やめる」。</p>
+  <div class="actions">${then === 'port' ? '<button type="button" class="btn primary" data-act="haulConfirm" data-then="port">揚げて帰港する</button>' : ''}<button type="button" class="btn" data-act="closeModal">やめる（浸けておく）</button></div></div>`);
 }
 
-function haulConfirm(then) {
+function haulConfirm(then, which = null) {
   modal(null);
   const v = app.voyage;
   if (!v) return;
-  const r = then === 'port' ? returnToPort(v) : haulLongline(v);
+  const r = then === 'port' ? returnToPort(v) : haulLongline(v, null, which);
   if (r && !r.ok && r.reason) toast(r.reason);
   updateHudStatic();
 }
@@ -1003,6 +1010,16 @@ document.addEventListener('click', (e) => {
     case 'buyConfirm':
       buyConfirm(b.dataset.item, b.dataset.slot);
       break;
+    case 'buyLine': {
+      const res = purchaseExtraLine(app.profile);
+      if (!res.ok) toast(res.reason);
+      else {
+        commit(res.profile, '延縄の縄の買い足し');
+        toast(`縄を買い足しました（${res.receipt.lines}本）`);
+        show('equip');
+      }
+      break;
+    }
     case 'equipStored':
       equipStored(b.dataset.uid, b.dataset.slot);
       break;
@@ -1081,7 +1098,7 @@ document.addEventListener('click', (e) => {
       walkTo(b.dataset.station);
       break;
     case 'haulConfirm':
-      haulConfirm(b.dataset.then);
+      haulConfirm(b.dataset.then, b.dataset.line ? Number(b.dataset.line) : null);
       break;
     case 'chartAll':
       app.chartSpanIdx = 0;
@@ -1238,7 +1255,7 @@ function updateHudStatic() {
   $('btnRoute').hidden = !(v.plannedRoute.length || routing) || isTrolling(v) || isLonglining(v);
   $('btnRoute').innerHTML = routing ? '航路で移動中…' : '航路で移動<kbd>G</kbd>';
   $('btnRoute').disabled = routing;
-  const soaking = !!(v.line && v.line.state === 'soaking');
+  const soaking = soakingLines(v).length > 0;
   $('btnHaul').hidden = !soaking || (v.method === 'longline' && !isOperating(v));
   $('btnHaul').innerHTML = v.autopilot && v.autopilot.kind === 'haul' ? 'ブイへ移動中…' : '揚げ縄<kbd>L</kbd>';
   const walkView = app.view === 'walk';
@@ -1432,7 +1449,7 @@ function updateHud(now) {
   const panel = $('opPanel');
   const clock = (secs) => `${Math.floor(secs / 60)}:${String(Math.floor(secs % 60)).padStart(2, '0')}`;
   const holdNum = [`魚倉`, v.hold.kg.toFixed(0), `/${v.capacityKg}kg`, v.hold.kg > v.capacityKg * 0.9 ? '満杯が近い' : ''];
-  const lineNote = v.line && v.line.state === 'soaking' ? lineSoakNote(v) : '';
+  const lineNote = soakingLines(v).length ? lineSoakNote(v) : '';
   if (isLonglining(v)) {
     const op = v.op;
     const line = v.line;
@@ -1482,6 +1499,13 @@ function updateHud(now) {
       ${bigNums([['この流し', op.landedCount, SPECIES[op.species].unit, `${op.landedKg.toFixed(1)}kg`], ['直近10分', pace.perMin.toFixed(1), `${SPECIES[op.species].unit}/分`, `${pace.n}${SPECIES[op.species].unit}`], holdNum])}
       <div class="op-note">${note}</div>${lineNote}
       <div class="feed">${S.esc(app.lastFeed)}</div>`;
+  } else if (liveBaitSteps(v)) {
+    // 泳がせ・ジギング: what is ready and what to do next (from what the boat has and has seen)
+    const g = liveBaitSteps(v);
+    panel.hidden = false;
+    panel.innerHTML = `<h3>${METHODS[g.method].name}の手順</h3>
+      <ol class="lb-steps">${g.steps.map((x) => `<li class="${x.ok ? 'ok' : 'todo'}"><span class="mark">${x.ok ? '✓' : '・'}</span>${S.esc(x.text)}</li>`).join('')}</ol>${lineNote}
+      <div class="feed">${canStartOperation(v).ok ? `Spaceで${METHODS[g.method].name}を始める${g.steps.find((x) => x.id === 'echo' && !x.ok) ? '（反応がなくても始められます）' : ''}` : S.esc(canStartOperation(v).reason || '')}</div>`;
   } else if (v.method === 'longline' && !lineInWater(v)) {
     const rt = lineRouteFrom(v);
     panel.hidden = false;
@@ -1521,12 +1545,15 @@ function updateHud(now) {
   layoutHud();
 }
 
-/** One line about the soaking longline (shown whatever else is going on). */
+/** One line per soaking longline (shown whatever else is going on). */
 function lineSoakNote(v) {
-  const line = v.line;
-  const b = nearestBuoy(line, v.boat.x, v.boat.y);
-  const bait = Math.round(baitLeft(line, v.world.time) * 100);
-  return `<div class="op-note ll-note">延縄：${S.esc(longlineLabel(line, null, v.world.time))}・餌の残り目安${bait}%・ブイまで${Math.round(b.dist)}m（揚げ縄 L）</div>`;
+  const many = v.equip.lineCount > 1;
+  return soakingLines(v)
+    .map(({ line, buoy }) => {
+      const bait = Math.round(baitLeft(line, v.world.time) * 100);
+      return `<div class="op-note ll-note">${many ? `${lineNo(v, line)}番の縄` : '延縄'}：${S.esc(longlineLabel(line, null, v.world.time))}・餌の残り目安${bait}%・ブイまで${Math.round(buoy.dist)}m（揚げ縄 L）</div>`;
+    })
+    .join('');
 }
 
 function consumeEvents(v) {
@@ -1703,7 +1730,8 @@ function frame(now) {
     else if (llPlan) hint = app.chartBig ? 'クリックで縄を張る向き（経由点）を指定・Xで消去' : '延縄：クリックで海図を拡大して張る向きを指定';
     else if (app.chartBig) hint = v.plannedRoute.length ? 'クリックで経由点を追加・G で航路に沿って移動・X で消去' : 'クリックで行き先（経由点）を置くと、G でそこへ移動できます';
     const reps = chartReports([...app.profile.knowledge.reports, ...v.heard], v.day);
-    const showLine = v.line && v.line.state !== 'aboard' ? v.line : null;
+    const many = v.equip.lineCount > 1;
+    const chartLines = (v.lines || []).filter((l) => l.state !== 'aboard').map((l) => ({ line: l, label: `${many ? `${lineNo(v, l)}番 ` : ''}${longlineLabel(l, l === v.line ? v.op : null, v.world.time)}` }));
     updateGuide(v, now);
     if (now - bathyAt > 1000) {
       bathyAt = now;
@@ -1731,7 +1759,7 @@ function frame(now) {
     }
     if (now - chartAt >= (app.chartBig ? 50 : 100)) chartAt = now;
     else chartSkip = true;
-    if (!chartSkip) drawChart($('chart'), staticMap, v, { big: app.chartBig, span: CHART_SPANS[app.chartSpanIdx], dev: DEV, reports: reps, route, hint, line: showLine, lineLabel: showLine ? longlineLabel(showLine, v.op, v.world.time) : '', bathy: bathyNow, saved: app.profile.marks, selected: app.markSel });
+    if (!chartSkip) drawChart($('chart'), staticMap, v, { big: app.chartBig, span: CHART_SPANS[app.chartSpanIdx], dev: DEV, reports: reps, route, hint, lines: chartLines, bathy: bathyNow, saved: app.profile.marks, selected: app.markSel });
     if (app.sonarOpen && v.sonar && now - sonarAt > 150) {
       sonarAt = now;
       const marks = [...(app.profile.marks || []), ...v.obs.marks.filter((m) => m.kind !== 'auto')];
@@ -1788,7 +1816,7 @@ function frame(now) {
         crewWorking = !!llOp.crewJob;
       } else if (llOp) crewStation = 'sternPort';
     }
-    const lineBuoys = atSea && v.line && v.line.state !== 'aboard' ? buoys(v.line).filter((bu, i) => i === 0 || v.line.state !== 'setting') : null;
+    const lineBuoys = atSea ? (v.lines || []).filter((l) => l.state !== 'aboard').flatMap((l) => buoys(l).filter((bu, i) => i === 0 || l.state !== 'setting')) : null;
     const longlineId = atSea ? v.equip.longlineId : Object.values(slots).map((x) => x && x.itemId).find((id) => id && EQUIPMENT[id].type === 'longline') || null;
     const haulerId = atSea ? v.equip.haulerId : Object.values(slots).map((x) => x && x.itemId).find((id) => id && EQUIPMENT[id].type === 'hauler') || null;
     // surface signs (鳥山・ナブラ・潮目) worked out from the sea, refreshed twice a second
@@ -1933,6 +1961,7 @@ function devApi() {
           boatModel: v.modelId,
           opLines: v.op && v.op.lines ? v.op.lines.map((l) => ({ label: l.label || (l.side < 0 ? '左舷' : '右舷'), phase: l.phase, waiting: !!l.waiting })) : null,
           line: v.line ? { state: v.line.state, hooks: v.line.hooks.length, buoys: buoys(v.line) } : null,
+          lines: (v.lines || []).map((l) => ({ no: lineNo(v, l), state: l.state, hooks: l.hooks.length, buoys: buoys(l) })),
           worker: v.op ? v.op.worker : null,
           busy: v.op && v.op.busy ? v.op.busy.slice() : null,
           crew: v.crew,

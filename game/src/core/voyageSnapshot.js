@@ -45,5 +45,13 @@ export function restoreVoyage(raw, activeVoyage) {
   v.obs.cols = v.obs.cols.map(decodeCol);
   v.obs.side = (v.obs.side || []).map((c) => ({ t: c.t, vals: Uint8Array.from(c.vals), x: c.x, y: c.y, h: c.h }));
   v.bathy = { cells: cellsFromBathy(v.bathy) };
+  // the longlines: `line` is one of `lines` (JSON copies them apart — join them again).
+  // Voyages saved before several lines kept only `line`.
+  if (!Array.isArray(v.lines)) v.lines = v.line ? [v.line] : [];
+  if (v.line) {
+    const same = v.lines.findIndex((l) => l.id === v.line.id);
+    if (same >= 0) v.line = v.lines[same];
+    else v.lines.push(v.line);
+  }
   return { ok: true, voyage: v, savedAt: snap.savedAt };
 }

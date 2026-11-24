@@ -1,5 +1,5 @@
 // HTML for the menu screens. Pure functions of state -> markup.
-import { EQUIPMENT, BOATS, ECONOMY, METHODS, SPECIES, PEERS, CREW, GUIDES, skillForLevel, trollSkillForLevel, longlineSkillForLevel, fits, sellValue } from '../core/data.js';
+import { EQUIPMENT, BOATS, ECONOMY, METHODS, SPECIES, PEERS, CREW, GUIDES, skillForLevel, trollSkillForLevel, longlineSkillForLevel, fits, sellValue, LONGLINE_LINES } from '../core/data.js';
 import { xpProgress, cycleEstimate, trollCycleEstimate, levelFromXp } from '../core/progress.js';
 import { purchasePreview, boatOffers, planBoatPurchase } from '../core/economy.js';
 import { forecastText, fmtClock } from '../core/sea.js';
@@ -395,6 +395,15 @@ function sounderEffect(cur, item) {
   <tr><td>デプスマッピング</td><td class="num">${a.mapping ? 'あり' : 'なし'}</td><td class="num ${b.mapping && !a.mapping ? 'up' : ''}">${b.mapping ? 'あり（10mごと）' : 'なし'}</td></tr></table></div>`;
 }
 
+function extraLineCard(p) {
+  const have = 1 + (p.extraLines || 0);
+  const full = have >= LONGLINE_LINES.max;
+  const can = !full && p.funds >= LONGLINE_LINES.extraPrice;
+  return `<div class="card offer"><h2>縄 ${have}本 <span class="tag">${have}/${LONGLINE_LINES.max}</span></h2>
+    <p class="note">縄は1本ずつ別の場所に張れます。張り終えたら次の縄を別の場所に張り、浸けている間に他の漁もできます。揚げるときは近い縄から（または番号を選んで）揚げます。</p>
+    ${full ? '<p class="note">これ以上は持てません。</p>' : `<div class="actions"><button type="button" class="btn primary" data-act="buyLine" ${can ? '' : 'disabled'}>縄を1本買い足す（${money(LONGLINE_LINES.extraPrice)}）</button>${can ? '' : `<span class="note">資金が足りません</span>`}</div>`}</div>`;
+}
+
 /** Which boat model has a slot this item fits (for "not on this boat" notes). */
 function whereItFits(item) {
   const out = [];
@@ -424,8 +433,10 @@ export function equipScreen(app) {
       const stored = p.storage.filter((x) => fits(EQUIPMENT[x.itemId], slot) && (!cur || x.itemId !== cur.id));
       const storedHtml = stored.map((x) => `<div class="actions"><span>${esc(EQUIPMENT[x.itemId].name)}（倉庫）</span><button type="button" class="btn" data-act="equipStored" data-uid="${esc(x.uid)}" data-slot="${esc(slot.id)}">ここに付ける</button></div>`).join('');
       const unmount = cur && slot.optional ? `<button type="button" class="btn" data-act="unmount" data-slot="${esc(slot.id)}">外して倉庫へ</button>` : '';
+      // 延縄の縄（R07）: lines bought beyond the one that comes with the gear
+      const lines = cur && cur.type === 'longline' ? extraLineCard(p) : '';
       return `<div class="card"><h2>${esc(slot.label)}</h2><p><b>${esc(cur ? cur.name : '（空き）')}</b></p><p class="note">${esc(cur ? cur.desc : 'この位置に対応する装備を取り付けられます。')}</p>
-        ${unmount ? `<div class="actions">${unmount}</div>` : ''}${storedHtml}${offerHtml}</div>`;
+        ${unmount ? `<div class="actions">${unmount}</div>` : ''}${lines}${storedHtml}${offerHtml}</div>`;
     })
     .join('');
   const storage = p.storage.length

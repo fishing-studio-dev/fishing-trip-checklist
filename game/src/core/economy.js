@@ -1,7 +1,7 @@
 // Simple, transactional economy: one-shot settlement after landing, and
 // equipment purchase / swap. Each function returns a complete new profile
 // (or a refusal) so a transaction is never half-applied (A11).
-import { ECONOMY, EQUIPMENT, BOATS, BOAT_OFFERS, SPECIES, METHODS, fits, sellValue } from './data.js';
+import { ECONOMY, EQUIPMENT, BOATS, BOAT_OFFERS, SPECIES, METHODS, fits, sellValue, LONGLINE_LINES } from './data.js';
 import { addHeardReports } from './knowledge.js';
 import { clone } from './profile.js';
 import { xpForVoyage, levelFromXp } from './progress.js';
@@ -198,6 +198,23 @@ export function purchaseEquipment(profile, itemId, slotId) {
   p.boat.slots[slotId] = inst;
   p.funds -= pv.price;
   return { ok: true, profile: p, receipt: { itemId, slotId, price: pv.price, fundsBefore: profile.funds, fundsAfter: p.funds, removedItemId: old ? old.itemId : null } };
+}
+
+/**
+ * 延縄の縄を買い足す（R07）: one more line, each laid on its own; at most
+ * LONGLINE_LINES.max in all (the one with the gear counts). Pure: a new profile.
+ */
+export function purchaseExtraLine(profile) {
+  if (profile.activeVoyage) return { ok: false, reason: '航海中は買えません。' };
+  const hasGear = Object.values(profile.boat.slots).some((x) => x && EQUIPMENT[x.itemId].type === 'longline') || profile.storage.some((x) => EQUIPMENT[x.itemId].type === 'longline');
+  if (!hasGear) return { ok: false, reason: '先に延縄具を手に入れてください（縄の1本目は延縄具に付いています）。' };
+  const have = 1 + (profile.extraLines || 0);
+  if (have >= LONGLINE_LINES.max) return { ok: false, reason: `縄は${LONGLINE_LINES.max}本までです。` };
+  if (profile.funds < LONGLINE_LINES.extraPrice) return { ok: false, reason: `資金が足りません（${LONGLINE_LINES.extraPrice.toLocaleString('ja-JP')}G）。` };
+  const p = clone(profile);
+  p.extraLines = (p.extraLines || 0) + 1;
+  p.funds -= LONGLINE_LINES.extraPrice;
+  return { ok: true, profile: p, receipt: { price: LONGLINE_LINES.extraPrice, lines: 1 + p.extraLines, fundsBefore: profile.funds, fundsAfter: p.funds } };
 }
 
 /** Swap a stored item onto its slot; the removed item goes to storage. Free. */

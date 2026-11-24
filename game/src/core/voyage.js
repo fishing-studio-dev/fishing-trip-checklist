@@ -2,7 +2,7 @@
 // automatic operation (一本釣り, 曳縄 or 延縄), plus the player's commands. The
 // player decides where, which method, which route, when to move or stop; the
 // repetitive work is automatic.
-import { SIM, TIME, PORT, BOATS, EQUIPMENT, METHODS, SPECIES, CREW } from './data.js';
+import { SIM, TIME, PORT, BOATS, EQUIPMENT, METHODS, SPECIES, CREW, LONGLINE_LINES } from './data.js';
 import { createWorld, normalizeSchool, schoolCenter, schoolTotal, takeFish, tidePhase } from './world.js';
 import { createBoatRuntime, stepBoat, autopilotCommand, routeToPort, clearPath } from './boat.js';
 import { createObservation, pingColumn, pushColumn } from './sounder.js';
@@ -82,6 +82,8 @@ export function createVoyage(profile, opts = {}) {
       troll: trollId ? EQUIPMENT[trollId].troll : null,
       longlineId,
       longline: longlineId ? EQUIPMENT[longlineId].longline : null,
+      // 延縄の縄（R07）: one with the gear, plus the ones bought (each laid on its own)
+      lineCount: longlineId ? Math.min(LONGLINE_LINES.max, 1 + (profile.extraLines || 0)) : 0,
       haulerId,
       hauler: haulerId ? EQUIPMENT[haulerId].hauler : null,
       sonarId,
@@ -101,7 +103,8 @@ export function createVoyage(profile, opts = {}) {
     obs: createObservation(),
     op: null,
     opSeq: 0,
-    line: null, // the longline (延縄): lives here while it soaks, also when no operation runs
+    line: null, // the longline being set or hauled now (or the last one worked)
+    lines: [], // every longline put out this voyage (延縄, up to equip.lineCount in the water at once)
     lineSeq: 0,
     crew: opts.crew != null ? (opts.crew ? 1 : 0) : av.crew ? 1 : 0, // a hired deckhand on board
     bathy: { cells: {} }, // depths measured on this voyage by a mapping sounder (merged at landing)
@@ -163,14 +166,43 @@ export function isLonglining(v) {
   return isOperating(v) && v.op.methodId === 'longline';
 }
 
-/** The longline is in the water (being set, soaking or being hauled). */
+/** Every longline of this voyage (older voyages kept only the one in `v.line`). */
+function allLines(v) {
+  if (!v.lines) v.lines = v.line ? [v.line] : [];
+  return v.lines;
+}
+
+/** The longlines in the water now (being set, soaking or being hauled). */
+export function linesInWater(v) {
+  return allLines(v).filter(setInWater);
+}
+
+/** The longlines soaking now, nearest first (by the nearer end buoy). */
+export function soakingLines(v) {
+  return allLines(v)
+    .filter((l) => l.state === 'soaking')
+    .map((l) => ({ line: l, buoy: nearestBuoy(l, v.boat.x, v.boat.y) }))
+    .sort((a, b) => a.buoy.dist - b.buoy.dist);
+}
+
+/** How many more lines can be put out now (the gear's lines not in the water). */
+export function freeLines(v) {
+  return Math.max(0, (v.equip.lineCount || (v.equip.longline ? 1 : 0)) - linesInWater(v).length);
+}
+
+/** The number of a line (1, 2, 3) as the screens call it. */
+export function lineNo(v, line) {
+  return allLines(v).indexOf(line) + 1;
+}
+
+/** Some longline is in the water (being set, soaking or being hauled). */
 export function lineInWater(v) {
-  return setInWater(v.line);
+  return linesInWater(v).length > 0;
 }
 
 /** What the hold can still take, counting every fish already hooked anywhere. */
 export function roomKg(v) {
-  let busy = hookedKg(v.line);
+  let busy = allLines(v).reduce((a, l) => a + hookedKg(l), 0);
   if (isOperating(v)) {
     if (METHODS[v.op.methodId].drift) busy += inFlightKg(v.op);
     else if (v.op.methodId === 'troll') busy += trollInFlightKg(v.op);
@@ -253,13 +285,13 @@ export function stepVoyage(v) {
 
   // the longline's hooks fish on a fixed game-time cadence wherever the boat is
   const soakEvery = METHODS.longline.soakEvery;
-  if (setInWater(v.line) && w.step % Math.round(soakEvery / SIM.STEP) === 0) {
-    soakLongline(v.line, { world: w, roomKg: () => roomKg(v) }, soakEvery);
+  if (w.step % Math.round(soakEvery / SIM.STEP) === 0) {
+    for (const line of allLines(v)) if (setInWater(line)) soakLongline(line, { world: w, roomKg: () => roomKg(v) }, soakEvery);
   }
 
   if (v.op) {
     if (v.op.state !== 'ended') {
-      const ctx = { world: w, boat: v.boat, obs: v.obs, hold: v.hold, capacityKg: v.capacityKg, reservedKg: hookedKg(v.line), onLand: (fish) => landFish(v, fish), takeBait: (sp) => takeLiveBait(v, sp) };
+      const ctx = { world: w, boat: v.boat, obs: v.obs, hold: v.hold, capacityKg: v.capacityKg, reservedKg: allLines(v).reduce((a, l) => a + hookedKg(l), 0), onLand: (fish) => landFish(v, fish), takeBait: (sp) => takeLiveBait(v, sp) };
       if (v.op.methodId === 'troll') stepTrollOperation(v.op, ctx, dt);
       else if (v.op.methodId === 'longline') stepLonglineOperation(v.op, v.line, ctx, dt);
       else stepOperation(v.op, ctx, dt);
@@ -284,6 +316,8 @@ export function stepVoyage(v) {
 
   // 漁師の勘 (Lv5+): the echo is there but nothing bites — or the bite has come on
   if (w.step % 300 === 0 && v.op && v.op.state === 'running') hunch(v);
+  // bait at the surface, but the trolling lures get nothing: say what else can be tried (once per run)
+  if (w.step % 600 === 0 && v.op && v.op.state === 'running' && v.op.methodId === 'troll') trollBaitHint(v);
 
   // the lookout: signs on the surface (鳥山・ナブラ・潮目) are called out when they come into sight
   if (w.step % 100 === 0) lookout(v);
@@ -373,13 +407,13 @@ function lookout(v) {
     const where = d < 60 ? 'すぐそば' : `${bearingOf(v.boat, c).name}・約${Math.round(d / 50) * 50}m`;
     const what = c.kind === 'birds' ? '鳥山が見えます' : c.kind === 'nabura' ? 'ナブラ（魚が水面で小魚を追っている）が見えます' : `潮目が出ています（${c.name}）`;
     say(v, `${what}（${where}）。`, 'sight');
+    if (c.kind === 'birds' || c.kind === 'nabura') v.lastBaitSignT = t; // bait seen at the surface (for the trolling hint)
     emit(v, { type: 'sighting', kind: c.kind, x: c.x, y: c.y });
   }
 }
 
-/** How many fish of a species are in the hold (live bait for 泳がせ). */
 export const HUNCH_LEVEL = 5;
-const HUNCH_METHODS = ['handline', 'negyo', 'oyogase', 'ika'];
+const HUNCH_METHODS = ['handline', 'negyo', 'oyogase', 'ika', 'jigging'];
 
 /**
  * 漁師の勘（R09）: a seasoned fisher reads the bite from what the boat itself
@@ -425,6 +459,58 @@ function hunch(v) {
   say(v, h.text);
 }
 
+/** Mid-water echoes the boat's own sounder has shown lately (bait or 青物 off the bottom). */
+function midWaterEcho(v, n = 240) {
+  return v.obs.cols.slice(-n).some((c) => c.maxFish >= 0.35 && c.fishDepth != null && c.fishDepth < c.bottom - 6);
+}
+
+/**
+ * 表層にベイト、曳縄に食わない（要望2）: after 20 minutes of trolling with no
+ * strike while bait has been seen (birds or a ナブラ, or bait on the sounder),
+ * say what else can be tried — live bait or a jig fished down under the bait.
+ * From what the boat has seen only; said once per trolling run.
+ */
+function trollBaitHint(v) {
+  const op = v.op;
+  const t = v.world.time;
+  if (op.baitHintSaid || t - op.startT < 1200) return;
+  if (op.stats.bites > (op.hintBites || 0)) {
+    op.hintBites = op.stats.bites;
+    op.hintFrom = t;
+    return;
+  }
+  if (t - (op.hintFrom || op.startT) < 1200) return;
+  const sawBait = (v.lastBaitSignT != null && t - v.lastBaitSignT < 2400) || midWaterEcho(v);
+  if (!sawBait) return;
+  op.baitHintSaid = true;
+  const aji = baitInHold(v, 'aji');
+  const ways = [];
+  ways.push(aji > 0 ? `活きアジが${aji}尾あるので泳がせ釣り（T で切り替え、ベイトの下で止めて Space）` : 'アジを一本釣りで釣って生け簀に入れ、泳がせ釣り');
+  if (v.equip.rod) ways.push('ジギング（ベイトの下までしゃくる）');
+  say(v, `ベイトはいるのに曳縄に食わない。青物がベイトの下にいて、表層の疑似餌を追わないのかもしれない。${ways.join('か、')}も手だ。`, 'hint');
+}
+
+/**
+ * The steps of 泳がせ (or ジギング) before starting, read from what the boat has
+ * and has seen: live アジ in the hold, an echo worth fishing, the boat stopped.
+ */
+export function liveBaitSteps(v) {
+  const m = METHODS[v.method];
+  if (!m || (!m.liveBait && !m.jig)) return null;
+  const steps = [];
+  if (m.liveBait) {
+    const n = baitInHold(v, m.liveBait);
+    steps.push({ id: 'bait', ok: n > 0, text: n > 0 ? `活きアジ ${n}尾（魚倉）` : '活きアジがない → まず一本釣りでアジを釣る（T で一本釣りに）' });
+  }
+  const echo = midWaterEcho(v);
+  const rock = v.obs.cols.slice(-60).some((c) => c.bottomCenter - c.bottom > 1.5);
+  steps.push({ id: 'echo', ok: echo || rock, text: echo ? '魚探に中層の反応（ベイトか青物）がある' : rock ? '根・瀬の上（底の起伏）にいる' : 'ベイトの団子や、その下・横の太い「へ」の字、または根や瀬を探す（ソナー・鳥山も手掛かり）' });
+  const stopped = Math.abs(v.boat.speed) <= m.maxStartSpeed;
+  steps.push({ id: 'stop', ok: stopped, text: stopped ? '船は止まっている' : '減速して止める（S・▼）' });
+  return { method: v.method, steps, ready: steps.every((x) => x.ok || x.id === 'echo') };
+}
+
+/** How many fish of a species are in the hold (live bait for 泳がせ). */
 export function baitInHold(v, species) {
   const c = v.hold.counts[species];
   return c ? c.s + c.m + c.l : 0;
@@ -649,10 +735,16 @@ export function canStartOperation(v) {
   const depth = depthAt(v.boat.x, v.boat.y);
   if (v.method === 'longline') {
     if (!v.equip.longline) return { ok: false, reason: '延縄具を積んでいません。' };
-    if (lineInWater(v)) return { ok: true, haul: true };
-    const route = lineRouteFrom(v);
-    if (!route.ok) return route;
-    return { ok: true };
+    // near a soaking line's buoy: haul it; otherwise put out a free line; with none free, go and haul the nearest
+    const soak = soakingLines(v);
+    if (soak.length && soak[0].buoy.dist <= METHODS.longline.nearBuoy * 2) return { ok: true, haul: true };
+    if (freeLines(v) > 0) {
+      const route = lineRouteFrom(v);
+      if (!route.ok) return route;
+      return { ok: true };
+    }
+    if (soak.length) return { ok: true, haul: true };
+    return { ok: false, reason: 'すべての縄が使用中です。' };
   }
   if (v.method === 'troll') {
     if (!v.equip.troll) return { ok: false, reason: '曳縄具を積んでいません。' };
@@ -710,11 +802,12 @@ export function startOperation(v) {
     const route = lineRouteFrom(v);
     v.lineSeq += 1;
     v.line = createLonglineSet({ id: `${v.id}-ll${v.lineSeq}`, gearId: v.equip.longlineId, gear: v.equip.longline, startT: v.world.time, start: { x: v.boat.x, y: v.boat.y } });
+    allLines(v).push(v.line);
     v.line.startConditions = conditionsSnapshot(v);
     v.line.plan = v.plan ? { key: v.plan.key, label: v.plan.label, basis: v.plan.basis } : null;
     v.op = createSetOperation({ id: `${v.id}-op${v.opSeq}`, voyageId: v.id, level: v.levels.longline, set: v.line, route: route.points, startT: v.world.time, x: v.boat.x, y: v.boat.y });
     v.plannedRoute = [];
-    say(v, `投縄開始（${areaNameAt(v.boat.x, v.boat.y)}・水深${depth.toFixed(0)}m${route.planned ? '' : '・今の向きにまっすぐ'}）。針${v.equip.longline.hooks}本を張ります。`);
+    say(v, `${v.equip.lineCount > 1 ? `${lineNo(v, v.line)}番の縄の` : ''}投縄開始（${areaNameAt(v.boat.x, v.boat.y)}・水深${depth.toFixed(0)}m${route.planned ? '' : '・今の向きにまっすぐ'}）。針${v.equip.longline.hooks}本を張ります。`);
     return { ok: true };
   }
   if (v.method === 'troll') {
@@ -770,11 +863,17 @@ export function startOperation(v) {
  * first; if the boat is away from the line it runs to the nearer end buoy
  * (movement assistance) and starts hauling there.
  */
-export function haulLongline(v, after = null) {
-  if (!v.line || v.line.state !== 'soaking') {
+export function haulLongline(v, after = null, which = null) {
+  const soak = soakingLines(v);
+  if (!soak.length) {
     if (v.line && (v.line.state === 'setting' || v.line.state === 'hauling')) return { ok: false, reason: v.line.state === 'setting' ? '投縄中です。張り終えてから揚げます。' : 'すでに揚げ縄中です。' };
     return { ok: false, reason: '海に入っている縄がありません。' };
   }
+  if (isLonglining(v)) return { ok: false, reason: v.op.kind === 'set' ? '投縄中です。張り終えてから揚げます。' : 'すでに揚げ縄中です。' };
+  // which line: the one asked for (by number), else the nearest soaking one
+  const pick = (which != null && soak.find((x) => lineNo(v, x.line) === which)) || soak[0];
+  if (!isOperating(v)) v.line = pick.line;
+  else v.haulNext = lineNo(v, pick.line);
   if (after) v.afterHaul = after;
   if (isOperating(v)) {
     if (v.op.state === 'running') requestStop(v.op, 'haul');
@@ -785,7 +884,7 @@ export function haulLongline(v, after = null) {
   const b = nearestBuoy(v.line, v.boat.x, v.boat.y);
   if (b.dist <= METHODS.longline.nearBuoy) return startHaul(v);
   v.autopilot = { kind: 'haul', route: [{ x: b.x, y: b.y }], leg: 0 };
-  say(v, `縄の${b.end === 'start' ? '入れ始め' : '入れ終わり'}のブイへ向かい、着いたら揚げます（移動補助。操船すると取り消し）。`);
+  say(v, `${v.equip.lineCount > 1 ? `${lineNo(v, v.line)}番の` : ''}縄の${b.end === 'start' ? '入れ始め' : '入れ終わり'}のブイへ向かい、着いたら揚げます（移動補助。操船すると取り消し）。`);
   return { ok: true };
 }
 
@@ -801,7 +900,7 @@ function startHaul(v) {
     v.afterHaul = null;
   }
   const soakMin = Math.round((v.world.time - v.line.setEndT) / 60);
-  say(v, `揚げ縄開始（浸け${soakMin}分）。縄に沿って進みながら自動で揚げます。`);
+  say(v, `${v.equip.lineCount > 1 ? `${lineNo(v, v.line)}番の縄の` : ''}揚げ縄開始（浸け${soakMin}分）。縄に沿って進みながら自動で揚げます。`);
   return { ok: true };
 }
 
@@ -951,7 +1050,8 @@ function finishOperation(v) {
     // the line now soaks; the log is written when it is hauled
     v.line.setStats = op.stats;
     v.line.setS = op.endT - op.startT;
-    say(v, `投縄完了（${v.equip.longline.hooks}本・${areaNameAt(v.line.end.x, v.line.end.y)}）。浸けている間は自由に動けます。揚げるときは「揚げ縄」（L）。`);
+    const free = freeLines(v);
+    say(v, `${v.equip.lineCount > 1 ? `${lineNo(v, v.line)}番の縄の` : ''}投縄完了（${v.equip.longline.hooks}本・${areaNameAt(v.line.end.x, v.line.end.y)}）。浸けている間は自由に動けます。揚げるときは「揚げ縄」（L）。${free > 0 ? `残りの縄はあと${free}本。別の場所にも張れます。` : ''}`);
     emit(v, { type: 'lineSet', lineId: v.line.id });
     if (after === 'return' || v.afterSetHaul) {
       v.afterSetHaul = false;
@@ -969,7 +1069,11 @@ function finishOperation(v) {
   if (log.endReason === 'hold_full') say(v, '魚倉が満杯です。帰港して水揚げしましょう。', 'warn');
   if (after === 'redrift') v.autopilot = { kind: 'redrift', route: [v.redriftTarget], leg: 0 };
   else if (after === 'route') runRoute(v);
-  else if (after === 'haul') haulLongline(v);
+  else if (after === 'haul') {
+    const n = v.haulNext;
+    v.haulNext = null;
+    haulLongline(v, null, n);
+  }
   else if (after === 'return') returnToPort(v, true);
 }
 

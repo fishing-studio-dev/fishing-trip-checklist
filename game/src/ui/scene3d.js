@@ -80,7 +80,7 @@ export function createScene(canvas) {
   for (const l of trollLines) scene.add(l.obj);
   const llLine = buildLine(0xffc65c);
   scene.add(llLine.obj);
-  const buoyObjs = [buildBuoy(), buildBuoy()];
+  const buoyObjs = Array.from({ length: 6 }, () => buildBuoy()); // two per longline, up to three lines (R07)
   for (const b of buoyObjs) scene.add(b);
   // chevrons on the water ahead of the bow: which way the boat points
   const chevMat = new THREE.MeshBasicMaterial({ color: 0xffd84d, transparent: true, opacity: 0.55, depthWrite: false, side: THREE.DoubleSide });
