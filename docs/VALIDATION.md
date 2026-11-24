@@ -1,5 +1,24 @@
 # 検証記録
 
+## 2026-11-24 — 追加15項目の14（Safari向けの点検と軽量化）
+
+| コマンド | 結果 |
+| --- | --- |
+| `cd game && npm run lint` / `npm test` | エラー0 / 160件すべて合格 |
+| `node tools/perf.cjs`（ヘッドレスChromium・ソフトウェア描画、合成の水深図あり） | 下の表 |
+| `npm run e2e`（PC） / `mobile.cjs` | 下の追記を参照 |
+
+| 画面 | 前（コマ/秒） | 後（コマ/秒） | 後のメイン処理の忙しさ |
+| --- | ---: | ---: | ---: |
+| PC・小さい海図 | 12 | 18 | 100% |
+| PC・拡大海図（拡大2段） | 9 | 19 | 78% |
+| iPhone 13相当・小さい海図 | 12 | 27 | 100% |
+| iPhone 13相当・拡大海図 | 12 | 51 | 51% |
+
+- ヘッドレスは3Dをソフトウェアで描くので、実機（GPUあり）より遅い。比べるための数字。
+- Safari向けの点検：Safari 15以降にない機能（`Array.prototype.at`・`structuredClone`・`toSorted`・`roundRect`・`:has()`・`requestIdleCallback`・`OffscreenCanvas` など）は使っていない。`inset`・`aspect-ratio`・flexの`gap`はSafari 15で使える。`backdrop-filter` に `-webkit-` を付けた。`-webkit-text-size-adjust: 100%`。音の開始を `touchend`・`click` でも。
+- 未確認：Safari（iPhone実機・Mac）での表示と操作。WebKitの試験用ブラウザがこの環境にないため。
+
 ## 2026-11-24 — 追加15項目の13（収支とバランス）
 
 | コマンド | 結果 |

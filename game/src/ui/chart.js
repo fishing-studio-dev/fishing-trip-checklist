@@ -223,36 +223,52 @@ function drawDepthMap(ctx, bathy, toPx, scale, W, H, { labels = true } = {}) {
     if ((x1 < -2 && x2 < -2) || (x1 > W + 2 && x2 > W + 2) || (y1 < -2 && y2 < -2) || (y1 > H + 2 && y2 > H + 2)) return null;
     return [x1, y1, x2, y2];
   };
-  // fine 2 m lines only when they are far enough apart to read
-  if (scale * 10 >= 1.4) {
-    ctx.strokeStyle = 'rgba(15,20,35,0.42)';
-    ctx.lineWidth = 0.8;
+  // the lines are built once as paths in sea coordinates (y up), then drawn with one stroke each
+  if (typeof Path2D !== 'undefined' && !bathy.paths) {
+    const mk = (arr) => {
+      const p = new Path2D();
+      for (let i = 0; i < arr.length; i += 4) {
+        p.moveTo(arr[i], AREA.H - arr[i + 1]);
+        p.lineTo(arr[i + 2], AREA.H - arr[i + 3]);
+      }
+      return p;
+    };
+    bathy.paths = { minor: mk(bathy.minor), major: mk(bathy.major) };
+  }
+  const strokeWorld = (path, arr, px) => {
+    if (bathy.paths) {
+      ctx.save();
+      ctx.transform(scale, 0, 0, scale, ox, oy);
+      ctx.lineWidth = px / scale;
+      ctx.stroke(path);
+      ctx.restore();
+      return;
+    }
+    ctx.lineWidth = px;
     ctx.beginPath();
-    for (let i = 0; i < bathy.minor.length; i += 4) {
-      const s = seg(bathy.minor, i);
+    for (let i = 0; i < arr.length; i += 4) {
+      const s = seg(arr, i);
       if (!s) continue;
       ctx.moveTo(s[0], s[1]);
       ctx.lineTo(s[2], s[3]);
     }
     ctx.stroke();
+  };
+  // fine 2 m lines only when they are far enough apart to read
+  if (scale * 10 >= 1.4) {
+    ctx.strokeStyle = 'rgba(15,20,35,0.42)';
+    strokeWorld(bathy.paths && bathy.paths.minor, bathy.minor, 0.8);
   }
   ctx.strokeStyle = 'rgba(8,10,22,0.85)';
-  ctx.lineWidth = scale * 10 >= 1.4 ? 1.6 : 1;
-  ctx.beginPath();
-  for (let i = 0; i < bathy.major.length; i += 4) {
-    const s = seg(bathy.major, i);
-    if (!s) continue;
-    ctx.moveTo(s[0], s[1]);
-    ctx.lineTo(s[2], s[3]);
-  }
-  ctx.stroke();
+  strokeWorld(bathy.paths && bathy.paths.major, bathy.major, scale * 10 >= 1.4 ? 1.6 : 1);
   if (labels && scale * 10 >= 0.8) {
     // depth numbers on the bold lines, spread out
     const placed = [];
     ctx.font = 'bold 10px sans-serif';
     ctx.textAlign = 'center';
     ctx.lineWidth = 3;
-    for (let i = 0, n = 0; i < bathy.major.length; i += 4, n++) {
+    // (every few segments is enough to find places for the numbers)
+    for (let i = 0, n = 0; i < bathy.major.length; i += 16, n += 4) {
       const s = seg(bathy.major, i);
       if (!s) continue;
       const mx = (s[0] + s[2]) / 2;

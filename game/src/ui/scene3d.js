@@ -455,6 +455,11 @@ export function createScene(canvas) {
   return {
     render,
     resize,
+    /** Lower or raise the 3D resolution (slow devices). */
+    setPixelRatio(r) {
+      renderer.setPixelRatio(r);
+      resize();
+    },
     renderer,
     /** Walk view shortcut: put the fisher at a work position (view only). */
     walkTo(name) {

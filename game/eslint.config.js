@@ -1,5 +1,5 @@
 // Minimal lint config (no plugins needed): catches undefined names and unused code.
-const browser = Object.fromEntries(['window', 'document', 'location', 'localStorage', 'performance', 'requestAnimationFrame', 'console', 'setTimeout', 'clearTimeout', 'URL', 'URLSearchParams', 'Blob', 'FileReader', 'navigator'].map((k) => [k, 'readonly']));
+const browser = Object.fromEntries(['window', 'document', 'location', 'localStorage', 'performance', 'requestAnimationFrame', 'console', 'setTimeout', 'clearTimeout', 'URL', 'URLSearchParams', 'Blob', 'FileReader', 'navigator', 'Path2D'].map((k) => [k, 'readonly']));
 const node = Object.fromEntries(['process', 'require', 'module', '__dirname', 'console', 'setTimeout'].map((k) => [k, 'readonly']));
 export default [
   { ignores: ['vendor/**', 'tests/e2e/out/**'] },

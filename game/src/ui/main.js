@@ -866,7 +866,10 @@ document.addEventListener('contextmenu', (e) => {
 });
 document.addEventListener('pointercancel', releaseHold);
 
-$('chart').addEventListener('click', onChartClick);
+$('chart').addEventListener('click', (ev) => {
+  onChartClick(ev);
+  chartAt = 0; // show the new point at once
+});
 // tap the sounder picture: a mark where that column was taken (the boat has moved on since)
 $('sounder').addEventListener('click', (ev) => {
   const v = app.voyage;
@@ -1537,6 +1540,36 @@ function consumeEvents(v) {
 // ---------------------------------------------------------------- loop
 let bathyAt = 0;
 let sonarAt = 0;
+let sounderAt = 0;
+let sounderSeen = -1;
+let chartAt = 0; // the chart is redrawn at most 10 (enlarged: 20) times a second
+let chartSkip = false;
+let last3d = 0;
+// 3D resolution steps: lowered when frames are slow, raised again when there is room
+const PIXEL_STEPS = [2, 1.5, 1, 0.75];
+let pixelStep = PIXEL_STEPS.findIndex((r) => r <= Math.min(window.devicePixelRatio || 1, 2));
+let slowFor = 0;
+let fastFor = 0;
+function adaptQuality(realDt) {
+  if (!scene || !scene.setPixelRatio || realDt <= 0) return;
+  if (realDt > 0.04) {
+    slowFor += realDt;
+    fastFor = 0;
+  } else if (realDt < 0.022) {
+    fastFor += realDt;
+    slowFor = 0;
+  }
+  const base = PIXEL_STEPS.findIndex((r) => r <= Math.min(window.devicePixelRatio || 1, 2));
+  if (slowFor > 3 && pixelStep < PIXEL_STEPS.length - 1) {
+    pixelStep += 1;
+    slowFor = 0;
+    scene.setPixelRatio(PIXEL_STEPS[pixelStep]);
+  } else if (fastFor > 10 && pixelStep > base) {
+    pixelStep -= 1;
+    fastFor = 0;
+    scene.setPixelRatio(PIXEL_STEPS[pixelStep]);
+  }
+}
 let guideAt = 0;
 /** Where the guide state lives: this browser's storage (a UI preference, not the save). */
 function guideStore() {
@@ -1550,7 +1583,8 @@ let guide = loadGuide(guideStore());
 app.guideOff = guide.off;
 // sound (item 12): made in the browser; starts on the first touch or key (a browser rule)
 const sound = createSound(loadSoundLevel(guideStore()));
-for (const evName of ['pointerdown', 'keydown']) document.addEventListener(evName, () => sound.unlock(), { passive: true });
+// (older iOS Safari only lets audio start from touchend/click, so listen to those too)
+for (const evName of ['pointerdown', 'touchend', 'click', 'keydown']) document.addEventListener(evName, () => sound.unlock(), { passive: true });
 function soundLabel() {
   return SOUND_LEVELS[sound.level].label;
 }
@@ -1603,6 +1637,8 @@ function frame(now) {
   realTime += realDt;
   const v = app.voyage;
   let newLandings = [];
+  chartSkip = false;
+  adaptQuality(realDt);
   if (!(app.screen === 'sea' && v)) sound.update({ atSea: false }); // in port: only the harbour's soft sea
   if (app.screen === 'sea' && v) {
     // rudder from held keys / buttons
@@ -1680,7 +1716,9 @@ function frame(now) {
       const t = ph.land || ph.port ? `海図 ${fmtClock(v.world.time)}・水深${v.obs.cols.length ? v.obs.cols[v.obs.cols.length - 1].bottom.toFixed(0) : '--'}m・${areaNameAt(v.boat.x, v.boat.y)}` : '海図（GPSプロッター）';
       if ($('chartTitle').textContent !== t) $('chartTitle').textContent = t;
     }
-    drawChart($('chart'), staticMap, v, { big: app.chartBig, span: CHART_SPANS[app.chartSpanIdx], dev: DEV, reports: reps, route, hint, line: showLine, lineLabel: showLine ? longlineLabel(showLine, v.op, v.world.time) : '', bathy: bathyNow, saved: app.profile.marks, selected: app.markSel });
+    if (now - chartAt >= (app.chartBig ? 50 : 100)) chartAt = now;
+    else chartSkip = true;
+    if (!chartSkip) drawChart($('chart'), staticMap, v, { big: app.chartBig, span: CHART_SPANS[app.chartSpanIdx], dev: DEV, reports: reps, route, hint, line: showLine, lineLabel: showLine ? longlineLabel(showLine, v.op, v.world.time) : '', bathy: bathyNow, saved: app.profile.marks, selected: app.markSel });
     if (app.sonarOpen && v.sonar && now - sonarAt > 150) {
       sonarAt = now;
       const marks = [...(app.profile.marks || []), ...v.obs.marks.filter((m) => m.kind !== 'auto')];
@@ -1692,10 +1730,18 @@ function frame(now) {
         sideAt = now;
         drawSideView($('sideview'), v.obs.side, sideCap.range);
       }
-    } else if (app.sounderOpen) sounderView.draw(v.obs, { lines: isOperating(v) && v.op.lines ? v.op.lines : null, waterTemp: v.world.cond.waterTemp, readout: !!v.equip.sounder.readout });
+    } else if (app.sounderOpen && (v.obs.pingCount !== sounderSeen || now - sounderAt > 400)) {
+      // the picture only changes with a new ping (and the line markers): redraw then, not every frame
+      sounderSeen = v.obs.pingCount;
+      sounderAt = now;
+      sounderView.draw(v.obs, { lines: isOperating(v) && v.op.lines ? v.op.lines : null, waterTemp: v.world.cond.waterTemp, readout: !!v.equip.sounder.readout });
+    }
     if (v.phase === 'docked') arriveAndSettle();
   }
-  if (scene) {
+  // while the enlarged chart covers the view, the 3D only needs a slow refresh
+  const skip3d = app.chartBig && app.screen === 'sea' && now - last3d < 100 && !newLandings.length;
+  if (scene && !skip3d) {
+    last3d = now;
     const atSea = app.screen === 'sea' && v;
     const hl = atSea && isOperating(v) && METHODS[v.op.methodId].drift ? v.op.lines : null;
     const tl = atSea && isTrolling(v) ? v.op.lines : null;
