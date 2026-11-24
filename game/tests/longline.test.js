@@ -322,3 +322,28 @@ test('A12 (移行): an M2 save (format 3) opens in the current format: the longl
   assert.deepEqual(validateProfile(p), []);
   assert.equal(st.getItem(r.preMigrationKey), raw);
 });
+
+test('a longline that brings up マダイ and アマダイ settles: the log keeps each fish by species (older logs without the split still settle)', () => {
+  const amadai = { id: 'SA', species: 'shiroamadai', a: { x: 1150, y: 1900 }, counts: { s: 10, m: 30, l: 10 }, sigmaH: 150, sigmaZ: 2, activityOverride: 1, orbitR: 0 };
+  const p = llProfile();
+  const dep = markDeparture(p, NOW);
+  const v = createVoyage(dep, { scenario: { conditions: CALM, schools: [madai(), amadai] }, start: { x: 1150, y: 1580, heading: 0 }, method: 'longline' });
+  v.world.time = 8 * 3600;
+  v.nextTrackT = v.world.time + 10;
+  const log = setSoakHaul(v, 2700);
+  assert.ok(log.bySpecies && log.bySpecies.madai && log.bySpecies.shiroamadai, JSON.stringify(log.bySpecies));
+  for (const sp of ['madai', 'shiroamadai']) assert.deepEqual(log.bySpecies[sp], v.hold.counts[sp]);
+  returnToPort(v);
+  runUntil(v, () => v.phase === 'docked');
+  const sum = summarizeVoyage(v);
+  const s = settleVoyage(dep, sum);
+  assert.ok(s.ok, s.reason);
+  assert.ok(s.profile.records.shiroamadai && s.profile.records.madai);
+  // a log written before the split (everything under マダイ) still settles when the sizes add up …
+  const old = JSON.parse(JSON.stringify(sum));
+  for (const l of old.logs) delete l.bySpecies;
+  assert.ok(settleVoyage(dep, old).ok);
+  // … but a hold that does not match the logs is still refused
+  old.hold.counts.madai.m += 1;
+  assert.equal(settleVoyage(dep, old).ok, false);
+});

@@ -158,25 +158,34 @@ function updateRecords(p, summary, lines) {
   return out;
 }
 
+// The hold must match the operation logs (every landed fish came from an
+// operation), less the fish taken from the hold as live bait (泳がせ).
+// Logs written before the longline kept a per-species split (a by-catch of
+// アマダイ recorded as マダイ) are accepted when the sizes add up across species.
+function holdMatchesLogs(summary) {
+  const SZ = ['s', 'm', 'l'];
+  const perSpecies = (spId) => {
+    const fromLogs = { s: 0, m: 0, l: 0 };
+    for (const l of summary.logs) {
+      const c = l.bySpecies ? l.bySpecies[spId] : (l.species || 'aji') === spId ? l.catches : null;
+      if (c) for (const k of SZ) fromLogs[k] += c[k] || 0;
+    }
+    const bait = (summary.baitUsed || {})[spId];
+    if (bait) for (const k of SZ) fromLogs[k] -= bait[k] || 0;
+    return fromLogs;
+  };
+  const held = (spId, k) => (summary.hold.counts[spId] || {})[k] || 0;
+  const species = Object.keys(SPECIES);
+  if (species.every((spId) => { const f = perSpecies(spId); return SZ.every((k) => f[k] === held(spId, k)); })) return true;
+  if (!summary.logs.some((l) => l.methodId === 'longline' && !l.bySpecies)) return false;
+  return SZ.every((k) => species.reduce((a, spId) => a + perSpecies(spId)[k], 0) === species.reduce((a, spId) => a + held(spId, k), 0));
+}
+
 /** Land and sell the whole catch, pay the trip cost, gain XP. Exactly once per voyage. */
 export function settleVoyage(profile, summary) {
   if (profile.settledVoyages.includes(summary.id)) return { ok: false, reason: 'この航海はすでに精算済みです。' };
   if (!profile.activeVoyage || profile.activeVoyage.id !== summary.id) return { ok: false, reason: '精算対象の航海が見つかりません。' };
-  // the hold must match the operation logs (every landed fish came from an operation),
-  // less the fish taken from the hold as live bait (泳がせ)
-  for (const spId of Object.keys(SPECIES)) {
-    const fromLogs = { s: 0, m: 0, l: 0 };
-    for (const l of summary.logs) {
-      const c = l.bySpecies ? l.bySpecies[spId] : (l.species || 'aji') === spId ? l.catches : null;
-      if (c) for (const k of Object.keys(fromLogs)) fromLogs[k] += c[k] || 0;
-    }
-    const bait = (summary.baitUsed || {})[spId];
-    if (bait) for (const k of Object.keys(fromLogs)) fromLogs[k] -= bait[k] || 0;
-    const held = summary.hold.counts[spId] || {};
-    for (const k of Object.keys(fromLogs)) {
-      if (fromLogs[k] !== (held[k] || 0)) return { ok: false, reason: '魚倉と操業記録が一致しません（精算を中止しました）。' };
-    }
-  }
+  if (!holdMatchesLogs(summary)) return { ok: false, reason: '魚倉と操業記録が一致しません（精算を中止しました）。' };
 
   const p = clone(profile);
   if (!p.orders) p.orders = [];

@@ -1217,6 +1217,9 @@ function makeLonglineLog(v, op, set) {
       fromEnd: op.fromEnd,
     },
   };
+  // what came up of each fish (マダイ・アマダイ…): settlement and the records count by species
+  log.bySpecies = Object.fromEntries(Object.entries(op.landedBy || {}).map(([sp, c]) => [sp, { ...c }]));
+  if (!Object.keys(log.bySpecies).length) log.bySpecies = { [op.species]: { ...op.landed } };
   log.tags = logTags(log);
   return log;
 }
