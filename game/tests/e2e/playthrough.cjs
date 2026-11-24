@@ -983,6 +983,71 @@ const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
     await shot('99-ika-failure').catch(() => {});
   }
 
+  // ---------------------------------------------------------------- 第2期・段2: ジギング, the 泳がせ checklist, extra longlines
+  try {
+    const pg = page;
+    await pg.goto(`http://localhost:${port}/?dev=1&seed=77`);
+    await pg.waitForSelector('#portChart');
+    const own = await st();
+    await pg.click('[data-act=market]');
+    await pg.click('[data-act=playtestLoad]');
+    await pg.click('[data-act=playtestLoadConfirm]');
+    await pg.click('[data-act=toPort]');
+    await pg.click('[data-act=equip]');
+    const eqText = await pg.textContent('#screen');
+    check('段2: the equipment screen offers the jigging rod for the new rod rack', /竿立て（ジギング）/.test(eqText) && /ジギングロッド JG-1/.test(eqText));
+    await pg.click('[data-act=buy][data-item=rod_jg1][data-slot=rod_rack]');
+    await pg.click('[data-act=buyConfirm]');
+    await sleep(200);
+    if (await pg.isVisible('#modal [data-act=closeModal]').catch(() => false)) await pg.click('#modal [data-act=closeModal]');
+    // extra longlines: the playtest boat carries the trolling gear; swap in a longline and buy a second line
+    await pg.click('[data-act=buy][data-item=longline_ll1]');
+    await pg.click('[data-act=buyConfirm]');
+    await sleep(200);
+    if (await pg.isVisible('#modal [data-act=closeModal]').catch(() => false)) await pg.click('#modal [data-act=closeModal]');
+    await pg.click('[data-act=buyLine]');
+    await sleep(200);
+    const lines = await pg.evaluate(() => window.__ryoshi.app.profile.extraLines);
+    check('段2: a second longline can be bought (R07)', lines === 1 && /縄 2本/.test(await pg.textContent('#screen')), `extraLines ${lines}`);
+    await pg.click('[data-act=toPort]');
+    await pg.click('[data-act=depart]');
+    await waitFor((x) => x.screen === 'sea', 'at sea (ジギング)');
+    // 泳がせ: the checklist says to catch アジ first (the hold is empty)
+    for (let i = 0; i < 8 && (await st()).voyage.method !== 'oyogase'; i++) await press('t');
+    await ff(30);
+    const oyoPanel = await pg.textContent('#opPanel');
+    check('段2: the 泳がせ checklist says to catch アジ first when there are none', /泳がせ釣りの手順/.test(oyoPanel) && /一本釣りでアジを釣る/.test(oyoPanel), oyoPanel.slice(0, 120));
+    // ジギング at the nearest 根 (dev: the structure's place, read only to head there)
+    const ne = { x: 1500, y: 2200 }; // 大きな根 n1
+    await press('c');
+    await sleep(200);
+    await clickChart(ne.x, ne.y);
+    await press('c');
+    await press('g');
+    for (let i = 0; i < 60 && (await st()).voyage.autopilot; i++) await ff(20);
+    for (let i = 0; i < 8 && (await st()).voyage.method !== 'jigging'; i++) await press('t');
+    await press('s');
+    await press('s');
+    await press('s');
+    await ff(30);
+    await press('Space');
+    await waitFor((x) => x.voyage.operating, 'ジギング started');
+    await ff(300);
+    const jigPanel = await pg.textContent('#opPanel');
+    check('段2: ジギング runs by itself — the jig is jerked up and dropped again', /ジギング/.test(jigPanel) && /しゃくり/.test(jigPanel) && /しゃくり上げる範囲/.test(jigPanel), jigPanel.slice(0, 160));
+    await shot('35-jigging');
+    await returnAndLand('段2');
+    await pg.click('[data-act=toPort]');
+    await pg.click('[data-act=market]');
+    await pg.click('[data-act=playtestRestore]');
+    await pg.click('[data-act=playtestRestoreConfirm]');
+    await pg.waitForSelector('#portChart');
+    check('back to the own progress after the 段2 playtest', (await st()).funds === own.funds);
+  } catch (e) {
+    check('段2 playthrough', false, e.message);
+    await shot('99-stage2-failure').catch(() => {});
+  }
+
   // ---------------------------------------------------------------- 天候 (item 10, R17): a rough day — nobody is kept in; resting is the player's call
   try {
     const pg = page;
