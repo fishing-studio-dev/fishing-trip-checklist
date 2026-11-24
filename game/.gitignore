@@ -2,3 +2,5 @@ node_modules/
 tests/e2e/out/
 # build output of `npm run build:page` (regenerated from the sources)
 dist/
+# a stray output folder from passing a Playwright flag to the custom e2e scripts
+--trace/

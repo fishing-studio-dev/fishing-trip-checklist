@@ -20,7 +20,8 @@ function loadPlaywright() {
 }
 const { chromium } = loadPlaywright();
 const root = path.resolve(__dirname, '..', '..');
-const outDir = path.resolve(process.argv[2] || path.join(root, 'tests', 'e2e', 'out'));
+const outArg = process.argv.slice(2).find((a) => !a.startsWith('--') && a !== 'off'); // flags such as --trace off are not output folders
+const outDir = path.resolve(outArg || path.join(root, 'tests', 'e2e', 'out'));
 fs.mkdirSync(outDir, { recursive: true });
 
 const results = [];
