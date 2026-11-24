@@ -141,6 +141,8 @@ async function layout(page) {
       await page.screenshot({ path: path.join(outDir, `${slug}-2b-walk.png`) });
       await page.tap('#btnView');
       // run on out of the harbour (fishing is refused within 300 m of the dock), then stop with taps
+      // (clearing the route in chart mode stopped the boat: speed up again first)
+      for (let i = 0; i < 3; i++) await page.tap('[data-act=throttleUp]');
       await page.evaluate(() => window.__ryoshi.fastForward(150));
       for (let i = 0; i < 4; i++) await page.tap('[data-act=throttleDown]');
       await page.tap('[data-act=throttleUp]');

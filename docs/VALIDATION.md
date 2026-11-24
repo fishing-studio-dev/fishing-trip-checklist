@@ -6,7 +6,7 @@
 | --- | --- |
 | `cd game && npm run lint` / `npm test` | エラー0 / 160件すべて合格 |
 | `node tools/perf.cjs`（ヘッドレスChromium・ソフトウェア描画、合成の水深図あり） | 下の表 |
-| `npm run e2e`（PC） / `mobile.cjs` | 下の追記を参照 |
+| `npm run e2e`（PC） / `mobile.cjs` | **101項目すべて合格** / **64項目すべて合格**（下の修正のあと） |
 
 | 画面 | 前（コマ/秒） | 後（コマ/秒） | 後のメイン処理の忙しさ |
 | --- | ---: | ---: | ---: |
@@ -17,6 +17,7 @@
 
 - ヘッドレスは3Dをソフトウェアで描くので、実機（GPUあり）より遅い。比べるための数字。
 - Safari向けの点検：Safari 15以降にない機能（`Array.prototype.at`・`structuredClone`・`toSorted`・`roundRect`・`:has()`・`requestIdleCallback`・`OffscreenCanvas` など）は使っていない。`inset`・`aspect-ratio`・flexの`gap`はSafari 15で使える。`backdrop-filter` に `-webkit-` を付けた。`-webkit-text-size-adjust: 100%`。音の開始を `touchend`・`click` でも。
+- スマホの試験で、海図モードで航路を消した（船が止まる）あと港の外へ出る前提が、画面が速くなって成り立たなくなり、4機種とも「港の中では操業できません」で止まった（ゲームの不具合ではなく試験が待ち時間に頼っていた）→ 試験で増速してから港の外へ出るようにした。
 - 未確認：Safari（iPhone実機・Mac）での表示と操作。WebKitの試験用ブラウザがこの環境にないため。
 
 ## 2026-11-24 — 追加15項目の13（収支とバランス）
