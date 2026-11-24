@@ -36,7 +36,7 @@ export function saveSoundLevel(storage, i) {
 
 /** The next level when the sound button is pressed: 中 → 大 → なし → 小 → 中 … */
 export function nextSoundLevel(i) {
-  return [3, 2, 0, 1][[0, 1, 2, 3].indexOf(i)] ?? 2;
+  return (i + 1) % SOUND_LEVELS.length; // the levels are ordered なし・小・中・大, so this wraps 大 → なし
 }
 
 function noiseBuffer(ctx, seconds, brown = true) {
@@ -207,7 +207,18 @@ export function createSound(level = 2) {
     }
   }
 
-  return { unlock, setLevel, update, event, get level() {
-    return cur;
-  } };
+  return {
+    unlock,
+    setLevel,
+    update,
+    event,
+    get level() {
+      return cur;
+    },
+    /** For tests: is the audio running, and how loud are the waves and the engine now. */
+    get status() {
+      if (!ctx) return { running: false };
+      return { running: ctx.state === 'running', waves: waves.gain.gain.value, engine: engine.gain.gain.value, master: master.gain.value };
+    },
+  };
 }

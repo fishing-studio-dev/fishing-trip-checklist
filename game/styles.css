@@ -361,3 +361,4 @@ body.chart-open .toast { top: 38%; bottom: auto; }
 #hud.phone-land .guide-title { font-size: 11px; margin-bottom: 2px; }
 #hud.phone-land .guide-text { font-size: 12px; line-height: 1.4; margin-bottom: 3px; }
 #hud.phone-land .coach .tool { min-height: 28px; font-size: 12px; padding: 2px 8px; }
+#btnSound small { font-size: .75em; margin-left: 2px; opacity: .85; }

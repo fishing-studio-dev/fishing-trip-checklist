@@ -996,6 +996,12 @@ const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
     await sleep(600);
     const g2 = await gp.textContent('#guideTitle');
     check('案内: at sea the guide shows step 1 and moves to step 2 once the boat is out', vis1 && /はじめての航海 1\/6/.test(g1) && /2\/6/.test(g2), `${g1.slice(0, 30)} → ${g2}`);
+    // item 12: sound — made in the browser, running after the first touch; the 音 button steps the level
+    const snd = await gp.evaluate(() => window.__ryoshi.sound());
+    await gp.click('#btnSound');
+    const sndLabel = await gp.textContent('#btnSound');
+    const sndStored = await gp.evaluate(() => localStorage.getItem('ryoshi-game:sound'));
+    check('音: sea and engine sounds run after the first touch; the 音 button steps 中→大 and is remembered', snd.running && snd.waves > 0 && snd.engine > 0 && sndLabel === '音大' && sndStored === 'high', JSON.stringify(snd));
     await gp.click('[data-act=guideOff]');
     await sleep(300);
     const kept = await gp.evaluate(() => JSON.parse(localStorage.getItem('ryoshi-game:guide') || '{}').off);

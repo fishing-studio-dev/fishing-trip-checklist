@@ -11,6 +11,7 @@ import {
 import { sonarToWorld } from '../core/sonar.js';
 import { surfaceCues } from '../core/surface.js';
 import { loadGuide, saveGuide, guideView, guideNow } from './guide.js';
+import { createSound, loadSoundLevel, saveSoundLevel, nextSoundLevel, SOUND_LEVELS } from './sound.js';
 import { longlineLabel, baitLeft, nearestBuoy, buoys } from '../core/longline.js';
 import { acquireBriefing, buildCandidates, planSummary } from '../core/knowledge.js';
 import { reportLine, peerName } from '../core/reports.js';
@@ -771,6 +772,9 @@ document.addEventListener('keydown', (e) => {
     case 'o':
       if (app.voyage && app.voyage.sonar) toggle('sonar');
       break;
+    case 'n':
+      cycleSound();
+      break;
     case 'k':
       marksModal();
       break;
@@ -1022,6 +1026,9 @@ document.addEventListener('click', (e) => {
     case 'help':
       modal(S.helpModal());
       break;
+    case 'sound':
+      cycleSound();
+      break;
     case 'guideOk': {
       // this note is understood: do not show it again
       const n = app.guideNote;
@@ -1184,6 +1191,7 @@ function chip(k, v, cls = '') {
 }
 
 function updateHudStatic() {
+  $('btnSound').innerHTML = soundButton();
   const v = app.voyage;
   if (!v || app.screen !== 'sea') return;
   const model = BOATS[v.modelId];
@@ -1504,7 +1512,10 @@ function consumeEvents(v) {
   for (const ev of v.events) {
     if (ev.id <= app.seenEvent) continue;
     app.seenEvent = ev.id;
+    if (ev.type === 'radio') sound.event('radio');
+    if (ev.type === 'sighting') sound.event('ui');
     if (ev.type === 'landed') {
+      sound.event('land');
       landed += ev.fish.length;
       const by = {};
       for (const f of ev.fish) {
@@ -1531,6 +1542,23 @@ function guideStore() {
 }
 let guide = loadGuide(guideStore());
 app.guideOff = guide.off;
+// sound (item 12): made in the browser; starts on the first touch or key (a browser rule)
+const sound = createSound(loadSoundLevel(guideStore()));
+for (const evName of ['pointerdown', 'keydown']) document.addEventListener(evName, () => sound.unlock(), { passive: true });
+function soundLabel() {
+  return SOUND_LEVELS[sound.level].label;
+}
+/** The 音 button: short, so it fits the bottom row of a small phone. */
+function soundButton() {
+  return `音<small>${SOUND_LEVELS[sound.level].label.replace('音：', '')}</small>`;
+}
+function cycleSound() {
+  const i = nextSoundLevel(sound.level);
+  sound.setLevel(i);
+  saveSoundLevel(guideStore(), i);
+  $('btnSound').innerHTML = soundButton();
+  toast(soundLabel());
+}
 
 /** The guide card at sea: follows what the player is doing; never touches the simulation. */
 function updateGuide(v, now) {
@@ -1569,6 +1597,7 @@ function frame(now) {
   realTime += realDt;
   const v = app.voyage;
   let newLandings = [];
+  if (!(app.screen === 'sea' && v)) sound.update({ atSea: false }); // in port: only the harbour's soft sea
   if (app.screen === 'sea' && v) {
     // rudder from held keys / buttons
     const rIn = app.view === 'walk' ? 0 : (held.right ? 1 : 0) - (held.left ? 1 : 0);
@@ -1586,6 +1615,16 @@ function frame(now) {
     }
     const n = consumeEvents(v);
     if (n) newLandings = [n];
+    // sound follows what is on screen: speed, wind, a line being wound up, birds nearby
+    const lines = isOperating(v) && v.op.lines ? v.op.lines : [];
+    const birds = cuesNow.filter((c) => c.kind === 'birds').reduce((a, c) => Math.max(a, c.strength * Math.max(0, 1 - Math.hypot(c.x - v.boat.x, c.y - v.boat.y) / 700)), 0);
+    sound.update({
+      atSea: v.phase === 'sea' && !app.paused,
+      speed: Math.hypot(v.boat.vx || 0, v.boat.vy || 0) + Math.abs(v.boat.speed) * 0.5,
+      wind: v.world.cond.windSpeed,
+      retrieving: lines.some((l) => l.phase === 'retrieve' || l.phase === 'haul'),
+      birds,
+    });
     // the voyage in progress is saved every few seconds (and when the page is hidden)
     if (v.phase === 'sea' && now - lastVoyageSave > 5000) saveVoyageNow();
     updateHud(now);
@@ -1842,6 +1881,9 @@ function devApi() {
       const r = c.getBoundingClientRect();
       const p = worldToChart(c, app.voyage, app.chartBig, x, y, app.chartBig ? CHART_SPANS[app.chartSpanIdx] : null);
       return { x: r.left + p.px, y: r.top + p.py };
+    },
+    sound() {
+      return { level: sound.level, ...sound.status };
     },
     cues() {
       return app.voyage ? surfaceCues(app.voyage.world) : [];
