@@ -391,6 +391,11 @@ export function forecastText(cond) {
   return lines;
 }
 
+/** A clock time that may run past midnight (a night trip): 「翌01:30」. */
+export function fmtClockNight(t) {
+  return `${t >= 24 * 3600 ? '翌' : ''}${fmtClock(t)}`;
+}
+
 export function fmtClock(t) {
   const h = Math.floor(t / 3600) % 24;
   const m = Math.floor((t % 3600) / 60);

@@ -343,7 +343,7 @@ function conditionNotes(methodId, fc) {
     else notes.push('中潮：ほどよく潮が動く');
     if (fc.windSpeed >= 6) notes.push(`風${fc.windSpeed}m/s（予報）：船が流されやすい`);
   } else if (methodId === 'ika') {
-    notes.push('夕方に出る漁（16時出港・23時までに帰港）');
+    notes.push('夕方に出る漁（日没の少し前に出港し、夜中の1〜3時ごろまで。暗くなってからが勝負）');
     if (tc === '大潮') notes.push('大潮：流されやすく、寄せたイカから離れやすい');
     else notes.push(`${fc.tideName}：流れが緩いと集魚灯の下にイカがたまりやすい`);
     notes.push(fc.waterTemp >= 18.6 ? `水温${fc.waterTemp}℃：ケンサキイカの多い頃（一般的な目安）` : `水温${fc.waterTemp}℃：ヤリイカの多い頃（一般的な目安）`);

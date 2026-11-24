@@ -102,8 +102,11 @@ export function dayTimes(day) {
   const sun = sunTimes(day);
   const depart = roundTo(sun.rise - 3600, 600);
   const end = roundTo(sun.set - 1800, 600);
-  const nightDepart = roundTo(sun.set - 3600, 600);
-  const nightEnd = Math.min(23.5 * 3600, roundTo(sun.set + 5 * 3600, 600));
+  // イカ釣り（第3期）: out just before sunset, the lamps lit at dusk, fishing on into
+  // the night — home by about eight hours after sunset, 03:00 at the latest
+  // (times past midnight run on from 24:00: 25:30 is 01:30 the next morning)
+  const nightDepart = roundTo(sun.set - 1200, 600);
+  const nightEnd = Math.min(27 * 3600, roundTo(sun.set + 8 * 3600, 600));
   return {
     sunrise: sun.rise,
     sunset: sun.set,

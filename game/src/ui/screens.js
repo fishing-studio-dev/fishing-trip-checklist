@@ -3,7 +3,7 @@ import { EQUIPMENT, BOATS, ECONOMY, METHODS, SPECIES, PEERS, CREW, GUIDES, DIFFI
 import { xpProgress, cycleEstimate, trollCycleEstimate, levelFromXp } from '../core/progress.js';
 import { purchasePreview, boatOffers, planBoatPurchase } from '../core/economy.js';
 import { itemPrice, boatPrice, tradeInOf, extraLinePrice, sellPrice, marketBoard, difficultyOf } from '../core/market.js';
-import { forecastText, fmtClock } from '../core/sea.js';
+import { forecastText, fmtClock, fmtClockNight } from '../core/sea.js';
 import { calendarOf, dayTimes } from '../core/calendar.js';
 import { ordersOffered, activeOrders } from '../core/orders.js';
 import { yearSummary } from '../core/review.js';
@@ -187,7 +187,7 @@ function nightChoice(app) {
   const lamp = Object.values(app.profile.boat.slots).find((x) => x && EQUIPMENT[x.itemId].type === 'lights');
   if (!lamp) return '';
   return `<div class="crew-choice"><label><input type="checkbox" id="nightTrip" ${app.nightTrip ? 'checked' : ''}>
-    今日は夕方から出る（イカ釣り・${fmtClock(dayTimes(app.profile.day + 1).night.depart)}出港、${fmtClock(dayTimes(app.profile.day + 1).night.end)}までに帰港）</label>
+    今日は夕方から出る（イカ釣り・${fmtClock(dayTimes(app.profile.day + 1).night.depart)}出港、${fmtClockNight(dayTimes(app.profile.day + 1).night.end)}までに帰港）</label>
     <p class="note">${esc(EQUIPMENT[lamp.itemId].name)}で、暗くなるとイカが船の下に寄ります。イカの候補（D）を選んで出港しても夕方になります。朝の無線は聞けません。</p></div>`;
 }
 

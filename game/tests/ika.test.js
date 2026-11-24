@@ -40,10 +40,11 @@ test('an evening trip leaves an hour before sunset and turns for home late at ni
   const { v } = voyage();
   const hours = dayTimes(v.day);
   assert.equal(v.world.time, hours.night.depart);
-  assert.ok(v.world.time < hours.sunset && v.world.time >= hours.sunset - 3600 - 600);
+  // 第3期: out just before sunset (20 min), home deep in the night (8 h after sunset, 03:00 at the latest)
+  assert.ok(v.world.time < hours.sunset && v.world.time >= hours.sunset - 1800);
   assert.equal(v.radio.length, 0);
   assert.equal(v.endT, hours.night.end);
-  assert.ok(v.endT > hours.sunset + 3 * 3600 && v.endT <= 23.5 * 3600);
+  assert.ok(v.endT >= hours.sunset + 7 * 3600 && v.endT <= 27 * 3600, `${v.endT / 3600}`);
   const day = voyage({ night: false }).v;
   assert.equal(day.world.time, hours.depart);
   void TIME;

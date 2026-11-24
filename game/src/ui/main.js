@@ -17,7 +17,7 @@ import { acquireBriefing, buildCandidates, planSummary } from '../core/knowledge
 import { reportLine, peerName } from '../core/reports.js';
 import { trollLineLabel } from '../core/troll.js';
 import { linePhaseLabel, recentPace } from '../core/fishing.js';
-import { fmtClock, compass8, areaNameAt, currentAt, makeDayConditions, forecastOf, visibilityAt } from '../core/sea.js';
+import { fmtClock, fmtClockNight, compass8, areaNameAt, currentAt, makeDayConditions, forecastOf, visibilityAt } from '../core/sea.js';
 import { levelFromXp } from '../core/progress.js';
 import { calendarOf, dayTimes } from '../core/calendar.js';
 import { schoolCenter, tidePhase } from '../core/world.js';
@@ -1756,7 +1756,7 @@ function updateHud(now) {
   const scale = TIME.SCALE[sit] * TIME.USER_MULT[app.speedIdx];
   const late = v.world.time >= (v.warnT || TIME.WARN);
   const opMode = isOperating(v);
-  let html = chip(`${v.day}日目`, fmtClock(v.world.time), late ? 'warn' : '');
+  let html = chip(`${v.day}日目`, fmtClockNight(v.world.time), late ? 'warn' : '');
   // heading: an arrow that turns with the bow (north up, like the chart)
   html += chip('船首', `<svg class="hdg-arrow" viewBox="0 0 10 10" style="transform:rotate(${hdg}deg)" aria-hidden="true"><path d="M5 0.5 L9 9.5 L5 7 L1 9.5 Z"/></svg>${String(hdg).padStart(3, '0')}° ${compass8(Math.sin(b.heading), Math.cos(b.heading))}`, 'hdg');
   if (!opMode) html += chip('対地', `${(sog * 1.944).toFixed(1)}kt ${sog > 0.05 ? compass8(b.vx, b.vy) : ''}`);

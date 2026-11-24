@@ -893,7 +893,7 @@ export function startOperation(v) {
     say(v, '海が荒れていて、手元の作業に時間がかかります。', 'warn');
   }
   if (depth > v.equip.reel.maxDepth) say(v, `水深${depth.toFixed(0)}mはリールの対応水深${v.equip.reel.maxDepth}mを超えています。届く深さまでで操業します。`, 'warn');
-  if (hookMethod === 'ika') say(v, `パラアンカーを入れ、集魚灯を点けてイカ釣り開始（${areaNameAt(v.boat.x, v.boat.y)}・水深${depth.toFixed(0)}m）。${v.world.time < 17.5 * 3600 ? 'まだ明るいので灯の効きは弱い。暗くなるにつれて寄ってくる。' : '暗くなるにつれて、まわりのイカが船の下に寄ってくる。'}`);
+  if (hookMethod === 'ika') say(v, `パラアンカーを入れ、集魚灯を点けてイカ釣り開始（${areaNameAt(v.boat.x, v.boat.y)}・水深${depth.toFixed(0)}m）。${v.world.time < dayTimes(v.day).sunset ? 'まだ明るいので灯の効きは弱い。暗くなるにつれて寄ってくる。' : '暗くなるにつれて、まわりのイカが船の下に寄ってくる。'}`);
   else if (hookMethod === 'oyogase') say(v, `泳がせ釣り開始（${areaNameAt(v.boat.x, v.boat.y)}・水深${depth.toFixed(0)}m）。魚倉の活きアジ（残り${baitInHold(v, 'aji')}尾）を1尾ずつ使います。`);
   else if (hookMethod === 'jigging') say(v, `ジギング開始（${areaNameAt(v.boat.x, v.boat.y)}・水深${depth.toFixed(0)}m）。底まで落として、しゃくり上げてはまた落とします。根の上では根掛かりでジグを失うことがあります。`);
   else if (hookMethod === 'negyo') say(v, `根魚釣り開始（${areaNameAt(v.boat.x, v.boat.y)}・水深${depth.toFixed(0)}m）。底を切って流します。根の真上を通るように流し直し（R）を使ってください。`);
