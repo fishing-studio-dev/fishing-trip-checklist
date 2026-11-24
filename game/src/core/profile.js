@@ -3,7 +3,7 @@
 import { ECONOMY, START_PROFILE, BOATS, EQUIPMENT, METHODS, fits } from './data.js';
 import { emptyBathy } from './bathy.js';
 
-export const PROFILE_SCHEMA = 8;
+export const PROFILE_SCHEMA = 9;
 
 export function createProfile({ worldSeed, now = new Date().toISOString() } = {}) {
   const seed = worldSeed != null ? worldSeed >>> 0 : (Math.floor(Math.random() * 0xffffffff) >>> 0);
@@ -17,7 +17,8 @@ export function createProfile({ worldSeed, now = new Date().toISOString() } = {}
     worldSeed: seed,
     funds: ECONOMY.startFunds,
     day: 0, // number of days started
-    methods: { handline: { xp: 0 }, troll: { xp: 0 }, longline: { xp: 0 }, negyo: { xp: 0 }, oyogase: { xp: 0 }, ika: { xp: 0 } },
+    methods: { handline: { xp: 0 }, troll: { xp: 0 }, longline: { xp: 0 }, negyo: { xp: 0 }, oyogase: { xp: 0 }, ika: { xp: 0 }, jigging: { xp: 0 } },
+    extraLines: 0, // 延縄: lines bought beyond the one that comes with the gear (R07)
     boat: { uid: 'boat1', model: START_PROFILE.boatModel, name: START_PROFILE.boatName, slots },
     storage: [],
     equipSeq: seq,
@@ -34,6 +35,19 @@ export function createProfile({ worldSeed, now = new Date().toISOString() } = {}
     marks: [], // the player's own marks, kept across days: {id, x, y, name, memo, day, t, kind, depth}
     markSeq: 0,
   };
+}
+
+/**
+ * Schema 8 -> 9 (第2期・段2): ジギング experience from 0, the new rod rack on
+ * every boat (empty), no extra longlines yet. Nothing else changes.
+ */
+export function migrateProfile8to9(p8) {
+  const p = clone(p8);
+  p.schema = 9;
+  p.methods = { jigging: { xp: 0 }, ...p.methods };
+  if (p.boat && p.boat.slots && !('rod_rack' in p.boat.slots)) p.boat.slots.rod_rack = null;
+  p.extraLines = typeof p.extraLines === 'number' ? p.extraLines : 0;
+  return p;
 }
 
 /** Schema 7 -> 8: the ledger (収支) starts empty; earlier voyages are only in the totals. */
@@ -168,7 +182,8 @@ export function validateProfile(p) {
     for (const slot of model.slots) {
       const inst = p.boat.slots ? p.boat.slots[slot.id] : null;
       if (!inst) {
-        if (!slot.optional || !p.boat.slots || !(slot.id in p.boat.slots)) errs.push(`装備位置 ${slot.id} が空です`);
+        // an optional mounting may be empty or not listed at all (a mounting added in a later version)
+        if (!slot.optional) errs.push(`装備位置 ${slot.id} が空です`);
         continue;
       }
       const item = EQUIPMENT[inst.itemId];
@@ -180,6 +195,7 @@ export function validateProfile(p) {
   if (typeof p.boatSeq !== 'number' || !Array.isArray(p.boatHistory)) errs.push('船の記録が不正です');
   if (!p.bathy || typeof p.bathy.tiles !== 'object' || !Array.isArray(p.marks) || typeof p.markSeq !== 'number') errs.push('海図の記録（水深・印）が不正です');
   if (!Array.isArray(p.ledger)) errs.push('収支の記録がありません');
+  if (typeof p.extraLines !== 'number' || p.extraLines < 0 || p.extraLines > 2) errs.push('延縄の縄の数が不正です');
   if (!Array.isArray(p.storage)) errs.push('storage が配列ではありません');
   else for (const s of p.storage) if (!s || !EQUIPMENT[s.itemId]) errs.push('倉庫に未知の装備');
   if (!Array.isArray(p.logs)) errs.push('logs が配列ではありません');

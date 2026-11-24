@@ -311,7 +311,7 @@ export function receiptScreen(app) {
     ${planHtml}
     <div class="card full"><h2>売上</h2><div class="table-wrap"><table class="data"><tr><th>区分</th><th class="num">数</th><th class="num">重量</th><th class="num">単価</th><th class="num">金額</th></tr>${rows}
       <tr><th colspan="4">売上合計</th><th class="num">${money(r.sales)}</th></tr></table></div>${baitNote(r.baitUsed)}
-      <dl class="kv" style="margin-top:8px"><dt>氷・餌（定額）</dt><dd>−${money(r.costs.base)}</dd><dt>燃料（${(r.distanceM / 1000).toFixed(1)}km）</dt><dd>−${money(r.costs.fuel)}</dd>${r.costs.crew ? `<dt>${esc(CREW.label)}の日当</dt><dd>−${money(r.costs.crew)}</dd>` : ''}
+      <dl class="kv" style="margin-top:8px"><dt>氷・餌（定額）</dt><dd>−${money(r.costs.base)}</dd><dt>燃料（${(r.distanceM / 1000).toFixed(1)}km）</dt><dd>−${money(r.costs.fuel)}</dd>${r.costs.crew ? `<dt>${esc(CREW.label)}の日当</dt><dd>−${money(r.costs.crew)}</dd>` : ''}${r.costs.jigs ? `<dt>失くしたジグ（${r.costs.jigsLost}個）</dt><dd>−${money(r.costs.jigs)}</dd>` : ''}
       ${r.costs.waived ? `<dt>経費の免除</dt><dd>+${money(r.costs.waived)}</dd>` : ''}
       <dt>差引</dt><dd><b>${r.net >= 0 ? '+' : '−'}${money(Math.abs(r.net))}</b></dd><dt>資金</dt><dd>${money(r.fundsBefore)} → <b>${money(r.fundsAfter)}</b></dd></dl>
       ${r.costs.waived ? '<p class="note">資金が足りない分の経費は免除されます（不漁でも次の出港ができるように）。</p>' : ''}</div>
@@ -751,7 +751,7 @@ export function ledgerScreen(app) {
   <div class="lg-tiles">${tiles.map(([k, v, sub]) => `<div class="card lg-tile"><div class="lg-k">${esc(k)}</div><div class="lg-v">${v}</div><div class="note">${esc(sub)}</div></div>`).join('')}</div>
   <div class="card full"><h2>航海ごとの純益（直近${last.length}航海）</h2>${netBars(last)}<p class="note">棒にさわる（マウスを載せる）とその日の内訳。線より下は赤字（経費が売上を上回った日）。</p></div>
   <div class="card full"><h2>漁法ごとの稼ぎ（記録した全航海）</h2><div class="table-wrap"><table class="data"><tr><th>漁法</th><th class="num">使った日</th><th class="num">売上</th><th class="num">1日あたり</th><th class="num">操業1時間あたり</th></tr>${mrows}</table></div>
-    <p class="note">売上は、その漁法で獲った魚を水揚げの値段で数えたもの。泳がせのエサに使ったアジはエサ代として泳がせから引いています（合計はその日の売上と同じ）。燃料などの経費は漁法に分けていません。</p></div>
+    <p class="note">売上は、その漁法で獲った魚を水揚げの値段で数えたもの。泳がせのエサに使ったアジはエサ代として泳がせから、根掛かりで失くしたジグの代金はジギングから引いています。燃料などの経費は漁法に分けていません。</p></div>
   <div class="card full"><h2>航海ごと</h2><div class="table-wrap"><table class="data"><tr><th>日</th><th>漁法</th><th class="num">売上</th><th class="num">燃料</th><th class="num">出漁費・日当</th><th class="num">純益</th></tr>${daily}</table></div></div>
   <div class="actions"><button type="button" class="btn primary" data-act="toPort">港に戻る</button><button type="button" class="btn" data-act="log">操業日誌</button></div></div>`;
 }

@@ -97,6 +97,7 @@ export function logGearItems(log) {
   const g = log.gear || {};
   if (log.methodId === 'troll') return [g.troll].filter(Boolean);
   if (log.methodId === 'longline') return [g.longline, g.hauler].filter(Boolean);
+  if (log.methodId === 'jigging') return [g.rod].filter(Boolean);
   return g.reels || [g.reel].filter(Boolean);
 }
 
@@ -155,6 +156,7 @@ const GROUNDS = {
   negyo: ['西の根', '北の瀬', '沖の瀬', '南の浅場', '沖の平場'],
   oyogase: ['北の瀬', '沖の瀬', '東の駆け上がり', '沖の平場'],
   ika: ['沖の深み', '北の瀬'],
+  jigging: ['北の瀬', '東の駆け上がり', '沖の平場', '沖の瀬'],
 };
 // grounds outside the coastal zone (general knowledge: geography, not fish)
 const FAR_NOTE = { 沖の瀬: '沖の瀬：港から約4km。遠くて人が少なく、群れが大きく大型が多いと言われる（一般的な目安）。中型漁船でないと行けない' };
@@ -167,7 +169,7 @@ const GENERAL = {
   negyo: 'カサゴ・キジハタは岩礁・根・漁礁の際の底に居着く。海図にない小さな根や漁礁は、魚探・ソナー・サイドビューで探して印を付ける（一般的な目安）',
 };
 // a peer's catch count regarded as good / poor for the method (for weighting only)
-const REPORT_COUNTS = { handline: [25, 15], troll: [3, 2], longline: [6, 3], negyo: [8, 4], oyogase: [3, 1], ika: [40, 20] };
+const REPORT_COUNTS = { handline: [25, 15], troll: [3, 2], longline: [6, 3], negyo: [8, 4], oyogase: [3, 1], ika: [40, 20], jigging: [3, 1] };
 const KIND_W = { catch: 3, echo: 2, sighting: 2 };
 
 function freshW(obsDay, today) {
@@ -254,7 +256,7 @@ export function buildCandidates({ knowledge, logs, today, forecast, profile }) {
     score += Math.min(3, own.similar.filter(isGood).length * 1.5);
     score -= Math.min(1.5, (own.similar.length - own.good) * 0.5);
     if (own.withCatch) score += 0.8;
-    if ((c.methodId === 'negyo' || c.methodId === 'oyogase' || c.methodId === 'ika') && !own.same.length) score -= 0.05; // without own records it is a long shot
+    if ((c.methodId === 'negyo' || c.methodId === 'oyogase' || c.methodId === 'ika' || c.methodId === 'jigging') && !own.same.length) score -= 0.05; // without own records it is a long shot
     const ruleNotes = c.rules.map((r) => r);
     if (ruleNotes.length) score += 0.4;
     // feasibility with the current boat & gear

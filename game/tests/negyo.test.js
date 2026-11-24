@@ -2,7 +2,7 @@
 // a pinpoint method: over the structure it catches, a little way off it does not.
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { createProfile, markDeparture, validateProfile, migrateProfile6to7, migrateProfile7to8, PROFILE_SCHEMA } from '../src/core/profile.js';
+import { createProfile, markDeparture, validateProfile, migrateProfile6to7, migrateProfile7to8, migrateProfile8to9, PROFILE_SCHEMA } from '../src/core/profile.js';
 import { createVoyage, advanceVoyage, startOperation, stopOperation, isOperating, setMethod, summarizeVoyage, returnToPort, redrift } from '../src/core/voyage.js';
 import { settleVoyage } from '../src/core/economy.js';
 import { reefSchools } from '../src/core/season.js';
@@ -140,7 +140,7 @@ test('A12 (移行): a format-6 save gets 根魚釣り・泳がせ・イカ釣り
   assert.ok(PROFILE_SCHEMA >= 7);
   assert.deepEqual(p7.methods.negyo, { xp: 0 });
   assert.equal(p7.methods.handline.xp, 123);
-  assert.deepEqual(validateProfile(migrateProfile7to8(p7)), []); // valid once brought to the current format
+  assert.deepEqual(validateProfile(migrateProfile8to9(migrateProfile7to8(p7))), []); // valid once brought to the current format
 });
 
 test('a 根魚 log with several species settles: each species is matched against the hold and sold', () => {

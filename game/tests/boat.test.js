@@ -259,8 +259,8 @@ test('an M1 save (format 2) opens in the current format with everything kept, an
   const orig = JSON.parse(raw).data;
   assert.equal(p.schema, PROFILE_SCHEMA);
   assert.equal(p.funds, orig.funds);
-  assert.deepEqual(p.methods, { ...orig.methods, longline: { xp: 0 }, negyo: { xp: 0 }, oyogase: { xp: 0 }, ika: { xp: 0 } });
-  assert.deepEqual(p.boat, { ...orig.boat, slots: { ...orig.boat.slots, starboard_hauler: null, roof_lights: null } }, 'the boat as it was, plus the new (empty) mountings');
+  assert.deepEqual(p.methods, { ...orig.methods, longline: { xp: 0 }, negyo: { xp: 0 }, oyogase: { xp: 0 }, ika: { xp: 0 }, jigging: { xp: 0 } });
+  assert.deepEqual(p.boat, { ...orig.boat, slots: { ...orig.boat.slots, starboard_hauler: null, roof_lights: null, rod_rack: null } }, 'the boat as it was, plus the new (empty) mountings');
   assert.deepEqual(p.logs, orig.logs);
   assert.deepEqual(p.knowledge, orig.knowledge);
   assert.deepEqual(p.boatHistory, []);

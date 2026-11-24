@@ -545,6 +545,38 @@ export const METHODS = {
     drift: true,
     goodRate: 8,
   },
+  // ジギング（本作設定）: a metal jig is dropped to the bottom and jerked up
+  // 15–20 m (or up into the echo above it), then dropped again — all
+  // automatic. No live bait is needed; it takes 青物 under the bait and round
+  // the reefs, and what sits near the bottom (マダイ・根の大物), with サバ in the
+  // way. A jig that snags on rock is lost (bought again at settlement).
+  jigging: {
+    id: 'jigging',
+    name: 'ジギング',
+    detail: 'メタルジグを底まで落とし、15〜20m（魚探の反応があればその上まで）しゃくり上げてはまた落とす。活きエサは要らない。青物・サワラ・ヨコワ、底近くのマダイや根の大物が掛かる。サバも食ってくる。根掛かりするとジグを失う',
+    target: 'buri',
+    targets: ['buri', 'hiramasa', 'kanpachi', 'sawara', 'yokowa', 'madai', 'oomonhata', 'ara', 'masaba'],
+    // how readily each fish takes a jig (relative): サバ swarm it, マダイ and 根魚 take it near the bottom
+    appeal: { buri: 1, hiramasa: 1, kanpachi: 1, sawara: 0.8, yokowa: 0.7, madai: 0.5, oomonhata: 0.6, ara: 0.5, masaba: 0.15 },
+    hooks: 1,
+    hookSpacing: 0,
+    firstHook: 0,
+    jig: true,
+    sweep: 18, // m jerked up from the bottom each time
+    jerkSpeed: 0.9, // m/s while jerking up (a fraction of the winding speed)
+    snagPerTouch: 0.035, // chance a jig touching rock snags (Lv1; less with skill)
+    biteRateMax: 0.012,
+    densityHalf: 0.00005,
+    oiWait: 0,
+    retuneAfter: 90,
+    defaultOffBottom: 1,
+    echoThreshold: 0.3,
+    fight: true,
+    maxStartSpeed: 0.6,
+    gearType: 'rod',
+    drift: true,
+    goodRate: 2,
+  },
   troll: {
     id: 'troll',
     name: '曳縄',
@@ -721,6 +753,15 @@ export const EQUIPMENT = {
     desc: '延縄を機械で巻き上げる。揚げ縄の速さが腕前によらず毎秒1.3mになる（手で揚げるとLv1で0.45、Lv10で0.9m）。魚を外すのは手作業のまま。延縄具がないと使い道はない。',
     hauler: { haul: 1.3 },
   },
+  rod_jg1: {
+    id: 'rod_jg1',
+    type: 'rod',
+    mount: 'rod',
+    name: 'ジギングロッド JG-1（ジグ付き）',
+    price: 14000,
+    desc: 'ジギング用の竿と手巻きリール、メタルジグ一式。竿立てに置き、漁法「ジギング」ができるようになる。根掛かりで失くしたジグは帰港時に買い足す（1個あたりの代金がかかる）。対応水深120m。',
+    rod: { reel: { retrieve: null, maxDepth: 120, model: 'hand' }, jigPrice: 900 },
+  },
   lights_ld1: {
     id: 'lights_ld1',
     type: 'lights',
@@ -839,6 +880,7 @@ export const BOATS = {
       { id: 'stern_troll', label: '船尾（曳縄・延縄）', accepts: ['troll', 'longline'], optional: true },
       { id: 'starboard_hauler', label: '右舷前（揚げ縄機）', accepts: ['hauler'], optional: true },
       { id: 'roof_lights', label: '屋根（集魚灯）', accepts: ['lights'], optional: true },
+      { id: 'rod_rack', label: '竿立て（ジギング）', accepts: ['rod'], optional: true },
     ],
   },
   cruiser_2: {
@@ -864,6 +906,7 @@ export const BOATS = {
       { id: 'starboard_hauler', label: '右舷前（揚げ縄機）', accepts: ['hauler'], optional: true },
       { id: 'hull_sonar', label: '船底（ソナー）', accepts: ['sonar'], optional: true },
       { id: 'roof_lights', label: '屋根（集魚灯）', accepts: ['lights'], optional: true },
+      { id: 'rod_rack', label: '竿立て（ジギング）', accepts: ['rod'], optional: true },
     ],
   },
 };
@@ -890,6 +933,10 @@ export const CREW = {
   label: '甲板員',
 };
 
+// 延縄の縄（R07）: one comes with the longline gear; up to two more can be
+// bought, each laid on its own (separate places, separate soaks).
+export const LONGLINE_LINES = { max: 3, extraPrice: 8000 };
+
 export const ECONOMY = {
   startFunds: 5000,
   currency: 'G',
@@ -900,7 +947,7 @@ export const ECONOMY = {
 export const START_PROFILE = {
   boatModel: 'skiff_1',
   boatName: 'はやせ丸',
-  slots: { helm_sounder: 'sounder_es1', starboard_reel: 'reel_hand', stern_troll: null, starboard_hauler: null, roof_lights: null },
+  slots: { helm_sounder: 'sounder_es1', starboard_reel: 'reel_hand', stern_troll: null, starboard_hauler: null, roof_lights: null, rod_rack: null },
 };
 
 // ---- Tide (潮回り) table by day number modulo 15 (game calendar) ----
@@ -920,6 +967,7 @@ export const PEERS = {
   // 第2期（R20）: a peer for every method
   kuroki: { id: 'kuroki', name: '黒木さん', method: 'negyo', areas: ['西の根', '北の瀬', '南の浅場'], desc: '根魚釣りひと筋。根と漁礁を細かく回る。潮の緩む時間を大事にする。', fromDay: 2 },
   oda: { id: 'oda', name: '小田さん', method: 'oyogase', areas: ['北の瀬', '東の駆け上がり', '沖の平場'], desc: '活きアジの泳がせで青物を狙う。ベイトの反応を追いかけて走り回る。', fromDay: 3 },
+  nakamura: { id: 'nakamura', name: '中村さん', method: 'jigging', areas: ['北の瀬', '東の駆け上がり', '沖の平場'], desc: 'ジギングで青物を追う若手。ベイトの反応と潮目をよく見ている。サバに泣かされることも多い。', fromDay: 2 },
   yoshimura: { id: 'yoshimura', name: '吉村さん', method: 'ika', areas: ['沖の深み', '北の瀬'], desc: '夕方から集魚灯を点けてイカを釣る。朝の港では前の晩の話をしてくれる。', fromDay: 4 },
 };
 

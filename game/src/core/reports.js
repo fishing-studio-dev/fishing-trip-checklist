@@ -290,6 +290,37 @@ function odaOyogase(seed, od, t, idBase) {
   });
 }
 
+/** 中村さん's ジギング on day od around time t: 青物 round the reefs and under the bait — and the サバ. */
+function nakamuraJigging(seed, od, t, idBase) {
+  const w = worldFor(seed, od);
+  const originId = `O${od}-nakamura-${idBase}`;
+  const inReach = (s) => s.a.y < 3000;
+  const blue = w.schools.filter((s) => (SPECIES[s.species].habit === 'roam' || s.species === 'sawara' || s.species === 'yokowa') && schoolTotal(s) > 0 && inReach(s));
+  const saba = w.schools.find((s) => s.species === 'masaba' && schoolTotal(s) > 0 && inReach(s));
+  const pick = blue.length ? blue[Math.floor(hashFloat(seed, od, 551) * blue.length)] : null;
+  if (!pick) {
+    const at = saba ? schoolPose(saba, t, w) : { x: 1400, y: 1800 };
+    return report({
+      originId, speaker: 'nakamura', kind: saba ? 'catch' : 'none', species: saba ? 'masaba' : 'buri', methodId: 'jigging',
+      area: areaNameAt(at.x, at.y), place: placeLabel(at.x, at.y), spot: roundPt(at), obsDay: od, obsT: t, count: saba ? 10 : 0,
+      text: saba ? `${placeLabel(at.x, at.y)}でしゃくったが、中層のサバばかりだった。青物の反応はなかった。` : 'あちこちしゃくって回ったが、青物の気配がなかった。',
+    });
+  }
+  const pose = schoolPose(pick, t, w);
+  const count = Math.max(0, Math.min(5, Math.round((schoolTotal(pick) * activityAt(w, pick, t)) / 9)));
+  const place = placeLabel(pose.x, pose.y);
+  const nearSaba = saba && Math.hypot(schoolPose(saba, t, w).x - pose.x, schoolPose(saba, t, w).y - pose.y) < 500;
+  return report({
+    originId, speaker: 'nakamura', kind: count > 0 ? 'catch' : 'echo', species: pick.species, methodId: 'jigging',
+    area: pick.area || areaNameAt(pose.x, pose.y), place, spot: roundPt(pose), obsDay: od, obsT: t, count,
+    layer: `表層から${Math.round(pose.z)}mくらい`,
+    text: count > 0
+      ? `${place}でジギング、${SPECIES[pick.species].name}を${count}本。${nearSaba ? '途中サバに邪魔された。' : ''}${remarkText(biteRemark(w, pick, t))}`
+      : `${place}で青物の反応は出ていたが、ジグには食わなかった。${remarkText(biteRemark(w, pick, t))}`,
+    opinion: pick.baitDepth ? 'ベイトの下を通すように、反応の少し上までしゃくるといい。' : '根の周りは根掛かりに気をつけろ。ジグがいくつあっても足りん。', opinionKind: '見立て',
+  });
+}
+
 /** 吉村さん's night under the lamps (day od, about 21:00): told in port the next morning. */
 function yoshimuraIka(seed, od, idBase) {
   const w = worldFor(seed, od);
@@ -412,6 +443,7 @@ export function briefingReports(seed, d) {
   }
   if (d >= PEERS.kuroki.fromDay && d - 1 >= 1) out.push(kurokiNegyo(seed, d - 1, round10min((8 + hashFloat(seed, d, 522) * 4) * 3600), 'y'));
   if (d >= PEERS.oda.fromDay && d - 1 >= 1) out.push(odaOyogase(seed, d - 1, round10min((6 + hashFloat(seed, d, 532) * 3) * 3600), 'y'));
+  if (d >= PEERS.nakamura.fromDay && d - 1 >= 1) out.push(nakamuraJigging(seed, d - 1, round10min((6 + hashFloat(seed, d, 552) * 4) * 3600), 'y'));
   if (d >= PEERS.yoshimura.fromDay && d - 1 >= 1) out.push(yoshimuraIka(seed, d - 1, 'y'));
   // this morning: 源さん passes another reef, 浜田さん the slope on the way out
   const reefs = REEF_HABITATS.filter((id) => id !== genSpot(seed, d));
@@ -448,6 +480,7 @@ export function radioReports(seed, d) {
   }
   if (d >= PEERS.kuroki.fromDay) out.push(kurokiNegyo(seed, d, round10min((8.5 + hashFloat(seed, d, 523) * 2) * 3600), 'r'));
   if (d >= PEERS.oda.fromDay) out.push(odaOyogase(seed, d, round10min((7 + hashFloat(seed, d, 533) * 2) * 3600), 'r'));
+  if (d >= PEERS.nakamura.fromDay) out.push(nakamuraJigging(seed, d, round10min((6.5 + hashFloat(seed, d, 553) * 2) * 3600), 'r'));
   return out.map((r, i) => ({ ...r, via: 'radio', id: `W${d}-${i}-${r.speaker}`, deliverAt: r.obsT + 600 }));
 }
 

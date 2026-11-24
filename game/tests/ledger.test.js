@@ -1,7 +1,7 @@
 // Item 13: the ledger (収支) — one line per voyage, with what each method earned.
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { createProfile, markDeparture, validateProfile, migrateProfile7to8 } from '../src/core/profile.js';
+import { createProfile, markDeparture, validateProfile, migrateProfile7to8, migrateProfile8to9 } from '../src/core/profile.js';
 import { createVoyage, advanceVoyage, startOperation, stopOperation, isOperating, setMethod, summarizeVoyage, returnToPort } from '../src/core/voyage.js';
 import { settleVoyage, methodEarnings } from '../src/core/economy.js';
 import { loadSave, memoryStorage, KEYS, writeSave } from '../src/core/save.js';
@@ -68,10 +68,10 @@ test('A12 (移行): a format-7 save opens with an empty ledger, nothing else cha
   const p8 = migrateProfile7to8(p7);
   assert.deepEqual(p8.ledger, []);
   assert.equal(p8.funds, 12345);
-  assert.deepEqual(validateProfile(p8), []);
+  assert.deepEqual(validateProfile(migrateProfile8to9(p8)), []); // valid once brought to the current format
   // through the save loader as well
   const store = memoryStorage();
-  writeSave(store, p8, 0);
+  writeSave(store, migrateProfile8to9(p8), 0);
   const r = loadSave(store);
   assert.equal(r.status, 'ok');
   void KEYS;

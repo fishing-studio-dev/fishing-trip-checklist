@@ -10,7 +10,7 @@
 //   - Hold: a bite is only accepted if hold + fish already on hooks fits.
 // => landed <= min(candidates, capacity, school remaining, hold space).
 import { METHODS, skillForLevel, SPECIES } from './data.js';
-import { densityAt, posesAt, takeFish, returnFish, activityAt } from './world.js';
+import { densityAt, posesAt, takeFish, returnFish, activityAt, schoolDensity } from './world.js';
 import { depthAt, bottomIsRocky } from './sea.js';
 import { readTana } from './sounder.js';
 import { rngNext } from './rng.js';
@@ -36,6 +36,38 @@ function readMethodTana(obs, method, maxDepth, bottom) {
   const r = readTana(obs, method, maxDepth);
   if (r.tana != null && r.source === 'bottom' && method.defaultFrac) r.tana = Math.min(maxDepth, bottom * method.defaultFrac + 1, bottom - 2);
   return r;
+}
+
+/**
+ * ジギング: how much the jig is worth to the fish at (x, y, z) — density of each
+ * target school weighted by how readily that fish takes a jig (METHODS.jigging.appeal).
+ */
+function jigDensity(world, poses, method, x, y, z) {
+  let total = 0;
+  let best = null;
+  let bestRho = 0;
+  for (let i = 0; i < world.schools.length; i++) {
+    const s = world.schools[i];
+    const w = method.appeal[s.species];
+    if (!w) continue;
+    const rho = schoolDensity(s, poses[i], x, y, z) * w;
+    if (rho <= 0) continue;
+    total += rho;
+    if (rho > bestRho) {
+      bestRho = rho;
+      best = i;
+    }
+  }
+  return { total, best };
+}
+
+/** The top of a jig's sweep: 15–20 m up from the bottom, or up into an echo standing above that. */
+function jigTop(obs, method, bottom, maxDepth) {
+  const floor = Math.min(bottom - 1, maxDepth);
+  let top = floor - method.sweep;
+  const r = readTana(obs, method, maxDepth);
+  if (r.source === 'echo' && r.echoDepth != null && r.echoDepth - 3 < top) top = r.echoDepth - 3;
+  return Math.max(2, Math.min(top, floor - 4));
 }
 
 /** Where the sinker sits when it is kept just off the bottom (根魚釣り). */
@@ -92,6 +124,7 @@ export function createOperation({ id, voyageId, methodId, level, rigs, startT, x
       lostFish: 0,
       baits: 0, // live baits put on (泳がせ: one アジ each)
       baitSwaps: 0, // tired baits changed without a bite
+      jigsLost: 0, // ジギング: jigs lost to snags (bought again at settlement)
     },
   };
   initHands(op, hands);
@@ -106,6 +139,7 @@ function newLine(method, skill, rig) {
     handReel: hand,
     bottomMode: !!method.bottomMode,
     liveBait: !!method.liveBait,
+    jig: !!method.jig,
     snagAcc: 0,
     retrieveSpeed: hand ? skill.handRetrieve : rig.reel.retrieve,
     maxDepth: rig.reel.maxDepth,
@@ -124,7 +158,7 @@ function newLine(method, skill, rig) {
 
 /** Steps that need the fisher's hands (others run on their own). */
 export function handlineNeedsHands(line) {
-  return line.phase === 'prep' || line.phase === 'unhook' || line.phase === 'snag' || line.phase === 'fight' || (line.phase === 'retrieve' && line.handReel);
+  return line.phase === 'prep' || line.phase === 'unhook' || line.phase === 'snag' || line.phase === 'fight' || line.phase === 'jig' || (line.phase === 'retrieve' && line.handReel);
 }
 
 export function fishOnLine(line) {
@@ -194,6 +228,12 @@ export function stepOperation(op, ctx, dt) {
             line.phase = 'drop';
             break;
           }
+          if (method.jig) {
+            // ジギング: the jig goes all the way down first
+            setTana(op, line, { tana: Math.min(bottom - 1, line.maxDepth), source: 'bottom' });
+            line.phase = 'drop';
+            break;
+          }
           const r = readMethodTana(ctx.obs, method, line.maxDepth, bottom);
           if (r.tana == null) break; // no sounder reading yet
           setTana(op, line, r);
@@ -224,10 +264,17 @@ export function stepOperation(op, ctx, dt) {
           line.phase = 'retrieve';
           break;
         }
-        line.tana = method.bottomMode ? bottomTana(method, bottom, line.maxDepth) : Math.min(line.tana, bottom - 0.5, line.maxDepth);
-        line.depth += op.skill.dropSpeed * dt;
+        line.tana = method.bottomMode ? bottomTana(method, bottom, line.maxDepth) : method.jig ? Math.min(bottom - 1, line.maxDepth) : Math.min(line.tana, bottom - 0.5, line.maxDepth);
+        line.depth += op.skill.dropSpeed * (method.jig ? 1.3 : 1) * dt; // a metal jig sinks faster than a bait rig
         if (line.depth >= line.tana) {
           line.depth = line.tana;
+          if (method.jig) {
+            line.phase = 'jig';
+            line.dir = -1;
+            line.sweepTop = jigTop(ctx.obs, method, bottom, line.maxDepth);
+            line.hooks[0].acc = rngNext(world.rng) * 0.5;
+            break;
+          }
           line.phase = 'fish';
           line.sinceRetune = 0;
           for (const h of line.hooks) h.acc = rngNext(world.rng) * 0.6;
@@ -359,6 +406,66 @@ export function stepOperation(op, ctx, dt) {
         }
         break;
       }
+      case 'jig': {
+        // ジギング: jerk the jig up through the sweep, let it fall back to the bottom, again and again
+        if (stopping) {
+          line.phase = 'retrieve';
+          break;
+        }
+        const floor = Math.min(bottom - 1, line.maxDepth);
+        if (line.dir < 0) {
+          line.depth -= method.jerkSpeed * (line.handReel ? 1 : 1.4) * dt;
+          if (line.depth <= line.sweepTop) {
+            line.depth = line.sweepTop;
+            line.dir = 1;
+          }
+        } else {
+          line.depth += op.skill.dropSpeed * 1.3 * dt;
+          if (line.depth >= floor) {
+            line.depth = floor;
+            line.dir = -1;
+            line.sweepTop = jigTop(ctx.obs, method, bottom, line.maxDepth);
+            trackTana(op, line.sweepTop, 'jig');
+            // the jig touched the bottom: on rock it can snag and be lost
+            if (bottomIsRocky(boat.x, boat.y) && rngNext(world.rng) < method.snagPerTouch * op.skill.snagMul) {
+              op.stats.snags += 1;
+              op.stats.jigsLost += 1;
+              line.depth = 0;
+              line.phase = 'snag';
+              line.timer = op.skill.rerig;
+              break;
+            }
+          }
+        }
+        line.tana = line.depth;
+        const h = line.hooks[0];
+        if (!poses) poses = posesAt(world);
+        const d = jigDensity(world, poses, method, boat.x, boat.y, line.depth);
+        if (d.total > 0 && d.best != null) {
+          const act = activityAt(world, world.schools[d.best], t);
+          h.acc += method.biteRateMax * act * (d.total / (d.total + method.densityHalf)) * dt;
+          if (h.acc >= 1) {
+            const room = ctx.capacityKg - ctx.hold.kg - inFlightKg(op) - (ctx.reservedKg || 0);
+            if (room < maxKg) {
+              h.acc = 1;
+              op.stats.holdBlocked += 1;
+              break;
+            }
+            const fish = takeFish(world, d.best);
+            if (fish) {
+              h.fish = fish;
+              h.acc -= 1;
+              op.stats.bites += 1;
+              (op.biteTimes || (op.biteTimes = [])).push(t);
+              if (op.biteTimes.length > 400) op.biteTimes.shift();
+              line.firstBiteT = t;
+              line.phase = 'fight';
+              line.timer = op.skill.fight * Math.sqrt(fish.kg / 6);
+            }
+          }
+        }
+        break;
+      }
       case 'retrieve': {
         line.depth -= line.retrieveSpeed * dt;
         if (line.depth <= 0) {
@@ -450,7 +557,7 @@ export function linePhaseLabel(line) {
   if (line.waiting) return `手が空くのを待っている（${{ prep: '餌付け', unhook: '取り込み', retrieve: '巻上げ', snag: '仕掛けの付け直し', fight: 'やり取り' }[line.phase] || line.phase}）`;
   switch (line.phase) {
     case 'prep':
-      return line.liveBait ? '活きアジを針に付ける' : '餌付け・準備';
+      return line.liveBait ? '活きアジを針に付ける' : line.jig ? 'ジグの準備' : '餌付け・準備';
     case 'drop':
       return `投入中 ${line.depth.toFixed(0)}m / タナ${line.tana.toFixed(0)}m`;
     case 'adjust':
@@ -461,8 +568,10 @@ export function linePhaseLabel(line) {
       if (line.liveBait) return `活きアジを泳がせて待つ タナ${line.tana.toFixed(0)}m（エサ${Math.floor((line.baitT || 0) / 60)}分）`;
       return n ? `アタリ！追い食い待ち（${n}尾）` : `誘い中 タナ${line.tana.toFixed(0)}m`;
     }
+    case 'jig':
+      return line.dir < 0 ? `しゃくり上げ ${line.depth.toFixed(0)}m（${line.sweepTop != null ? line.sweepTop.toFixed(0) : '—'}mまで）` : `フォール ${line.depth.toFixed(0)}m（底まで）`;
     case 'snag':
-      return '根掛かり：糸を切って仕掛けを付け直し';
+      return line.jig ? '根掛かり：ジグを失った。新しいジグを結び直し' : '根掛かり：糸を切って仕掛けを付け直し';
     case 'fight':
       return `掛かった！やり取り中（${fishOnLine(line).map((f) => f.kg.toFixed(0)).join('・')}kg級）`;
     case 'retrieve':

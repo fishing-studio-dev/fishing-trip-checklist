@@ -63,6 +63,7 @@ export function createVoyage(profile, opts = {}) {
   const haulerId = ofType('hauler');
   const sonarId = ofType('sonar');
   const lightsId = ofType('lights');
+  const rodId = ofType('rod');
   // the peers' radio calls are in the morning: nobody hears them on an evening trip
   const radio = opts.radio !== undefined ? opts.radio : opts.scenario || night ? [] : radioReports(profile.worldSeed, av.day);
   const v = {
@@ -86,13 +87,15 @@ export function createVoyage(profile, opts = {}) {
       sonarId,
       lightsId,
       lights: lightsId ? EQUIPMENT[lightsId].lights : null,
+      rodId,
+      rod: rodId ? EQUIPMENT[rodId].rod : null,
     },
     sonar: sonarId ? createSonar(EQUIPMENT[sonarId].sonar) : null,
     night,
     warnT: night ? hours.night.warn : hours.warn,
     endT: night ? hours.night.end : hours.end,
     levels: Object.fromEntries(Object.keys(METHODS).map((m) => [m, levelFromXp((profile.methods[m] || { xp: 0 }).xp)])),
-    method: opts.method || planMethod(av.plan, { troll: trollId, longline: longlineId, lights: lightsId }),
+    method: opts.method || planMethod(av.plan, { troll: trollId, longline: longlineId, lights: lightsId, rod: rodId }),
     plan: av.plan || null,
     plannedRoute: [],
     obs: createObservation(),
@@ -130,6 +133,7 @@ function planMethod(plan, gear) {
   if (m === 'longline' && gear.longline) return 'longline';
   if (m === 'negyo' || m === 'oyogase') return m; // the reels are always on board (泳がせ needs アジ in the hold)
   if (m === 'ika' && gear.lights) return 'ika';
+  if (m === 'jigging' && gear.rod) return 'jigging';
   return 'handline';
 }
 
@@ -632,6 +636,7 @@ export function setMethod(v, methodId) {
   if (methodId === 'troll' && !v.equip.troll) return { ok: false, reason: '曳縄具を積んでいません（港の「装備・船」で取り付け）。' };
   if (methodId === 'longline' && !v.equip.longline) return { ok: false, reason: '延縄具を積んでいません（港の「装備」で取り付け）。' };
   if (methodId === 'ika' && !v.equip.lights) return { ok: false, reason: '集魚灯を積んでいません（港の「装備」で屋根に取り付け）。' };
+  if (methodId === 'jigging' && !v.equip.rod) return { ok: false, reason: 'ジギングロッドを積んでいません（港の「装備」で竿立てに取り付け）。' };
   v.method = methodId;
   return { ok: true };
 }
@@ -661,6 +666,7 @@ export function canStartOperation(v) {
   if (!v.obs.cols.length) return { ok: false, reason: '魚探の反応を待っています。' };
   if (depth < 6) return { ok: false, reason: `浅すぎて${m.name}の仕掛けを流せません。` };
   if (m.lights && !v.equip.lights) return { ok: false, reason: '集魚灯を積んでいません。' };
+  if (m.jig && !v.equip.rod) return { ok: false, reason: 'ジギングロッドを積んでいません。' };
   if (m.liveBait && baitInHold(v, m.liveBait) < 1) return { ok: false, reason: '活きエサのアジがありません。先に一本釣りでアジを釣ってください（魚倉のアジを1尾ずつ使います）。' };
   return { ok: true };
 }
@@ -737,7 +743,8 @@ export function startOperation(v) {
     voyageId: v.id,
     methodId: hookMethod,
     level: v.levels[hookMethod],
-    rigs: v.equip.rigs,
+    // ジギング works the one rod from the rack; the other methods every fitted reel
+    rigs: hookMethod === 'jigging' ? [{ slotId: 'rod_rack', label: 'ジギング', reelId: v.equip.rodId, reel: v.equip.rod.reel }] : v.equip.rigs,
     startT: v.world.time,
     x: v.boat.x,
     y: v.boat.y,
@@ -752,6 +759,7 @@ export function startOperation(v) {
   if (depth > v.equip.reel.maxDepth) say(v, `水深${depth.toFixed(0)}mはリールの対応水深${v.equip.reel.maxDepth}mを超えています。届く深さまでで操業します。`, 'warn');
   if (hookMethod === 'ika') say(v, `パラアンカーを入れ、集魚灯を点けてイカ釣り開始（${areaNameAt(v.boat.x, v.boat.y)}・水深${depth.toFixed(0)}m）。${v.world.time < 17.5 * 3600 ? 'まだ明るいので灯の効きは弱い。暗くなるにつれて寄ってくる。' : '暗くなるにつれて、まわりのイカが船の下に寄ってくる。'}`);
   else if (hookMethod === 'oyogase') say(v, `泳がせ釣り開始（${areaNameAt(v.boat.x, v.boat.y)}・水深${depth.toFixed(0)}m）。魚倉の活きアジ（残り${baitInHold(v, 'aji')}尾）を1尾ずつ使います。`);
+  else if (hookMethod === 'jigging') say(v, `ジギング開始（${areaNameAt(v.boat.x, v.boat.y)}・水深${depth.toFixed(0)}m）。底まで落として、しゃくり上げてはまた落とします。根の上では根掛かりでジグを失うことがあります。`);
   else if (hookMethod === 'negyo') say(v, `根魚釣り開始（${areaNameAt(v.boat.x, v.boat.y)}・水深${depth.toFixed(0)}m）。底を切って流します。根の真上を通るように流し直し（R）を使ってください。`);
   else say(v, `操業開始（${areaNameAt(v.boat.x, v.boat.y)}・水深${depth.toFixed(0)}m）。投入から回収まで自動で行います。`);
   return { ok: true };
@@ -1028,7 +1036,7 @@ function makeOperationLog(v, op) {
       maxEcho: Math.round(st.maxEcho * 100) / 100,
       echoDepth: st.echoPings ? round1(st.echoDepthSum / st.echoPings) : null,
     },
-    gear: { boat: v.modelId, sounder: v.equip.sounderId, reel: v.equip.reelId, reels: v.equip.rigs.map((r) => r.reelId), troll: v.equip.trollId },
+    gear: { boat: v.modelId, sounder: v.equip.sounderId, reel: v.equip.reelId, reels: v.equip.rigs.map((r) => r.reelId), troll: v.equip.trollId, rod: v.equip.rodId || null },
     level: op.level,
     plan: v.plan ? { key: v.plan.key, label: v.plan.label, basis: v.plan.basis } : null,
     crew: v.crew,
@@ -1042,6 +1050,7 @@ function makeOperationLog(v, op) {
     log.snags = st.snags || 0;
     log.lostFish = st.lostFish || 0;
     if (METHODS[op.methodId].liveBait) log.baits = st.baits || 0;
+    if (METHODS[op.methodId].jig) log.jigsLost = st.jigsLost || 0;
     if (METHODS[op.methodId].lights) log.gathered = st.gathered || 0;
   }
   log.tags = logTags(log);
@@ -1119,6 +1128,8 @@ export function summarizeVoyage(v) {
     crew: v.crew,
     crewWage: v.crew ? CREW.wage : 0,
     baitUsed: v.baitUsed ? JSON.parse(JSON.stringify(v.baitUsed)) : {},
+    jigsLost: v.logs.reduce((a, l) => a + (l.jigsLost || 0), 0),
+    jigPrice: EQUIPMENT.rod_jg1.rod.jigPrice,
     night: !!v.night,
     bathyCells: v.bathy ? v.bathy.cells : {},
     marks: v.obs.marks.filter((m) => m.kind !== 'auto').map((m) => ({ ...m })),

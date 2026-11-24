@@ -59,7 +59,19 @@ export function methodEarnings(summary) {
     m.sales -= v;
     m.baitCost = (m.baitCost || 0) + v;
   }
+  // ジギング: jigs lost to snags are bought again — charged to the method that lost them
+  const jigs = jigCost(summary);
+  if (jigs) {
+    const m = add('jigging');
+    m.sales -= jigs;
+    m.jigCost = (m.jigCost || 0) + jigs;
+  }
   return out;
+}
+
+/** What the jigs lost today cost to replace (ジギング). */
+export function jigCost(summary) {
+  return (summary.jigsLost || 0) * (summary.jigPrice || 0);
 }
 
 /** Land and sell the whole catch, pay the trip cost, gain XP. Exactly once per voyage. */
@@ -87,7 +99,8 @@ export function settleVoyage(profile, summary) {
   const sales = lines.reduce((a, l) => a + l.amount, 0);
   const fuel = Math.round((summary.distanceM / 1000) * (summary.fuelPerKm || ECONOMY.fuelPerKm));
   const crew = summary.crewWage || 0;
-  const costTotal = ECONOMY.tripBaseCost + fuel + crew;
+  const jigs = jigCost(summary);
+  const costTotal = ECONOMY.tripBaseCost + fuel + crew + jigs;
   // never leave the player unable to go out again (A13): unpaid cost is waived
   const payable = Math.min(costTotal, p.funds + sales);
   const waived = costTotal - payable;
@@ -131,7 +144,7 @@ export function settleVoyage(profile, summary) {
     day: summary.day,
     night: !!summary.night,
     sales,
-    costs: { base: ECONOMY.tripBaseCost, fuel, crew, total: costTotal },
+    costs: { base: ECONOMY.tripBaseCost, fuel, crew, jigs, total: costTotal },
     net: sales - payable,
     paid: payable,
     byMethod,
@@ -143,7 +156,7 @@ export function settleVoyage(profile, summary) {
     day: summary.day,
     lines,
     sales,
-    costs: { base: ECONOMY.tripBaseCost, fuel, crew, total: costTotal, paid: payable, waived },
+    costs: { base: ECONOMY.tripBaseCost, fuel, crew, jigs, jigsLost: summary.jigsLost || 0, total: costTotal, paid: payable, waived },
     net: sales - payable,
     fundsBefore,
     fundsAfter: p.funds,
