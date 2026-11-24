@@ -849,7 +849,9 @@ const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
     await pg.click('[data-act=depart]');
     await waitFor((x) => x.screen === 'sea', 'at sea (泳がせ)');
     // item 8: at dawn the lookout calls out birds over bait pushed up by fish (dev: the sign's place read only to head there)
-    await ff(900);
+    // the boat leaves an hour before sunrise (R18): wait until just after the sun is up
+    const toDawn = await pg.evaluate(() => { const v = window.__ryoshi.app.voyage; return Math.max(0, v.world.cond.sun.sunrise + 900 - v.world.time); });
+    await ff(Math.max(900, toDawn));
     const bird = await pg.evaluate(() => window.__ryoshi.cues().filter((c) => c.kind === 'birds' && c.y < 2900).sort((a, b) => b.strength - a.strength)[0]);
     if (bird) {
       await press('c');
