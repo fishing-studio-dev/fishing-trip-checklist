@@ -1728,13 +1728,14 @@ function bigNums(items) {
 }
 
 /** 潮（R: 潮表）: where the stream runs, how fast, and its phase — what the fish on a reef answer to. */
-function tideLabel(v) {
+function tideLabel(v, compact = false) {
   const t = v.world.time;
   const c = currentAt(v.world.cond, t);
   const tp = tidePhase(v.world.cond, t);
   const kt = Math.hypot(c.x, c.y) * 1.944;
   const phase = tp.slack > 0.5 ? '止まり' : tp.running > 0.5 ? '効いている' : tp.rising ? '動き始め' : '緩み始め';
-  return tp.slack > 0.5 ? `潮止まり ${kt.toFixed(1)}kt` : `${compass8(c.x, c.y)}へ ${kt.toFixed(1)}kt（${phase}）`;
+  if (tp.slack > 0.5) return `潮止まり ${kt.toFixed(1)}kt`;
+  return compact ? `${compass8(c.x, c.y)}${kt.toFixed(1)}kt ${phase}` : `${compass8(c.x, c.y)}へ ${kt.toFixed(1)}kt（${phase}）`;
 }
 
 // the rod holders' places on deck (3D): 右舷・左舷, and the medium boat's bow holders
@@ -1757,12 +1758,14 @@ function updateHud(now) {
   const late = v.world.time >= (v.warnT || TIME.WARN);
   const opMode = isOperating(v);
   let html = chip(`${v.day}日目`, fmtClockNight(v.world.time), late ? 'warn' : '');
-  // heading: an arrow that turns with the bow (north up, like the chart)
-  html += chip('船首', `<svg class="hdg-arrow" viewBox="0 0 10 10" style="transform:rotate(${hdg}deg)" aria-hidden="true"><path d="M5 0.5 L9 9.5 L5 7 L1 9.5 Z"/></svg>${String(hdg).padStart(3, '0')}° ${compass8(Math.sin(b.heading), Math.cos(b.heading))}`, 'hdg');
+  // narrow phones: fewer, shorter chips so the top bar stays clear of the operation panel and the controls
+  const narrow = window.innerWidth < 380;
+  // heading: an arrow that turns with the bow (north up, like the chart); while drifting on a narrow phone the chart shows it
+  if (!(narrow && opMode)) html += chip('船首', `<svg class="hdg-arrow" viewBox="0 0 10 10" style="transform:rotate(${hdg}deg)" aria-hidden="true"><path d="M5 0.5 L9 9.5 L5 7 L1 9.5 Z"/></svg>${String(hdg).padStart(3, '0')}° ${compass8(Math.sin(b.heading), Math.cos(b.heading))}`, 'hdg');
   if (!opMode) html += chip('対地', `${(sog * 1.944).toFixed(1)}kt ${sog > 0.05 ? compass8(b.vx, b.vy) : ''}`);
   html += chip('水深', last ? `${last.bottom.toFixed(1)}m` : '--');
-  html += chip('潮', tideLabel(v));
-  html += chip('場所', S.esc(areaNameAt(b.x, b.y)));
+  html += chip('潮', tideLabel(v, narrow));
+  if (!(narrow && opMode)) html += chip('場所', S.esc(areaNameAt(b.x, b.y)));
   if (!opMode) {
     html += chip('漁法', METHODS[v.method].name);
     html += chip('魚倉', `${v.hold.kg.toFixed(1)}/${v.capacityKg}kg`, v.hold.kg > v.capacityKg * 0.9 ? 'warn' : '');
@@ -1771,7 +1774,7 @@ function updateHud(now) {
   const vis = visibilityAt(v.world.cond, v.world.time);
   if (vis < 1500) html += chip('霧', `視界 約${Math.round(vis / 50) * 50}m`, 'warn');
   else if (v.world.cond.weather && v.world.cond.weather.rough) html += chip('海況', `やや時化（風${v.world.cond.windSpeed.toFixed(0)}m/s）`, 'warn');
-  html += chip('時間', `×${scale}${app.paused ? ' 停止中' : ''}`, app.paused ? 'warn' : '');
+  if (!narrow || app.paused) html += chip('時間', `×${scale}${app.paused ? ' 停止中' : ''}`, app.paused ? 'warn' : ''); // the speed button shows it too
   if (hudMode().tuck) html += '<button type="button" class="chip chip-btn" data-act="chart">海図を見る</button>';
   if (b.grounded) html += chip('注意', '浅瀬・陸', 'warn');
   if (b.outOfBounds) html += chip('注意', '漁場の外', 'warn');

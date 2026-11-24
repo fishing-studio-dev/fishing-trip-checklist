@@ -46,9 +46,14 @@ const FLOOD = { x: Math.sin((40 * Math.PI) / 180), y: Math.cos((40 * Math.PI) / 
  * tide's swing from face to face. The morning drift and wide circling stop.
  * `share`: how far toward the face it goes (1 = right on it).
  */
-export function holdToReef(school, holdId, share = 1, maxOrbit = 25) {
+export function holdToReef(school, holdId, share = 1, maxOrbit = 25, { recenter = true } = {}) {
   const h = HOLDS[holdId];
   if (!h) return school;
+  if (!recenter) {
+    // fish spread over the flats beside a reef (マダイ) keep their ground and only lean with the stream
+    school.holdTo = { id: h.id, x: h.x, y: h.y, face: Math.round(h.face * share) };
+    return school;
+  }
   const rx = school.a.x - h.x;
   const ry = school.a.y - h.y;
   const along = rx * FLOOD.x + ry * FLOOD.y;
@@ -726,8 +731,8 @@ export function madaiSchool(seed, d, groundId, n, ep) {
     noiseSeed: Math.floor(day(15) * 1e9),
     counts: splitCounts(n, 0.15, 0.3),
   };
-  // on a reef's flank they lean toward the up-current side (spread widely over the bottom)
-  return g.hold ? holdToReef(school, g.hold, 0.5, 40) : school;
+  // on the flats beside a reef they lean toward the up-current side (spread widely over the bottom)
+  return g.hold ? holdToReef(school, g.hold, 0.5, 40, { recenter: false }) : school;
 }
 
 function madaiSchools(seed, d) {

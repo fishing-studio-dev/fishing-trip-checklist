@@ -405,7 +405,8 @@ const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
     await pg.evaluate(() => window.__ryoshi.fastForward(240));
     s3 = await st3();
     const labels = (s3.voyage.opLines || []).map((l) => l.label);
-    check('two handline rigs work from 右舷 and 左舷 (one fisher, taking turns)', labels.length === 2 && labels.includes('右舷') && labels.includes('左舷'), JSON.stringify(s3.voyage.opLines));
+    // the used boat's two reels on 右舷・左舷, and the small boat's own reel moved to a bow holder (第3期)
+    check('handline rigs work from 右舷, 左舷 and the bow holder the old reel went to (one fisher, taking turns)', labels.length === 3 && labels.includes('右舷') && labels.includes('左舷') && labels.includes('船首右'), JSON.stringify(s3.voyage.opLines));
     const opText = await pg.textContent('#opPanel').catch(() => '');
     check('operation panel lists both rigs', /右舷/.test(opText) && /左舷/.test(opText), opText.slice(0, 120));
     await pg.screenshot({ path: path.join(outDir, '18-cruiser-two-rigs.png') });

@@ -81,7 +81,7 @@ function biteRemark(w, school, t) {
 function faceRemark(w, school, t) {
   if (!school.holdTo) return null;
   const c = currentAt(w.cond, t);
-  if (Math.hypot(c.x, c.y) < 0.08) return '潮止まりで、群れは瀬の上に散っていた';
+  if (tidePhase(w.cond, t).slack > 0.5 || Math.hypot(c.x, c.y) < 0.01) return '潮止まりで、群れは瀬の上に散っていた';
   return `潮が${compass8(c.x, c.y)}へ流れていて、瀬の潮が当たる側（${compass8(-c.x, -c.y)}側）に付いていた`;
 }
 

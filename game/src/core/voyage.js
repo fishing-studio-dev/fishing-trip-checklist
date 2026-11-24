@@ -541,7 +541,8 @@ export function reefFace(v, rockNow = false) {
   }
   if (!best) return null;
   const name = best.h.area || '大きな根';
-  if (sp < 0.08) return { ok: false, text: `${name}にいる。今は潮止まり（潮が動き出すと、潮が当たる側にエサと魚が寄る）` };
+  // the same phase as the 潮 chip at the top of the screen
+  if (tidePhase(v.world.cond, t).slack > 0.5 || sp < 0.01) return { ok: false, text: `${name}にいる。今は潮止まり（潮が動き出すと、潮が当たる側にエサと魚が寄る）` };
   const up = -((v.boat.x - best.h.x) * c.x + (v.boat.y - best.h.y) * c.y) / sp;
   const side = compass8(-c.x, -c.y);
   if (up > best.h.face * 0.3) return { ok: true, text: `${name}の潮表（潮が当たる${side}側）にいる` };
