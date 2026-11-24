@@ -236,7 +236,7 @@ const KUROKI_SPOTS = [
   { id: 'g4', x: 900, y: 850 },
   { id: 'k3', x: 480, y: 1150 },
 ];
-const NEGYO = ['kasago', 'kijihata', 'ara', 'oomonhata', 'akahata'];
+const NEGYO = ['kasago', 'kijihata', 'ara', 'oomonhata', 'akahata', 'kue'];
 
 /** 黒木さん's 根魚釣り on day od around time t: what came up, and how the bite went with the tide. */
 function kurokiNegyo(seed, od, t, idBase) {

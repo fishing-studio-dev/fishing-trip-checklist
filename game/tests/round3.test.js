@@ -64,3 +64,57 @@ test('bait gathers over the reefs in its season, and the reef 青物 stay under 
   }
   assert.ok(pairs >= 3, `${pairs} reef bait with 青物 in a year`);
 });
+
+import { createProfile, markDeparture } from '../src/core/profile.js';
+import { createVoyage, advanceVoyage, startOperation, stopOperation, isOperating, setMethod } from '../src/core/voyage.js';
+import { reefSchools } from '../src/core/season.js';
+import { STRUCTURES } from '../src/core/sea.js';
+import { SPECIES, METHODS } from '../src/core/data.js';
+import { CALM } from './helpers.js';
+
+const NOW = '2026-11-24T00:00:00.000Z';
+const n2 = STRUCTURES.find((s) => s.id === 'n2');
+
+function kueVoyage(method, { aji = 0 } = {}) {
+  const p = createProfile({ worldSeed: 77, now: NOW });
+  p.day = 40;
+  const dep = markDeparture(p, NOW);
+  const kue = { id: 'KUE', species: 'kue', a: { x: n2.x, y: n2.y }, counts: { s: 6, m: 10, l: 4 }, sigmaH: 25, sigmaZ: 4, activityOverride: 2, orbitR: 0 };
+  const v = createVoyage(dep, { scenario: { conditions: { ...CALM, tideAmp: 0 }, schools: [kue] }, start: { x: n2.x, y: n2.y, heading: 0 }, radio: [] });
+  v.world.time = 16 * 3600;
+  if (aji) v.hold.counts.aji.m = aji;
+  assert.ok(setMethod(v, method).ok);
+  advanceVoyage(v, 3);
+  return { dep, v };
+}
+
+test('クエ: in the holes of the big rocks; takes a live アジ (泳がせ) and a 根魚 rig, and often dives into the rocks and breaks the 根魚 rig', () => {
+  // where it lives: the big pinnacles and the far reef, a few at most
+  let seen = 0;
+  for (let d = 1; d <= 60; d++) for (const s of reefSchools(77, d).filter((x) => x.species === 'kue')) {
+    seen++;
+    assert.ok(s.counts.s + s.counts.m + s.counts.l <= 3, 'a few at most');
+    assert.ok(/ne|n\d|okise|kita/.test(s.habitat), s.habitat);
+  }
+  assert.ok(seen > 10, `${seen} クエ in a year`);
+  assert.ok(METHODS.oyogase.targets.includes('kue') && METHODS.negyo.targets.includes('kue'));
+  assert.ok(SPECIES.kue.sizes.l.kg >= 15);
+  // 根魚釣り: bites, and loses many to the rocks
+  const ng = kueVoyage('negyo');
+  assert.ok(startOperation(ng.v).ok);
+  advanceVoyage(ng.v, 3600);
+  stopOperation(ng.v, 'player');
+  while (isOperating(ng.v)) advanceVoyage(ng.v, 1);
+  const lg = ng.v.logs.at(-1);
+  assert.ok(lg.lostFish > 0, `lost to the rocks: ${lg.lostFish}`);
+  assert.ok(ng.v.messages.some((m) => /根に潜られて/.test(m.text)));
+  // 泳がせ: live アジ near the rocks; lands クエ, and what it lands settles like any fish
+  const oy = kueVoyage('oyogase', { aji: 20 });
+  assert.ok(startOperation(oy.v).ok);
+  advanceVoyage(oy.v, 2 * 3600);
+  stopOperation(oy.v, 'player');
+  while (isOperating(oy.v)) advanceVoyage(oy.v, 1);
+  const kueN = Object.values(oy.v.hold.counts.kue).reduce((a, b) => a + b, 0) + Object.values(ng.v.hold.counts.kue).reduce((a, b) => a + b, 0);
+  assert.ok(kueN > 0, 'some クエ landed');
+  assert.ok((oy.v.best || {}).kue || (ng.v.best || {}).kue, 'the biggest クエ is noted for the records');
+});

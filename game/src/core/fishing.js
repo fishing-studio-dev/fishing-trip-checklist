@@ -251,6 +251,7 @@ export function stepOperation(op, ctx, dt) {
         // 根掛かり: the line is cut and a new rig tied on (hands needed)
         line.timer -= dt;
         if (line.timer <= 0) {
+          line.bolt = false;
           if (stopping) line.phase = 'idle';
           else {
             line.phase = 'prep';
@@ -335,6 +336,7 @@ export function stepOperation(op, ctx, dt) {
         if (!poses) poses = posesAt(world);
         let anyFish = false;
         let allFull = true;
+        let bolted = false;
         for (let k = 0; k < line.hooks.length; k++) {
           const h = line.hooks[k];
           if (h.fish) {
@@ -366,7 +368,29 @@ export function stepOperation(op, ctx, dt) {
             (op.biteTimes || (op.biteTimes = [])).push(t);
             if (op.biteTimes.length > 400) op.biteTimes.shift();
             if (line.firstBiteT == null) line.firstBiteT = t;
+            // 根に潜られる: a big rock fish (クエ) dives back into its hole and breaks the line
+            const bolt = SPECIES[fish.species].bolt;
+            if (bolt && rngNext(world.rng) < (method.fight ? bolt * 0.5 : bolt)) {
+              bolted = true;
+              break;
+            }
           }
+        }
+        if (bolted) {
+          for (const hk of line.hooks) {
+            if (hk.fish) {
+              returnFish(world, hk.fish); // the fish on the hooks go back with the rig
+              op.stats.lostFish += 1;
+              hk.fish = null;
+            }
+          }
+          op.stats.bolts = (op.stats.bolts || 0) + 1;
+          line.bolt = true;
+          line.firstBiteT = null;
+          line.depth = 0;
+          line.phase = 'snag';
+          line.timer = op.skill.rerig;
+          break;
         }
         if (stopping) {
           line.phase = 'retrieve';
@@ -571,6 +595,7 @@ export function linePhaseLabel(line) {
     case 'jig':
       return line.dir < 0 ? `しゃくり上げ ${line.depth.toFixed(0)}m（${line.sweepTop != null ? line.sweepTop.toFixed(0) : '—'}mまで）` : `フォール ${line.depth.toFixed(0)}m（底まで）`;
     case 'snag':
+      if (line.bolt) return '大物に根に潜られて糸を切られた。仕掛けを付け直し';
       return line.jig ? '根掛かり：ジグを失った。新しいジグを結び直し' : '根掛かり：糸を切って仕掛けを付け直し';
     case 'fight':
       return `掛かった！やり取り中（${fishOnLine(line).map((f) => f.kg.toFixed(0)).join('・')}kg級）`;

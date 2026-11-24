@@ -74,7 +74,7 @@ function feedingTable() {
   const groups = [
     ['aji', 'isaki', 'masaba'],
     ['madai', 'akaamadai'],
-    ['kasago', 'kijihata', 'akahata', 'oomonhata', 'ara'],
+    ['kasago', 'kijihata', 'akahata', 'oomonhata', 'ara', 'kue'],
     ['buri', 'hiramasa', 'kanpachi', 'sawara', 'yokowa', 'shiira'],
     ['kensaki', 'yari'],
   ];

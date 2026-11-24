@@ -301,6 +301,11 @@ export function stepVoyage(v) {
         for (const s of w.schools) if (s.light && s.opId === v.op.id) s.a = s.b = { x: v.boat.x, y: v.boat.y };
         if (v.op.state === 'running' && w.step % 100 === 0) gatherSquid(v);
       }
+      // 根に潜られた (クエ): say it when it happens
+      if ((v.op.stats.bolts || 0) > (v.op.boltsSaid || 0)) {
+        v.op.boltsSaid = v.op.stats.bolts;
+        say(v, '大物が掛かったが、根に潜られて糸を切られた（クエかもしれない）。仕掛けを付け直します。', 'warn');
+      }
       // 根魚釣り: tell once per drift when the boat has drifted off the rocks (the sounder's bottom echo thins)
       if (v.op.methodId === 'negyo' && v.op.state === 'running' && w.step % 10 === 0) {
         const rock = bottomIsRocky(v.boat.x, v.boat.y);

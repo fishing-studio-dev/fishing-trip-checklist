@@ -89,14 +89,14 @@ export const MADAI_GROUNDS = [
 export const REEF_STOCK = {
   gyosho: { kasago: [8, 18], kijihata: [2, 6], ara: [0, 0], akahata: [2, 6], oomonhata: [1, 3] },
   koboreze: { kasago: [5, 12], kijihata: [3, 8], ara: [0, 0], akahata: [2, 6], oomonhata: [2, 5] },
-  ne: { kasago: [2, 6], kijihata: [4, 9], ara: [0, 3], oomonhata: [3, 7] },
+  ne: { kasago: [2, 6], kijihata: [4, 9], ara: [0, 3], oomonhata: [3, 7], kue: [0, 2] },
 };
 export const ROCK_GROUNDS = [
   { id: 'nishi_rock', area: '西の根', x: 650, y: 1350, sigmaH: 70, stock: { kasago: [10, 22], kijihata: [2, 6], akahata: [4, 10] } },
-  { id: 'kita_rock', area: '北の瀬', x: 2000, y: 2250, sigmaH: 90, stock: { kasago: [8, 18], kijihata: [3, 7], oomonhata: [3, 8] } },
-  { id: 'okise_rock', area: '沖の瀬', x: 1650, y: 4050, sigmaH: 90, stock: { kasago: [6, 14], kijihata: [4, 9], ara: [0, 2], oomonhata: [3, 7] } },
+  { id: 'kita_rock', area: '北の瀬', x: 2000, y: 2250, sigmaH: 90, stock: { kasago: [8, 18], kijihata: [3, 7], oomonhata: [3, 8], kue: [0, 1] } },
+  { id: 'okise_rock', area: '沖の瀬', x: 1650, y: 4050, sigmaH: 90, stock: { kasago: [6, 14], kijihata: [4, 9], ara: [0, 2], oomonhata: [3, 7], kue: [0, 2] } },
 ];
-const REEF_BIG = { kasago: 0.2, kijihata: 0.2, ara: 0.3, akahata: 0.2, oomonhata: 0.25 };
+const REEF_BIG = { kasago: 0.2, kijihata: 0.2, ara: 0.3, akahata: 0.2, oomonhata: 0.25, kue: 0.2 };
 const keyOf = (str) => parseInt(hashString(str), 16); // a stable integer per place and species
 
 function reefSchool(seed, d, place, species, n, sigmaH) {
@@ -110,7 +110,7 @@ function reefSchool(seed, d, place, species, n, sigmaH) {
     b: { x: place.x, y: place.y },
     orbitR: 0,
     sigmaH,
-    sigmaZ: 1.0,
+    sigmaZ: SPECIES[species].sigmaZ || 1.0,
     noiseSeed: Math.floor(hashFloat(seed, k, 31) * 1e9),
     counts: splitCounts(n, REEF_BIG[species], 0.35),
   };

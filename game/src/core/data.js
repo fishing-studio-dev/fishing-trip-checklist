@@ -198,6 +198,27 @@ export const SPECIES = {
     unit: '尾',
     group: 'negyo',
   },
+  // クエ（本作設定・第3期）: the big grouper of the rocks — rare and solitary, in
+  // the holes of the big pinnacles and reefs, out to feed at dusk and in the
+  // night. Comes up out of the rocks for a live アジ (泳がせ); on a light 根魚
+  // rig it often dives back into the rocks and breaks the line (bolt).
+  // (In Kyushu クエ is also called アラ; the アラ of this game is the other fish.)
+  kue: {
+    id: 'kue',
+    name: 'クエ',
+    sizes: {
+      s: { label: '小クエ', kg: 3, pricePerKg: 2700 },
+      m: { label: 'クエ', kg: 8, pricePerKg: 3600 },
+      l: { label: '大クエ', kg: 18, pricePerKg: 4500 },
+    },
+    sizeOrder: ['s', 'm', 'l'],
+    habit: 'reef',
+    unit: '尾',
+    group: 'negyo',
+    offBottom: 1.0,
+    sigmaZ: 4, // m: rushes up out of its hole at a bait above it
+    bolt: 0.55, // chance a hooked クエ dives into the rocks and breaks a 根魚 rig (half on the stronger 泳がせ gear)
+  },
   // ---- 第2期の魚種（本作設定・玄界灘の旬を手本にした仮設定） ----
   // イサキ: schools stand up over the tops of high reefs and pinnacles in
   // tidal water; 梅雨イサキ (May–July) feed hard before spawning.
@@ -350,6 +371,7 @@ export const SEASONALITY = {
   oomonhata: { months: [0.3, 0.4, 0.55, 0.8, 1.0, 1.0, 0.9, 0.7, 0.45, 0.25, 0.2, 0.25], warm: 0.1 },
   akahata: { months: [0.35, 0.55, 0.85, 1.0, 1.0, 0.9, 0.7, 0.45, 0.25, 0.15, 0.15, 0.2], warm: 0.15 },
   ara: { months: [0.7, 0.65, 0.6, 0.55, 0.55, 0.6, 0.7, 0.8, 0.9, 1.0, 1.0, 0.85], warm: 0 },
+  kue: { months: [0.7, 0.75, 0.8, 0.85, 0.9, 0.95, 1.0, 1.0, 1.0, 0.95, 0.8, 0.75], warm: 0 },
   buri: { months: [0.45, 0.25, 0.1, 0.05, 0.05, 0.15, 0.45, 0.7, 0.95, 1.0, 0.95, 0.7], warm: -0.25 },
   hiramasa: { months: [0.85, 0.25, 0.15, 0.45, 0.5, 0.55, 0.6, 0.7, 0.8, 0.9, 0.95, 1.0], warm: 0 },
   kanpachi: { months: [0.15, 0.25, 0.45, 0.75, 0.95, 1.0, 0.9, 0.6, 0.3, 0.1, 0.05, 0.1], warm: 0.2 },
@@ -381,6 +403,7 @@ export const FEEDING = {
   akahata: { tide: [1.2, 1.05, 0.8, 1.2], fast: 0.6, dawn: 0.4, dusk: 0.45, day: 1, night: 0.5, temp: [19, 28] },
   oomonhata: { tide: [0.8, 1.25, 1.1, 1.0], fast: 0.75, dawn: 0.5, dusk: 0.5, day: 1, night: 0.5, temp: [17, 28] },
   ara: { tide: [0.6, 1.2, 1.15, 0.9], fast: 0.8, dawn: 0.4, dusk: 0.4, day: 1, night: 0.6, temp: [13, 26] },
+  kue: { tide: [0.7, 1.15, 1.0, 1.05], fast: 0.7, dawn: 1.1, dusk: 1.7, day: 0.45, night: 1.4, temp: [15, 28] }, // クエ: out of the rocks at dusk and night
   buri: { tide: [0.2, 1.5, 1.25, 0.6], fast: 1, dawn: 0.7, dusk: 0.55, day: 1, night: 0.2, temp: [13, 22] },
   hiramasa: { tide: [0.2, 1.5, 1.25, 0.6], fast: 1, dawn: 0.7, dusk: 0.55, day: 1, night: 0.2, temp: [14, 25] },
   kanpachi: { tide: [0.25, 1.45, 1.2, 0.65], fast: 1, dawn: 0.6, dusk: 0.55, day: 1, night: 0.2, temp: [19, 28] },
@@ -424,6 +447,7 @@ export const ECHO = {
   akahata: { kind: 'school', ts: 0.3 },
   madai: { kind: 'single', ts: 1.0, size: 0.45 },
   ara: { kind: 'single', ts: 1.3, size: 0.6 },
+  kue: { kind: 'single', ts: 1.9, size: 0.8 },
   oomonhata: { kind: 'single', ts: 0.9, size: 0.45 },
   buri: { kind: 'single', ts: 1.6, size: 0.7, fast: true },
   hiramasa: { kind: 'single', ts: 1.6, size: 0.7, fast: true },
@@ -472,7 +496,7 @@ export const METHODS = {
     name: '泳がせ釣り',
     detail: '一本釣りで釣った活きアジを針に付けて泳がせ、根や瀬の周り・ベイトの下を回る青物（ブリ・ヒラマサ・カンパチ）を狙う。エサのアジは魚倉から使う',
     target: 'buri',
-    targets: ['buri', 'hiramasa', 'kanpachi'],
+    targets: ['buri', 'hiramasa', 'kanpachi', 'kue'],
     hooks: 1,
     hookSpacing: 0,
     liveBait: 'aji', // one fish from the hold per bait
@@ -527,7 +551,7 @@ export const METHODS = {
     name: '根魚釣り',
     detail: '2本針の短い仕掛けを、オモリが底から少し上になるように保ち、根・漁礁の真上を流して根魚（カサゴ・キジハタ・アカハタ・オオモンハタ・アラ）を狙う',
     target: 'kasago',
-    targets: ['kasago', 'kijihata', 'ara', 'oomonhata', 'akahata'],
+    targets: ['kasago', 'kijihata', 'ara', 'oomonhata', 'akahata', 'kue'],
     hooks: 2,
     hookSpacing: 0.6,
     firstHook: 0.4, // m above the sinker for the lowest hook
@@ -555,9 +579,9 @@ export const METHODS = {
     name: 'ジギング',
     detail: 'メタルジグを底まで落とし、15〜20m（魚探の反応があればその上まで）しゃくり上げてはまた落とす。活きエサは要らない。青物・サワラ・ヨコワ、底近くのマダイや根の大物が掛かる。サバも食ってくる。根掛かりするとジグを失う',
     target: 'buri',
-    targets: ['buri', 'hiramasa', 'kanpachi', 'sawara', 'yokowa', 'madai', 'oomonhata', 'ara', 'masaba'],
+    targets: ['buri', 'hiramasa', 'kanpachi', 'sawara', 'yokowa', 'madai', 'oomonhata', 'ara', 'kue', 'masaba'],
     // how readily each fish takes a jig (relative): サバ swarm it, マダイ and 根魚 take it near the bottom
-    appeal: { buri: 1, hiramasa: 1, kanpachi: 1, sawara: 0.8, yokowa: 0.7, madai: 0.5, oomonhata: 0.6, ara: 0.5, masaba: 0.15 },
+    appeal: { buri: 1, hiramasa: 1, kanpachi: 1, sawara: 0.8, yokowa: 0.7, madai: 0.5, oomonhata: 0.6, ara: 0.5, kue: 0.25, masaba: 0.15 },
     hooks: 1,
     hookSpacing: 0,
     firstHook: 0,
@@ -957,7 +981,7 @@ export const MARKET = {
   dailySwing: 0.12, // the day-to-day wobble (smooth across days: yesterday's board hints at today)
   afterRough: 1.15, // the day after a rough day
   tiers: [1, 0.8, 0.6, 0.45], // price for each successive `depthKg` of one fish sold the same day
-  depthKg: { aji: 30, isaki: 30, masaba: 60, sawara: 40, shiira: 60, yokowa: 40, madai: 30, akaamadai: 12, shiroamadai: 6, kasago: 10, kijihata: 8, akahata: 8, oomonhata: 10, ara: 15, buri: 80, hiramasa: 60, kanpachi: 50, kensaki: 25, yari: 25 },
+  depthKg: { aji: 30, isaki: 30, masaba: 60, sawara: 40, shiira: 60, yokowa: 40, madai: 30, akaamadai: 12, shiroamadai: 6, kasago: 10, kijihata: 8, akahata: 8, oomonhata: 10, ara: 15, kue: 10, buri: 80, hiramasa: 60, kanpachi: 50, kensaki: 25, yari: 25 },
 };
 
 // ---- 注文（R02）: requests from the market and the cooks — take them or not. ----
