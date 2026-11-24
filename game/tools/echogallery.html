@@ -1,0 +1,20 @@
+<!doctype html>
+<html lang="ja"><head><meta charset="utf-8"><title>魚探の映り方の例</title>
+<style>body{background:#0b1726;color:#dfe8f2;font-family:sans-serif;margin:12px}.g{display:grid;grid-template-columns:repeat(3,1fr);gap:10px}.c{background:#12233a;padding:6px;border-radius:6px}canvas{width:100%;height:170px;display:block}h3{margin:2px 0 4px;font-size:14px}p{font-size:11px;margin:4px 0}</style></head>
+<body><div class="g" id="g"></div>
+<script type="module">
+import { ECHO_EXAMPLES, exampleObservation } from '../src/ui/echoExamples.js';
+import { createSounderView } from '../src/ui/sounderView.js';
+import { EQUIPMENT } from '../src/core/data.js';
+const spec = EQUIPMENT[new URLSearchParams(location.search).get('s') || 'sounder_es2'].sounder;
+const g = document.getElementById('g');
+for (const ex of ECHO_EXAMPLES) {
+  const d = document.createElement('div'); d.className = 'c';
+  d.innerHTML = `<h3>${ex.title}</h3><canvas></canvas><p>${ex.text}</p>`;
+  g.appendChild(d);
+}
+requestAnimationFrame(() => {
+  [...document.querySelectorAll('canvas')].forEach((c, i) => createSounderView(c).draw(exampleObservation(ECHO_EXAMPLES[i], spec), { readout: !!spec.readout, fit: true }));
+  document.body.dataset.ready = '1';
+});
+</script></body></html>

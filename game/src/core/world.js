@@ -1,6 +1,6 @@
 // World state: game time, the day's conditions and fish schools.
 // One shared state feeds the sounder, the catch and the logs (A05).
-import { SPECIES, FEEDING, TIDE_PERIOD } from './data.js';
+import { SPECIES, FEEDING, TIDE_PERIOD, ECHO } from './data.js';
 import { createRng, rngNext, noise1 } from './rng.js';
 import { dayPlan } from './season.js';
 import { depthAt, makeDayConditions, currentAt } from './sea.js';
@@ -221,6 +221,21 @@ export function activityAt(world, school, t) {
   return Math.max(0.04, Math.min(2, 0.95 * tide * fast * lit * temp * stirred * mood.k * wobble));
 }
 
+/** Density (fish / m^3) of one school at (x, y, z) given its pose p (0 beyond 3 sigma). */
+export function schoolDensity(s, p, x, y, z) {
+  const n = schoolTotal(s);
+  if (n <= 0) return 0;
+  const dx = x - p.x;
+  const dy = y - p.y;
+  const dh2 = (dx * dx + dy * dy) / (s.sigmaH * s.sigmaH);
+  if (dh2 > 9) return 0;
+  const sz = s.sigmaZ * (p.zs || 1);
+  const pz = s.hug ? Math.max(1, depthAt(x, y) - p.off) : p.z;
+  const dz = (z - pz) / sz;
+  if (dz * dz > 9) return 0;
+  return (n / (SQRT2PI3 * s.sigmaH * s.sigmaH * sz)) * Math.exp(-0.5 * (dh2 + dz * dz));
+}
+
 /**
  * Fish density (fish / m^3) at (x, y, depth z), optionally for one species
  * (or a list of species). Truncated at 3 sigma so that empty water is exactly
@@ -237,17 +252,9 @@ export function densityAt(world, x, y, z, poses, species = null) {
     if (species && (many ? !species.includes(s.species) : s.species !== species)) continue;
     // the instruments (no species asked) never see アマダイ in their burrows
     if (!species && SPECIES[s.species].habit === 'burrow') continue;
-    const n = schoolTotal(s);
-    if (n <= 0) continue;
     const p = poses ? poses[i] : schoolPose(s, world.time, world);
-    const dx = x - p.x;
-    const dy = y - p.y;
-    const dh2 = (dx * dx + dy * dy) / (s.sigmaH * s.sigmaH);
-    if (dh2 > 9) continue;
-    const pz = s.hug ? Math.max(1, depthAt(x, y) - p.off) : p.z;
-    const dz = (z - pz) / (s.sigmaZ * (p.zs || 1));
-    if (dz * dz > 9) continue;
-    const rho = (n / (SQRT2PI3 * s.sigmaH * s.sigmaH * s.sigmaZ * (p.zs || 1))) * Math.exp(-0.5 * (dh2 + dz * dz));
+    const rho = schoolDensity(s, p, x, y, z);
+    if (rho <= 0) continue;
     total += rho;
     if (rho > bestRho) {
       bestRho = rho;
@@ -255,6 +262,22 @@ export function densityAt(world, x, y, z, poses, species = null) {
     }
   }
   return { total, best };
+}
+
+/**
+ * What the sound comes back from at (x, y, z): density weighted by how
+ * strongly each fish echoes (ECHO.ts) — for the sonar and the side view.
+ */
+export function echoDensityAt(world, x, y, z, poses) {
+  let total = 0;
+  for (let i = 0; i < world.schools.length; i++) {
+    const s = world.schools[i];
+    const e = ECHO[s.species];
+    if (e && e.kind === 'none') continue;
+    const rho = schoolDensity(s, poses ? poses[i] : schoolPose(s, world.time, world), x, y, z);
+    if (rho > 0) total += rho * (e ? e.ts : 1);
+  }
+  return total;
 }
 
 export function posesAt(world, t = world.time) {

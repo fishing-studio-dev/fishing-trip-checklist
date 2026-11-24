@@ -5,7 +5,7 @@
 // column, and hard returns where a small structure stands up off the bottom.
 // It shows where something is — never what species it is.
 import { depthAt, baseDepthAt } from './sea.js';
-import { densityAt, posesAt } from './world.js';
+import { echoDensityAt, posesAt } from './world.js';
 
 export const SONAR_BEAMS = 72; // 5° each
 export const SONAR_BINS = 40;
@@ -29,7 +29,7 @@ export function stepSonar(sonar, world, boat) {
     const bottom = depthAt(x, y);
     // the water column at three depths
     let rho = 0;
-    for (const f of [0.25, 0.55, 0.85]) rho += densityAt(world, x, y, Math.max(1.5, bottom * f), poses).total;
+    for (const f of [0.25, 0.55, 0.85]) rho += echoDensityAt(world, x, y, Math.max(1.5, bottom * f), poses);
     let v = 1 - Math.exp(-(rho / 3) * sonar.gain);
     // hard return from a structure standing up off the bottom
     const relief = baseDepthAt(x, y) - bottom;

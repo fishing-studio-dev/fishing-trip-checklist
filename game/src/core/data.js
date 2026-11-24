@@ -401,6 +401,40 @@ export const MOODS = [
   { id: 'hot', p: 0.06, k: 1.35 }, // bites whatever the tide
 ];
 
+// ---- 魚探の映り方（本作設定） ----
+// How each fish shows on the sounder, shaped after what anglers and sounder
+// makers describe (docs/REQUIREMENTS_R2.md §5.1):
+//   school: a cloud / band of many small targets (アジ・イサキ・サバ・イワシ・イカ);
+//           根魚 sit on the rocks and melt into the bottom line.
+//   single: big fish seen one by one — each draws an arch (「へ」の字) as the
+//           boat passes over it (far at the edge of the beam, nearest straight
+//           below); a fish that stays under a drifting boat draws a long line.
+//   none:   never seen (アマダイ in their burrows).
+// ts: how strongly one fish returns the sound (target strength, relative).
+// サバ have no swim bladder and squid none at all: weak echoes for their numbers.
+export const ECHO = {
+  aji: { kind: 'school', ts: 1 },
+  isaki: { kind: 'school', ts: 1 },
+  masaba: { kind: 'school', ts: 0.5 },
+  iwashi: { kind: 'school', ts: 0.8, bait: true },
+  kensaki: { kind: 'school', ts: 0.3 },
+  yari: { kind: 'school', ts: 0.3 },
+  kasago: { kind: 'school', ts: 0.3 },
+  kijihata: { kind: 'school', ts: 0.3 },
+  akahata: { kind: 'school', ts: 0.3 },
+  madai: { kind: 'single', ts: 1.0, size: 0.45 },
+  ara: { kind: 'single', ts: 1.3, size: 0.6 },
+  oomonhata: { kind: 'single', ts: 0.9, size: 0.45 },
+  buri: { kind: 'single', ts: 1.6, size: 0.7, fast: true },
+  hiramasa: { kind: 'single', ts: 1.6, size: 0.7, fast: true },
+  kanpachi: { kind: 'single', ts: 1.5, size: 0.7, fast: true },
+  sawara: { kind: 'single', ts: 1.1, size: 0.55, fast: true },
+  yokowa: { kind: 'single', ts: 1.3, size: 0.6, fast: true },
+  shiira: { kind: 'single', ts: 1.2, size: 0.6, fast: true },
+  akaamadai: { kind: 'none', ts: 0 },
+  shiroamadai: { kind: 'none', ts: 0 },
+};
+
 // The share of large fish follows the season for some (秋はハマチ・メジロ、冬はブリ).
 export const SIZE_SEASON = {
   buri: [0.7, 0.6, 0.5, 0.5, 0.5, 0.5, 0.6, 0.8, 1.1, 1.3, 1.3, 1.0],

@@ -4,7 +4,7 @@
 // fish close over the bottom show as bright points. The same samples feed the
 // depth map.
 import { depthAt, bottomIsRocky } from './sea.js';
-import { densityAt, posesAt } from './world.js';
+import { echoDensityAt, posesAt } from './world.js';
 import { hashFloat } from './rng.js';
 
 /** World position of a point on a stored side-view line (offset < 0 = port). */
@@ -37,7 +37,7 @@ export function sideColumn(world, x, y, heading, spec, pingIndex) {
     v *= 0.85 + 0.3 * hashFloat(pingIndex, k, 17);
     // fish just over the bottom (rockfish, schools near the bottom)
     if (!poses) poses = posesAt(world);
-    const rho = densityAt(world, px, py, Math.max(1, d - 2), poses).total;
+    const rho = echoDensityAt(world, px, py, Math.max(1, d - 2), poses);
     if (rho > 0) v = Math.max(v, Math.min(1, 0.55 + (1 - Math.exp(-rho * spec.gainK)) * 0.9));
     vals[k] = Math.max(0, Math.min(255, Math.round(v * 255)));
     prev = d;
