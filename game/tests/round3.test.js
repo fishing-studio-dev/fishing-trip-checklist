@@ -154,3 +154,83 @@ test('青物の手順: the panel says whether the boat is on the reef face the s
   // far from any reef: no face to speak of
   assert.equal(reefFace(at(1200, 900, 0.25)), null);
 });
+
+import { BOATS, EQUIPMENT } from '../src/core/data.js';
+import { validateProfile, migrateProfile10to11, PROFILE_SCHEMA } from '../src/core/profile.js';
+import { purchaseEquipment } from '../src/core/economy.js';
+
+function cruiserWith(bow) {
+  const p = createProfile({ worldSeed: 77, now: NOW });
+  p.funds = 2000000;
+  p.boat.model = 'cruiser_2';
+  p.boat.slots = Object.fromEntries(BOATS.cruiser_2.slots.map((sl) => [sl.id, null]));
+  p.boat.slots.helm_sounder = { uid: 'c1', itemId: 'sounder_es1' };
+  p.boat.slots.starboard_reel = { uid: 'c2', itemId: 'reel_electric' };
+  p.boat.slots.port_reel = { uid: 'c3', itemId: 'reel_electric' };
+  let q = p;
+  for (const [slot, item] of Object.entries(bow)) {
+    const r = purchaseEquipment(q, item, slot);
+    assert.ok(r.ok, r.reason);
+    q = r.profile;
+  }
+  assert.deepEqual(validateProfile(q), []);
+  return q;
+}
+
+function ajiRun(p, method = 'handline', secs = 1800) {
+  const dep = markDeparture(p, NOW);
+  const aji = { id: 'A', species: 'aji', a: { x: 1500, y: 1500 }, counts: { s: 300, m: 900, l: 300 }, sigmaH: 40, sigmaZ: 4, fixedOffBottom: 3, activityOverride: 1.5, orbitR: 0 };
+  const v = createVoyage(dep, { scenario: { conditions: { ...CALM, tideAmp: 0 }, schools: [aji] }, start: { x: 1500, y: 1500, heading: 0 }, radio: [], method });
+  v.world.time = 7 * 3600;
+  advanceVoyage(v, 3);
+  assert.ok(startOperation(v).ok);
+  const lines = v.op.lines.map((l) => l.label);
+  advanceVoyage(v, secs);
+  const waits = v.op.lines.map((l) => l.machine);
+  stopOperation(v, 'player');
+  while (isOperating(v)) advanceVoyage(v, 1);
+  return { v, lines, waits, n: v.hold.count };
+}
+
+test('中型漁船: two more rod holders at the bow — four rigs; an automatic machine works without hands (一本釣り・イカ), not on 根魚・泳がせ', () => {
+  const bowSlots = BOATS.cruiser_2.slots.filter((sl) => sl.id.startsWith('bow_'));
+  assert.equal(bowSlots.length, 2);
+  assert.ok(bowSlots.every((sl) => sl.accepts.includes('reel') && sl.accepts.includes('machine') && sl.rig));
+  assert.ok(!BOATS.skiff_1.slots.some((sl) => sl.id.startsWith('bow_')), 'the small boat stays with one rod');
+  // four electric reels: four lines, all needing the one pair of hands in turn
+  const reels = ajiRun(cruiserWith({ bow_starboard_reel: 'reel_electric', bow_port_reel: 'reel_electric' }));
+  assert.deepEqual(reels.lines, ['右舷', '左舷', '船首右', '船首左']);
+  // two machines at the bow: they need no hands, so with the same hands more fish come aboard
+  const mach = ajiRun(cruiserWith({ bow_starboard_reel: 'machine_af1', bow_port_reel: 'machine_af1' }));
+  assert.deepEqual(mach.lines, ['右舷', '左舷', '船首右（自動）', '船首左（自動）']);
+  const two = ajiRun(cruiserWith({}));
+  assert.equal(two.lines.length, 2);
+  assert.ok(mach.n > two.n * 1.3, `machines add fish: ${two.n} → ${mach.n}`);
+  assert.ok(reels.n > two.n, `four reels add fish: ${two.n} → ${reels.n}`);
+  // machines are not used where hands are needed (根魚の根掛かり, 泳がせのやり取り)
+  const p = cruiserWith({ bow_starboard_reel: 'machine_af1' });
+  const dep = markDeparture(p, NOW);
+  const v = createVoyage(dep, { scenario: { conditions: CALM, schools: [] }, start: { x: 1500, y: 1500, heading: 0 }, radio: [] });
+  v.world.time = 7 * 3600;
+  assert.ok(setMethod(v, 'negyo').ok);
+  advanceVoyage(v, 3);
+  assert.ok(startOperation(v).ok);
+  assert.ok(v.op.lines.every((l) => !l.machine), 'no machine on 根魚');
+  assert.ok(EQUIPMENT.machine_af1.machine.methods.includes('ika'));
+  // a machine does not fit the side holders
+  assert.equal(purchaseEquipment(cruiserWith({}), 'machine_af1', 'port_reel').ok, false);
+});
+
+test('format 11: a medium boat from an older save gets the two bow holders, empty; nothing else changes', () => {
+  const p = cruiserWith({});
+  const p10 = JSON.parse(JSON.stringify(p));
+  p10.schema = 10;
+  delete p10.boat.slots.bow_starboard_reel;
+  delete p10.boat.slots.bow_port_reel;
+  const q = migrateProfile10to11(p10);
+  assert.equal(q.schema, PROFILE_SCHEMA);
+  assert.equal(q.boat.slots.bow_starboard_reel, null);
+  assert.equal(q.boat.slots.bow_port_reel, null);
+  assert.deepEqual({ ...q, schema: 0 }, { ...p, schema: 0 });
+  assert.deepEqual(validateProfile(q), []);
+});

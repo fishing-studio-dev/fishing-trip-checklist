@@ -2,7 +2,7 @@
 // records and the yearly review (R02), and save format 10.
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { createProfile, markDeparture, validateProfile, migrateProfile9to10, PROFILE_SCHEMA } from '../src/core/profile.js';
+import { createProfile, markDeparture, validateProfile, migrateProfile9to10, migrateProfile10to11, PROFILE_SCHEMA } from '../src/core/profile.js';
 import { createVoyage, advanceVoyage, startOperation, stopOperation, isOperating, returnToPort, summarizeVoyage, setMethod } from '../src/core/voyage.js';
 import { settleVoyage, priceLines, purchasePreview, planBoatPurchase } from '../src/core/economy.js';
 import { pricePerKg, marketFactor, depthMultiplier, marketBoard, itemPrice, costsOf, difficultyOf } from '../src/core/market.js';
@@ -169,7 +169,7 @@ test('the yearly review: totals and seasons from the ledger, shown once on the f
   assert.equal(reviewDue(p, 30), 0);
 });
 
-test('format 10: an older save becomes 「ふつう」 with records from its logs and the year reviews caught up', () => {
+test('format 10→11: an older save becomes 「ふつう」 with records from its logs and the year reviews caught up', () => {
   const p9 = createProfile({ worldSeed: 2, now: NOW });
   p9.schema = 9;
   delete p9.difficulty;
@@ -178,7 +178,7 @@ test('format 10: an older save becomes 「ふつう」 with records from its log
   delete p9.years;
   p9.day = 75;
   p9.logs = [{ id: 'V3-op1', day: 3, area: '北の瀬', methodId: 'handline', species: 'aji', catches: { s: 2, m: 5, l: 1 }, count: 8, kg: 2 }];
-  const p = migrateProfile9to10(p9);
+  const p = migrateProfile10to11(migrateProfile9to10(p9));
   assert.equal(p.schema, PROFILE_SCHEMA);
   assert.equal(p.difficulty, 'normal');
   assert.deepEqual(p.orders, []);

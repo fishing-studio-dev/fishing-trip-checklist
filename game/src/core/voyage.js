@@ -53,10 +53,11 @@ export function createVoyage(profile, opts = {}) {
   const start = opts.start || { x: PORT.dock.x, y: PORT.dock.y + 20, heading: 0 };
   const slot = (id) => (profile.boat.slots[id] ? profile.boat.slots[id].itemId : null);
   const sounderId = slot('helm_sounder');
-  // one handline rig per fitted reel (中型漁船 has two stations)
+  // one handline rig per fitted reel (中型漁船 has two stations, and two more at the bow
+  // that also take an automatic fishing machine)
   const rigs = model.slots
-    .filter((sl) => sl.rig && profile.boat.slots[sl.id] && EQUIPMENT[slot(sl.id)].type === 'reel')
-    .map((sl) => ({ slotId: sl.id, label: sl.rig, reelId: slot(sl.id), reel: EQUIPMENT[slot(sl.id)].reel }));
+    .filter((sl) => sl.rig && profile.boat.slots[sl.id] && ['reel', 'machine'].includes(EQUIPMENT[slot(sl.id)].type))
+    .map((sl) => ({ slotId: sl.id, label: sl.rig, reelId: slot(sl.id), reel: EQUIPMENT[slot(sl.id)].reel, machine: EQUIPMENT[slot(sl.id)].machine || null }));
   const reelId = rigs[0].reelId;
   const ofType = (type) => model.slots.map((sl) => slot(sl.id)).find((id) => id && EQUIPMENT[id].type === type) || null;
   const trollId = ofType('troll');
@@ -878,7 +879,8 @@ export function startOperation(v) {
     methodId: hookMethod,
     level: v.levels[hookMethod],
     // ジギング works the one rod from the rack; the other methods every fitted reel
-    rigs: hookMethod === 'jigging' ? [{ slotId: 'rod_rack', label: 'ジギング', reelId: v.equip.rodId, reel: v.equip.rod.reel }] : v.equip.rigs,
+    // (the automatic machines only where they can work alone: 一本釣り・イカ釣り)
+    rigs: hookMethod === 'jigging' ? [{ slotId: 'rod_rack', label: 'ジギング', reelId: v.equip.rodId, reel: v.equip.rod.reel }] : v.equip.rigs.filter((r) => !r.machine || (METHODS[hookMethod].machineOk && r.machine.methods.includes(hookMethod))),
     startT: v.world.time,
     x: v.boat.x,
     y: v.boat.y,

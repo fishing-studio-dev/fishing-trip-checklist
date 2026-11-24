@@ -74,7 +74,7 @@ export function createScene(canvas) {
   scene.add(buildLand());
   let boat = buildBoat('skiff_1');
   scene.add(boat.group);
-  const hlLines = [buildLine(), buildLine()];
+  const hlLines = [buildLine(), buildLine(), buildLine(), buildLine()];
   for (const l of hlLines) scene.add(l.obj);
   const trollLines = [buildLine(), buildLine(), buildLine(), buildLine()];
   for (const l of trollLines) scene.add(l.obj);
@@ -623,12 +623,13 @@ function buildBoat(modelId = 'skiff_1') {
   fishBox.position.set(-0.2, deckY + 0.28, 2.6 * sz);
   group.add(fishBox);
 
-  // reel stations: starboard always, port on boats that have one
+  // reel stations: starboard always, port on boats that have one; the medium boat
+  // has two more at the bow (a reel or an automatic fishing machine)
   const stations = {};
-  for (const [name, side] of [['starboard', 1], ['port', -1]]) {
-    if (name === 'port' && modelId !== 'cruiser_2') continue;
+  for (const [name, side, zf, xIn] of [['starboard', 1, -0.9, 0.2], ['port', -1, -0.9, 0.2], ['bowStarboard', 1, -2.35, 0.55], ['bowPort', -1, -2.35, 0.55]]) {
+    if (name !== 'starboard' && modelId !== 'cruiser_2') continue;
     const rod = new THREE.Group();
-    rod.position.set(side * (H.beam - 0.2), deckY + 0.33, -0.9 * sz);
+    rod.position.set(side * (H.beam - xIn), deckY + 0.33, zf * sz);
     const rodMesh = new THREE.Mesh(new THREE.CylinderGeometry(0.012, 0.035, 2.6), new THREE.MeshStandardMaterial({ color: 0x222222 }));
     rodMesh.position.y = 1.3;
     rod.add(rodMesh);
@@ -650,7 +651,17 @@ function buildBoat(modelId = 'skiff_1') {
     eReel.add(eDrum);
     eReel.position.set(0, 0.3, 0.12);
     rod.add(eReel);
-    stations[name] = { rod, tip, handReel, eReel, side };
+    // 自動釣り機: a grey box with a drum at the foot of the rod
+    const machine = new THREE.Group();
+    const mBody = new THREE.Mesh(new THREE.BoxGeometry(0.34, 0.3, 0.34), new THREE.MeshStandardMaterial({ color: 0x8a96a3, metalness: 0.4, roughness: 0.5 }));
+    machine.add(mBody);
+    const mDrum = new THREE.Mesh(new THREE.CylinderGeometry(0.09, 0.09, 0.38, 14), new THREE.MeshStandardMaterial({ color: 0x2f6fb0, metalness: 0.5 }));
+    mDrum.rotation.z = Math.PI / 2;
+    mDrum.position.y = 0.2;
+    machine.add(mDrum);
+    machine.position.set(0, 0.2, 0.1);
+    rod.add(machine);
+    stations[name] = { rod, tip, handReel, eReel, machine, mDrum, side };
   }
 
   // longline gear: tubs of baited line at the stern and a small line hauler (揚げ縄機) forward on starboard
@@ -717,6 +728,8 @@ function buildBoat(modelId = 'skiff_1') {
     helm: { x: 0, z: H.houseZ + hd0 / 2 + 0.4, yaw: 0, label: '操舵席' },
     starboard: { x: H.beam - 0.62, z: -0.55 * sz, yaw: Math.PI / 2, label: '右舷' },
     port: { x: -(H.beam - 0.62), z: -0.55 * sz, yaw: -Math.PI / 2, label: '左舷' },
+    bowStarboard: { x: H.beam - 0.95, z: -2.05 * sz, yaw: Math.PI / 2, label: '船首右' },
+    bowPort: { x: -(H.beam - 0.95), z: -2.05 * sz, yaw: -Math.PI / 2, label: '船首左' },
     stern: { x: 0, z: 3.15 * sz, yaw: Math.PI, label: '船尾' },
     hauler: { x: H.beam - 0.62, z: -1.55 * sz, yaw: Math.PI / 2, label: '揚げ縄機' },
     haulerAft: { x: H.beam - 0.66, z: -0.75 * sz, yaw: Math.PI * 0.8, crewOnly: true },
@@ -887,13 +900,14 @@ function buildBoat(modelId = 'skiff_1') {
   function spinHauler(rt) {
     if (rt != null) hDrum.rotation.x = rt * 6;
   }
-  /** reels: { starboard: itemId|null, port: itemId|null } */
+  /** reels: { starboard, port, bowStarboard, bowPort: itemId|null } */
   function setReels(reels) {
     for (const [name, st] of Object.entries(stations)) {
       const id = reels[name];
       st.rod.visible = !!id;
       st.eReel.visible = id === 'reel_electric';
       st.handReel.visible = id === 'reel_hand';
+      st.machine.visible = id === 'machine_af1';
     }
   }
   function animateWorker(rt, working) {
@@ -911,7 +925,7 @@ function buildBoat(modelId = 'skiff_1') {
   setTroll(null);
   setReels({ starboard: 'reel_hand' });
   const stationList = Object.entries(posts)
-    .filter(([name, p]) => !p.crewOnly && (name !== 'port' || stations.port))
+    .filter(([name, p]) => !p.crewOnly && (!['port', 'bowStarboard', 'bowPort'].includes(name) || stations[name]))
     .map(([name, p]) => ({ name, label: p.label }));
   return {
     group,

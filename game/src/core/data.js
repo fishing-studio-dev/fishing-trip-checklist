@@ -469,6 +469,7 @@ export const SIZE_SEASON = {
 export const METHODS = {
   handline: {
     id: 'handline',
+    machineOk: true, // the bow machines (自動釣り機) work this rig
     name: '一本釣り',
     detail: '胴突き仕掛け（3本針）を魚探の反応のタナに合わせ、掛かったら回収する流し釣り。アジのほか、瀬の上のイサキ、中層のサバも掛かる',
     target: 'aji',
@@ -520,6 +521,7 @@ export const METHODS = {
   // (イカ角) on each reel are worked at the squid's layer automatically.
   ika: {
     id: 'ika',
+    machineOk: true, // automatic squid jigging machines
     name: 'イカ釣り',
     detail: '集魚灯を点けて船の下にイカを寄せ、イカ角（擬似餌）を並べた仕掛けをシャクって釣る。夕方から夜の漁（集魚灯が要る）',
     target: 'kensaki',
@@ -795,6 +797,20 @@ export const EQUIPMENT = {
     desc: '屋根に付ける集魚灯。夕方から夜に点けると、まわりのイカが船の下に寄ってくる。これがあると港で「夕方から出る（イカ釣り）」を選べ、16時に出て23時まで漁ができる。',
     lights: { power: 1 },
   },
+  // 自動釣り機（本作設定・第3期）: a machine on a bow rod holder of the medium boat
+  // that drops, works, winds up and takes the fish off by itself — no hands
+  // needed, slower than a skilled fisher. Rigs that need no bait (サビキ・イカ角):
+  // 一本釣り and イカ釣り only.
+  machine_af1: {
+    id: 'machine_af1',
+    type: 'machine',
+    mount: 'machine',
+    name: '自動釣り機 AF-1',
+    price: 45000,
+    desc: '中型漁船の船首の竿受けに付ける機械。仕掛けの上げ下げ・しゃくり・取り込みを人の手を使わずにする（手の作業より遅い）。餌の要らない一本釣り（サビキ）とイカ釣りで動く。対応水深150m。',
+    reel: { retrieve: 2.0, maxDepth: 150, model: 'machine' },
+    machine: { prep: 14, unhook: 7, methods: ['handline', 'ika'] },
+  },
 };
 
 // What each upgrade changes and where you will notice it in play — shown when
@@ -825,6 +841,10 @@ export const GUIDES = {
       '走った所の細かい地形が海図に残るので、根魚や青物の付き場（根の肩・漁礁の際）を予想しやすくなる。',
     ],
     note: '魚の種類は表示しません。映るのは地形と、底近くに何かがいる反応です。',
+  },
+  machine_af1: {
+    changes: ['中型漁船の船首の竿受け（2か所）に付けられる。一本釣りとイカ釣りで、仕掛けが1本増える。', '餌付けも取り込みも機械がするので、釣り人の手が空くのを待たない（1尾7秒・仕掛けの準備14秒）。'],
+    inPlay: ['操業パネルに「船首右（自動）」の行が増える。根魚・泳がせ・ジギングでは使わない（人の手が要る釣り）。'],
   },
   reel_electric: {
     changes: ['巻き上げが速い（毎秒2.6m。手巻きは腕前で0.7〜1.1m）。深いタナほど1回の手返しが短くなる。', '巻いている間も手が空くので、2本仕掛けのもう1本の作業が止まらない。', '届く深さ 80m→150m。'],
@@ -925,6 +945,9 @@ export const BOATS = {
       { id: 'helm_sounder', label: '操舵室（魚探・大型可）', accepts: ['sounder', 'sounder_l'] },
       { id: 'starboard_reel', label: '右舷 竿受け', accepts: ['reel'], rig: '右舷' },
       { id: 'port_reel', label: '左舷 竿受け', accepts: ['reel'], optional: true, rig: '左舷' },
+      // 第3期: two more rod holders at the bow — a reel, or an automatic fishing machine
+      { id: 'bow_starboard_reel', label: '船首右 竿受け（リール・自動釣り機）', accepts: ['reel', 'machine'], optional: true, rig: '船首右' },
+      { id: 'bow_port_reel', label: '船首左 竿受け（リール・自動釣り機）', accepts: ['reel', 'machine'], optional: true, rig: '船首左' },
       { id: 'stern_troll', label: '船尾 曳縄（アウトリガー可）', accepts: ['troll', 'troll_l'], optional: true },
       { id: 'deck_longline', label: '後部甲板（延縄）', accepts: ['longline'], optional: true },
       { id: 'starboard_hauler', label: '右舷前（揚げ縄機）', accepts: ['hauler'], optional: true },

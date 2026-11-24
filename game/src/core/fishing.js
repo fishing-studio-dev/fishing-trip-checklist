@@ -134,7 +134,8 @@ export function createOperation({ id, voyageId, methodId, level, rigs, startT, x
 function newLine(method, skill, rig) {
   const hand = rig.reel.retrieve == null;
   return {
-    label: rig.label,
+    label: rig.machine ? `${rig.label}（自動）` : rig.label,
+    machine: rig.machine || null,
     reelId: rig.reelId,
     handReel: hand,
     bottomMode: !!method.bottomMode,
@@ -145,7 +146,7 @@ function newLine(method, skill, rig) {
     maxDepth: rig.reel.maxDepth,
     waiting: false,
     phase: 'prep',
-    timer: skill.rebait,
+    timer: rig.machine ? rig.machine.prep : skill.rebait,
     depth: 0,
     tana: null,
     target: null,
@@ -156,8 +157,9 @@ function newLine(method, skill, rig) {
   };
 }
 
-/** Steps that need the fisher's hands (others run on their own). */
+/** Steps that need the fisher's hands (others run on their own; an automatic machine needs none). */
 export function handlineNeedsHands(line) {
+  if (line.machine) return false;
   return line.phase === 'prep' || line.phase === 'unhook' || line.phase === 'snag' || line.phase === 'fight' || line.phase === 'jig' || (line.phase === 'retrieve' && line.handReel);
 }
 
@@ -255,7 +257,7 @@ export function stepOperation(op, ctx, dt) {
           if (stopping) line.phase = 'idle';
           else {
             line.phase = 'prep';
-            line.timer = op.skill.rebait;
+            line.timer = line.machine ? line.machine.prep : op.skill.rebait;
           }
         }
         break;
@@ -495,7 +497,7 @@ export function stepOperation(op, ctx, dt) {
         if (line.depth <= 0) {
           line.depth = 0;
           line.phase = 'unhook';
-          line.timer = fishOnLine(line).length * op.skill.unhook;
+          line.timer = fishOnLine(line).length * (line.machine ? line.machine.unhook : op.skill.unhook);
         }
         break;
       }
@@ -523,7 +525,7 @@ export function stepOperation(op, ctx, dt) {
             line.phase = 'idle';
           } else {
             line.phase = 'prep';
-            line.timer = op.skill.rebait;
+            line.timer = line.machine ? line.machine.prep : op.skill.rebait;
           }
         }
         break;

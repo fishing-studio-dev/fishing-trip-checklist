@@ -2,7 +2,7 @@
 // on the troll" hint, and up to three longlines (R07, R08), with save format 9.
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { createProfile, markDeparture, validateProfile, migrateProfile8to9, migrateProfile9to10, PROFILE_SCHEMA } from '../src/core/profile.js';
+import { createProfile, markDeparture, validateProfile, migrateProfile8to9, migrateProfile9to10, migrateProfile10to11, PROFILE_SCHEMA } from '../src/core/profile.js';
 import {
   createVoyage, advanceVoyage, startOperation, stopOperation, setMethod, isOperating, haulLongline, lineInWater, linesInWater, freeLines, soakingLines, lineNo,
   returnToPort, summarizeVoyage, liveBaitSteps, canStartOperation, routeTo,
@@ -62,7 +62,7 @@ test('format 9: an older save gets ジギング at 0, an empty rod rack and no e
   assert.equal(p9.boat.slots.rod_rack, null);
   assert.equal(p9.extraLines, 0);
   assert.equal(p9.funds, 4321);
-  assert.deepEqual(validateProfile(migrateProfile9to10(p9)), []);
+  assert.deepEqual(validateProfile(migrateProfile10to11(migrateProfile9to10(p9))), []);
   // through the loader: a format-8 envelope opens in the current format, the original kept aside
   const st = memoryStorage();
   const env8 = { ...makeEnvelope(p8, 3, NOW), schemaVersion: 8, app: 'M8' };

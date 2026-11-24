@@ -1737,6 +1737,10 @@ function tideLabel(v) {
   return tp.slack > 0.5 ? `潮止まり ${kt.toFixed(1)}kt` : `${compass8(c.x, c.y)}へ ${kt.toFixed(1)}kt（${phase}）`;
 }
 
+// the rod holders' places on deck (3D): 右舷・左舷, and the medium boat's bow holders
+const STATION_OF = { 右舷: 'starboard', 左舷: 'port', 船首右: 'bowStarboard', 船首左: 'bowPort' };
+const stationOfLine = (l) => STATION_OF[String(l.label || '').replace('（自動）', '')] || 'starboard';
+
 let hudAt = 0;
 function updateHud(now) {
   const v = app.voyage;
@@ -2119,13 +2123,13 @@ function frame(now) {
     const slots = app.profile ? app.profile.boat.slots : {};
     const itemAt = (id) => (slots[id] ? slots[id].itemId : null);
     const reels = atSea
-      ? { starboard: (v.equip.rigs.find((r) => r.label === '右舷') || {}).reelId || null, port: (v.equip.rigs.find((r) => r.label === '左舷') || {}).reelId || null }
-      : { starboard: itemAt('starboard_reel'), port: itemAt('port_reel') };
+      ? Object.fromEntries(v.equip.rigs.map((r) => [STATION_OF[r.label] || 'starboard', r.reelId]))
+      : { starboard: itemAt('starboard_reel'), port: itemAt('port_reel'), bowStarboard: itemAt('bow_starboard_reel'), bowPort: itemAt('bow_port_reel') };
     const worker = (lines) => lines.find((l, i) => (v.op.worker === i));
     const busy = hl ? worker(hl) : tl ? worker(tl) : null;
     const llOp = atSea && isLonglining(v) ? v.op : null;
     let station = 'helm';
-    if (hl) station = (busy || hl[0]).label === '左舷' ? 'port' : 'starboard';
+    if (hl) station = stationOfLine(busy || hl.find((l) => !l.machine) || hl[0]);
     else if (tl) station = 'stern';
     else if (llOp) station = llOp.kind === 'set' ? 'stern' : 'hauler';
     let working = busy ? ({ haul: 'retrieve', fight: 'retrieve', deploy: 'unhook' }[busy.phase] || busy.phase) : null;
@@ -2136,7 +2140,7 @@ function frame(now) {
     if (atSea && v.crew && isOperating(v)) {
       const second = v.op.busy && v.op.busy.length > 1 ? v.op.busy[1] : null;
       if (hl && second != null) {
-        crewStation = hl[second].label === '左舷' ? 'port' : 'starboard';
+        crewStation = stationOfLine(hl[second]);
         crewWorking = true;
       } else if (tl && second != null) {
         crewStation = 'sternPort';
@@ -2167,7 +2171,7 @@ function frame(now) {
       boatModel: atSea ? v.modelId : app.profile ? app.profile.boat.model : 'skiff_1',
       reels,
       trollId: atSea ? v.equip.trollId : Object.values(slots).map((x) => x && x.itemId).find((id) => id && EQUIPMENT[id].type === 'troll') || null,
-      hlLines: hl ? hl.map((l) => ({ station: l.label === '左舷' ? 'port' : 'starboard', active: ['drop', 'fish', 'adjust', 'retrieve'].includes(l.phase), depth: l.depth })) : null,
+      hlLines: hl ? hl.map((l) => ({ station: stationOfLine(l), active: ['drop', 'fish', 'adjust', 'retrieve'].includes(l.phase), depth: l.depth })) : null,
       trollLines: tl ? tl.map((l) => ({ active: l.phase === 'tow' || l.phase === 'fight' || (l.phase === 'haul'), offset: l.offset != null ? l.offset : l.side * 3, len: l.phase === 'haul' ? l.haulLeft : 40 })) : null,
       working,
       longlineId,

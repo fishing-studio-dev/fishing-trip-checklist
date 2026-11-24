@@ -3,7 +3,7 @@
 import { START_PROFILE, BOATS, EQUIPMENT, METHODS, DIFFICULTY, fits } from './data.js';
 import { emptyBathy } from './bathy.js';
 
-export const PROFILE_SCHEMA = 10;
+export const PROFILE_SCHEMA = 11;
 
 export function createProfile({ worldSeed, now = new Date().toISOString(), difficulty = 'normal' } = {}) {
   const seed = worldSeed != null ? worldSeed >>> 0 : (Math.floor(Math.random() * 0xffffffff) >>> 0);
@@ -46,6 +46,19 @@ export function createProfile({ worldSeed, now = new Date().toISOString(), diffi
  * no orders yet; the records start from the catch logged so far (count and kg,
  * no biggest — fish had no weight of their own before); no year reviewed.
  */
+/**
+ * Schema 10 -> 11 (第3期): the medium boat has two more rod holders at the bow
+ * (empty). Nothing else changes.
+ */
+export function migrateProfile10to11(p10) {
+  const p = clone(p10);
+  p.schema = 11;
+  if (p.boat && p.boat.model === 'cruiser_2' && p.boat.slots) {
+    for (const id of ['bow_starboard_reel', 'bow_port_reel']) if (!(id in p.boat.slots)) p.boat.slots[id] = null;
+  }
+  return p;
+}
+
 export function migrateProfile9to10(p9) {
   const p = clone(p9);
   p.schema = 10;
