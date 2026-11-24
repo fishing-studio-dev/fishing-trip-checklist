@@ -1263,6 +1263,7 @@ let leverModel = null;
 function buildLever(model) {
   if (leverModel === model.id) return;
   leverModel = model.id;
+  leverShown = null;
   const n = model.throttleNames.length;
   // top = full ahead … neutral … astern at the bottom
   $('leverNotches').innerHTML = model.throttleNames
@@ -1271,10 +1272,13 @@ function buildLever(model) {
     .map(({ name, i }) => `<button type="button" class="lever-notch${i === model.steps.stop ? ' neutral' : ''}${i < model.steps.stop ? ' astern' : ''}" data-act="throttleSet" data-step="${i}" style="top:${((n - 1 - i) / (n - 1)) * 100}%"><span>${i === model.steps.stop ? '中立' : name}</span></button>`)
     .join('');
 }
+let leverShown = null;
 function updateLever(v, model) {
   buildLever(model);
   const n = model.throttleNames.length;
   const t = v.boat.throttle;
+  if (leverShown === `${model.id}:${t}`) return; // touch the page only when it changes
+  leverShown = `${model.id}:${t}`;
   $('leverKnob').style.top = `${((n - 1 - t) / (n - 1)) * 100}%`;
   $('lever').setAttribute('aria-valuenow', String(t));
   $('lever').classList.toggle('astern', t < model.steps.stop);
@@ -1321,10 +1325,13 @@ const leverUp = (e) => {
 $('lever').addEventListener('pointerup', leverUp);
 $('lever').addEventListener('pointercancel', leverUp);
 
+let rudderShown = null;
 /** The lever's knob and the rudder angle, as the boat has them now (also under the autopilot). */
 function updateHelmGauges(v, model = BOATS[v.modelId]) {
   updateLever(v, model);
   const rud = Math.max(-1, Math.min(1, v.boat.rudder || 0));
+  if (rud === rudderShown) return;
+  rudderShown = rud;
   const ri = $('rudderInd');
   ri.style.left = rud < 0 ? `${50 + rud * 50}%` : '50%';
   ri.style.width = `${Math.abs(rud) * 50}%`;

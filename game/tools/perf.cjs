@@ -7,7 +7,7 @@ const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
   const server = spawn(process.execPath, [require('path').join(__dirname, 'serve.mjs'), '8104'], { stdio: 'ignore' });
   await sleep(600);
   const browser = await chromium.launch();
-  for (const [name, opts] of [['desktop', { viewport: { width: 1280, height: 800 } }], ['iphone13', devices['iPhone 13']]]) {
+  for (const [name, opts] of [['desktop', { viewport: { width: 1280, height: 800 } }], ['iphone13', devices['iPhone 13']], ['i13land', devices['iPhone 13 landscape']]]) {
     const ctx = await browser.newContext(opts);
     const page = await ctx.newPage();
     await page.goto('http://localhost:8104/?dev=1&seed=77');
