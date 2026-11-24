@@ -521,7 +521,7 @@ function importConfirm() {
 }
 
 // ---------------------------------------------------------------- sea commands
-function cmd(name) {
+function cmd(name, arg = null) {
   const v = app.voyage;
   if (!v || app.screen !== 'sea') return;
   let r = { ok: true };
@@ -547,6 +547,9 @@ function cmd(name) {
       break;
     case 'throttleDown':
       r = setHelm(v, { throttle: v.boat.throttle - 1 });
+      break;
+    case 'throttleSet':
+      r = setHelm(v, { throttle: arg });
       break;
     case 'method': {
       const avail = availableMethods(v);
@@ -721,6 +724,11 @@ function toggle(name) {
     app.view = { helm: 'deck', deck: 'walk', walk: 'helm' }[app.view] || 'helm';
     for (const k of ['wf', 'wb', 'wl', 'wr']) held[k] = false;
     toast({ helm: '操船視点', deck: '作業視点', walk: '甲板を歩く（W/S 前後・A/D 向き、持ち場ボタンで移動）' }[app.view]);
+  } else if (name === 'more') {
+    app.moreOpen = !app.moreOpen;
+  } else if (name === 'seaView') {
+    app.seaView = !app.seaView;
+    toast(app.seaView ? '海を見る（計器は小さく）' : '計器を並べる（海図・魚探・ソナー）');
   } else if (name === 'pause') {
     app.paused = !app.paused;
   } else if (name === 'speed') {
@@ -1130,10 +1138,12 @@ document.addEventListener('click', (e) => {
     case 'view':
     case 'pause':
     case 'speed':
+    case 'seaView':
+    case 'more':
       toggle(act);
       break;
     default:
-      cmd(act);
+      cmd(act, b.dataset.step != null ? Number(b.dataset.step) : null);
   }
 });
 
@@ -1225,12 +1235,85 @@ function chip(k, v, cls = '') {
   return `<span class="chip ${cls}"><span class="k">${k}</span><b>${v}</b></span>`;
 }
 
+// ---- 前進・後進のレバー（R15）: drag the knob or tap a notch; up is ahead, down is astern ----
+let leverModel = null;
+function buildLever(model) {
+  if (leverModel === model.id) return;
+  leverModel = model.id;
+  const n = model.throttleNames.length;
+  // top = full ahead … neutral … astern at the bottom
+  $('leverNotches').innerHTML = model.throttleNames
+    .map((name, i) => ({ name, i }))
+    .reverse()
+    .map(({ name, i }) => `<button type="button" class="lever-notch${i === model.steps.stop ? ' neutral' : ''}${i < model.steps.stop ? ' astern' : ''}" data-act="throttleSet" data-step="${i}" style="top:${((n - 1 - i) / (n - 1)) * 100}%"><span>${i === model.steps.stop ? '中立' : name}</span></button>`)
+    .join('');
+}
+function updateLever(v, model) {
+  buildLever(model);
+  const n = model.throttleNames.length;
+  const t = v.boat.throttle;
+  $('leverKnob').style.top = `${((n - 1 - t) / (n - 1)) * 100}%`;
+  $('lever').setAttribute('aria-valuenow', String(t));
+  $('lever').classList.toggle('astern', t < model.steps.stop);
+  $('lever').classList.toggle('ahead', t > model.steps.stop);
+  for (const b of $('leverNotches').children) b.classList.toggle('on', Number(b.dataset.step) === t);
+}
+/** Which notch a point on the lever is nearest (for dragging). */
+function leverStepAt(clientY) {
+  const v = app.voyage;
+  if (!v) return null;
+  const model = BOATS[v.modelId];
+  const r = $('lever').getBoundingClientRect();
+  const n = model.throttleNames.length;
+  const u = Math.max(0, Math.min(1, (clientY - r.top) / Math.max(1, r.height)));
+  return n - 1 - Math.round(u * (n - 1));
+}
+let leverDrag = null;
+$('lever').addEventListener('pointerdown', (e) => {
+  if (e.target.closest('.lever-notch')) return; // a tap on a notch is a click
+  leverDrag = e.pointerId;
+  try {
+    $('lever').setPointerCapture(e.pointerId);
+  } catch {
+    /* synthetic event: no capture */
+  }
+  e.preventDefault();
+});
+$('lever').addEventListener('pointermove', (e) => {
+  if (leverDrag !== e.pointerId) return;
+  const v = app.voyage;
+  const step = leverStepAt(e.clientY);
+  if (v && step != null && step !== v.boat.throttle) {
+    const r = setHelm(v, { throttle: step });
+    if (!r.ok) {
+      toast(r.reason);
+      leverDrag = null;
+    }
+    updateHudStatic();
+  }
+});
+const leverUp = (e) => {
+  if (leverDrag === e.pointerId) leverDrag = null;
+};
+$('lever').addEventListener('pointerup', leverUp);
+$('lever').addEventListener('pointercancel', leverUp);
+
+/** The lever's knob and the rudder angle, as the boat has them now (also under the autopilot). */
+function updateHelmGauges(v, model = BOATS[v.modelId]) {
+  updateLever(v, model);
+  const rud = Math.max(-1, Math.min(1, v.boat.rudder || 0));
+  const ri = $('rudderInd');
+  ri.style.left = rud < 0 ? `${50 + rud * 50}%` : '50%';
+  ri.style.width = `${Math.abs(rud) * 50}%`;
+}
+
 function updateHudStatic() {
   $('btnSound').innerHTML = soundButton();
   const v = app.voyage;
   if (!v || app.screen !== 'sea') return;
   const model = BOATS[v.modelId];
   $('throttleLabel').textContent = model.throttleNames[v.boat.throttle];
+  updateHelmGauges(v, model);
   const op = $('btnOp');
   if (isLonglining(v)) {
     op.innerHTML = v.op.kind === 'set' ? '投縄中…' : '揚げ縄中…';
@@ -1267,10 +1350,11 @@ function updateHudStatic() {
   }
   const bp = $('btnPort');
   bp.innerHTML = v.autopilot && v.autopilot.kind === 'return' ? '帰港中…' : `${nearPort(v) ? '入港' : '帰港'}<kbd>H</kbd>`;
-  $('btnSpeed').textContent = `早送り×${TIME.USER_MULT[app.speedIdx]}`;
+  const compact = hudMode().land; // 横持ち: short labels so the buttons fit on one line
+  $('btnSpeed').textContent = compact ? `×${TIME.USER_MULT[app.speedIdx]}` : `早送り×${TIME.USER_MULT[app.speedIdx]}`;
   $('btnPause').textContent = app.paused ? '再開' : '停止';
   $('btnPause').classList.toggle('active', app.paused);
-  $('btnView').textContent = { deck: '作業視点', walk: '甲板を歩く', helm: '操船視点' }[app.view];
+  $('btnView').textContent = compact ? { deck: '作業', walk: '歩く', helm: '操船' }[app.view] : { deck: '作業視点', walk: '甲板を歩く', helm: '操船視点' }[app.view];
   $('sounderPanel').hidden = !app.sounderOpen;
   $('sounderOpen').hidden = app.sounderOpen;
   $('chartPanel').classList.toggle('big', app.chartBig);
@@ -1278,7 +1362,7 @@ function updateHudStatic() {
   if (!app.chartBig) $('chartTitle').textContent = '海図（GPSプロッター）';
   $('chartToggle').textContent = app.chartBig ? '閉じる' : '拡大';
   $('sounderTitle').textContent = EQUIPMENT[v.equip.sounderId].name;
-  $('btnSonar').hidden = !v.sonar;
+  $('btnSonar').hidden = !v.sonar || hudMode().inst; // the instrument layout always shows the sonar
   $('sonarPanel').hidden = !(v.sonar && app.sonarOpen);
   if (v.sonar) $('sonarRange').textContent = `${v.sonar.range}m`;
   const sideCap = !!v.equip.sounder.side;
@@ -1300,8 +1384,10 @@ function hudMode() {
   const land = H <= 520 && W > H;
   const port = !land && W <= 900 && H >= W;
   const opMode = !!(app.voyage && isOperating(app.voyage));
+  // 横持ちのスマホ（R06）: the chart, the sounder and the sonar side by side, unless the player looks at the sea
+  const inst = land && !app.seaView;
   // the chart stays on screen while operating too (it shares the top row with the sounder)
-  return { land, port, opMode, tuck: false };
+  return { land, port, opMode, tuck: false, inst };
 }
 
 function layoutHud() {
@@ -1309,15 +1395,34 @@ function layoutHud() {
   const op = $('opPanel');
   const msgs = $('msgs');
   const top = $('hudTop');
-  const { land, port, opMode, tuck } = hudMode();
+  const { land, port, opMode, tuck, inst } = hudMode();
   // on phones the sonar takes the chart's place while it is open
   const sonarUp = !!(app.voyage && app.voyage.sonar && app.sonarOpen);
   hud.classList.toggle('op-mode', opMode);
   hud.classList.toggle('phone-land', land);
   hud.classList.toggle('phone-port', port);
+  hud.classList.toggle('inst', inst);
+  $('btnSeaView').hidden = !land;
+  // 横持ち: the less used buttons fold away behind 「その他」
+  $('btnMore').hidden = !land;
+  hud.classList.toggle('more-open', land && !!app.moreOpen);
+  $('btnSeaView').textContent = app.seaView ? '計器' : '海を見る';
   hud.classList.toggle('chart-mode', !!app.chartBig);
   document.body.classList.toggle('chart-open', !!app.chartBig && app.screen === 'sea');
-  $('chartPanel').hidden = tuck || (sonarUp && (land || port) && !app.chartBig);
+  $('chartPanel').hidden = tuck || (sonarUp && (land || port) && !app.chartBig && !inst);
+  if (inst && app.voyage) {
+    // every instrument on: the sounder, and the sonar when one is fitted
+    $('sounderPanel').hidden = false;
+    $('sounderOpen').hidden = true;
+    $('sonarPanel').hidden = !app.voyage.sonar;
+  }
+  for (const id of ['chartPanel', 'sounderPanel', 'sonarPanel']) {
+    const el = $(id);
+    el.style.left = el.style.top = el.style.width = el.style.height = el.style.right = el.style.bottom = '';
+  }
+  for (const c of [$('chart'), $('sounder'), $('sideview'), $('sonar')]) c.style.width = c.style.height = '';
+  $('lever').style.height = '';
+  $('helmGroup').querySelector('.helm-mid').style.top = $('helmGroup').querySelector('.helm-mid').style.bottom = '';
   for (const el of [op, msgs, top]) el.style.top = el.style.bottom = el.style.maxHeight = el.style.left = el.style.width = '';
   const appR = $('app').getBoundingClientRect();
   const ctl = $('controls').getBoundingClientRect();
@@ -1352,10 +1457,22 @@ function layoutHud() {
   $('walkBar').style.bottom = `${aboveControls}px`;
   const snd = ($('sounderPanel').hidden ? $('sounderOpen') : $('sounderPanel')).getBoundingClientRect();
   if (!land && !port) {
+    msgs.style.bottom = `${aboveControls + 4}px`; // above the helm (the lever makes it taller)
     if (opMode || !op.hidden) {
       op.style.top = `${rel(snd.bottom) + 8}px`;
       op.style.maxHeight = `${Math.max(80, ctl.top - snd.bottom - 20)}px`;
     }
+    return;
+  }
+  if (land) {
+    // the lever: its own column at the right edge (right thumb), from the top to just above the controls
+    const mid = $('helmGroup').querySelector('.helm-mid');
+    mid.style.top = '4px';
+    mid.style.bottom = `${appR.bottom - ctl.top + 4}px`;
+    $('lever').style.height = `${Math.max(90, ctl.top - appR.top - 26)}px`;
+  }
+  if (inst && !app.chartBig) {
+    layoutInstruments(appR, ctl);
     return;
   }
   const wb = $('walkBar');
@@ -1384,6 +1501,76 @@ function layoutHud() {
   op.style.bottom = 'auto';
   op.style.top = `${rel(tb.bottom) + 6}px`;
   op.style.maxHeight = `${Math.max(60, msgTop - tb.bottom - 12)}px`;
+}
+
+/**
+ * 横持ちのスマホ（R06）: the lever stands at the right edge; the chips run along
+ * the top; between them and the controls, the chart, the sounder, the sonar
+ * (when fitted) and the operation panel with the latest messages sit side by
+ * side in columns.
+ */
+function layoutInstruments(appR, ctl) {
+  const top = $('hudTop');
+  const op = $('opPanel');
+  const msgs = $('msgs');
+  const mid = $('helmGroup').querySelector('.helm-mid');
+  const gap = 4;
+  const ctlTop = ctl.top - appR.top;
+  // the lever: a column on the right, from the top to just above the controls
+  mid.style.top = `${gap}px`;
+  mid.style.bottom = `${appR.bottom - ctl.top + gap}px`;
+  const lever = $('lever');
+  lever.style.height = `${Math.max(90, ctlTop - gap * 3 - 14)}px`;
+  const leverW = mid.getBoundingClientRect().width || 100;
+  const right = appR.width - leverW - gap * 2;
+  top.style.left = `${gap}px`;
+  top.style.top = `${gap}px`;
+  top.style.width = `${right - gap}px`;
+  const topH = top.getBoundingClientRect().height;
+  const y0 = gap + topH + gap;
+  const H = Math.max(80, ctlTop - y0 - gap);
+  const W = right - gap;
+  const sonar = !$('sonarPanel').hidden;
+  const opW = Math.max(150, Math.round(W * (sonar ? 0.22 : 0.27)));
+  const head = 20;
+  const chartW = Math.round(Math.min(H, W * (sonar ? 0.25 : 0.32)));
+  const sonarW = sonar ? Math.round(Math.min(H - head + 12, W * 0.24)) : 0;
+  const sounderW = W - chartW - sonarW - opW - gap * (sonar ? 3 : 2);
+  let x = gap;
+  const place = (el, w) => {
+    el.style.left = `${x}px`;
+    el.style.top = `${y0}px`;
+    el.style.width = `${w}px`;
+    el.style.height = `${H}px`;
+    el.style.right = el.style.bottom = 'auto';
+    x += w + gap;
+  };
+  place($('chartPanel'), chartW);
+  $('chart').style.width = `${chartW - 12}px`;
+  $('chart').style.height = `${H - head - 12}px`;
+  place($('sounderPanel'), sounderW);
+  for (const c of [$('sounder'), $('sideview')]) {
+    c.style.width = `${sounderW - 12}px`;
+    c.style.height = `${H - head - 12}px`;
+  }
+  if (sonar) {
+    place($('sonarPanel'), sonarW);
+    const side = Math.min(sonarW - 12, H - head - 12);
+    $('sonar').style.width = `${side}px`;
+    $('sonar').style.height = `${side}px`;
+  }
+  // the operation panel (or what to do next) above the latest messages, in the last column
+  const msgH = msgs.childElementCount ? Math.min(64, msgs.getBoundingClientRect().height || 40) : 0;
+  op.style.left = `${x}px`;
+  op.style.right = 'auto';
+  op.style.width = `${opW}px`;
+  op.style.top = `${y0}px`;
+  op.style.bottom = 'auto';
+  op.style.maxHeight = `${H - msgH - gap}px`;
+  msgs.style.left = `${x}px`;
+  msgs.style.width = `${opW}px`;
+  msgs.style.top = 'auto';
+  msgs.style.bottom = `${appR.bottom - ctl.top + gap}px`;
 }
 
 const STEPS = {
@@ -1415,6 +1602,7 @@ function updateHud(now) {
   if (now - hudAt < 100) return;
   hudAt = now;
   updateHudStatic();
+  updateHelmGauges(v);
   const b = v.boat;
   const sog = Math.hypot(b.vx, b.vy);
   const hdg = Math.round(((b.heading * 180) / Math.PI + 360) % 360);
@@ -1760,7 +1948,7 @@ function frame(now) {
     if (now - chartAt >= (app.chartBig ? 50 : 100)) chartAt = now;
     else chartSkip = true;
     if (!chartSkip) drawChart($('chart'), staticMap, v, { big: app.chartBig, span: CHART_SPANS[app.chartSpanIdx], dev: DEV, reports: reps, route, hint, lines: chartLines, bathy: bathyNow, saved: app.profile.marks, selected: app.markSel });
-    if (app.sonarOpen && v.sonar && now - sonarAt > 150) {
+    if ((app.sonarOpen || hudMode().inst) && v.sonar && now - sonarAt > 150) {
       sonarAt = now;
       const marks = [...(app.profile.marks || []), ...v.obs.marks.filter((m) => m.kind !== 'auto')];
       drawSonar($('sonar'), v.sonar, v.boat, marks);

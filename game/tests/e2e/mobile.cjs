@@ -47,6 +47,8 @@ async function layout(page) {
       top: r('#hudTop'),
       op: r('#opPanel'),
       controls: r('#controls'),
+      sonar: r('#sonarPanel'),
+      lever: r('#lever'),
     };
   });
 }
@@ -87,8 +89,12 @@ async function layout(page) {
       await page.screenshot({ path: path.join(outDir, `${slug}-1-port.png`) });
       await page.tap('[data-act=departPlan][data-key="handline:北の瀬"]');
       await page.waitForFunction(() => window.__ryoshi.state().screen === 'sea');
-      for (let i = 0; i < 3; i++) await page.tap('[data-act=throttleUp]');
-      await sleep(1500);
+      // the lever (R15): tap the 半速 notch
+      await page.tap('[data-act=throttleSet][data-step="4"]');
+      await sleep(300);
+      const lv = await page.evaluate(() => ({ t: window.__ryoshi.state().voyage.boat.throttle, knob: document.getElementById('leverKnob').getBoundingClientRect().top, notch: document.querySelector('[data-act=throttleSet][data-step="4"]').getBoundingClientRect() }));
+      check(`${name}: the lever: a tap on a notch sets the throttle and the knob moves there`, lv.t === 4 && Math.abs(lv.knob + 10 - (lv.notch.top + lv.notch.height / 2)) < 14, JSON.stringify(lv));
+      await sleep(1200);
       const h0 = (await page.evaluate(() => window.__ryoshi.state())).voyage.boat.heading;
       const btn = page.locator('[data-hold=right]');
       await btn.dispatchEvent('pointerdown', { pointerId: 7, pointerType: 'touch', isPrimary: true, bubbles: true });
@@ -143,16 +149,21 @@ async function layout(page) {
       await page.tap('#btnView');
       // run on out of the harbour (fishing is refused within 300 m of the dock), then stop with taps
       // (clearing the route in chart mode stopped the boat: speed up again first)
-      for (let i = 0; i < 3; i++) await page.tap('[data-act=throttleUp]');
+      await page.tap('[data-act=throttleSet][data-step="4"]');
       await page.evaluate(() => window.__ryoshi.fastForward(150));
-      for (let i = 0; i < 4; i++) await page.tap('[data-act=throttleDown]');
-      await page.tap('[data-act=throttleUp]');
+      await page.tap('[data-act=throttleSet][data-step="1"]'); // 中立
       await page.waitForFunction(() => Math.abs(window.__ryoshi.state().voyage.boat.speed) < 0.5, null, { timeout: 30000 });
       await page.tap('#btnOp');
       await page.waitForFunction(() => window.__ryoshi.state().voyage.operating, null, { timeout: 10000 });
       await sleep(1200);
       const lo = await layout(page);
       check(`${name}: operation panel visible without covering the controls`, lo.op && !overlap(lo.op, lo.controls), JSON.stringify(lo.op));
+      if (lo.vw > lo.vh) {
+        // 横持ち（R06）: the chart, the sounder and the panel side by side; the lever on its own at the right
+        const cols = [lo.chart, lo.sounder, lo.sonar, lo.op].filter(Boolean);
+        const apart = cols.every((a, i) => cols.every((b, j) => i === j || !overlap(a, b)));
+        check(`${name}: landscape: chart, sounder${lo.sonar ? ', sonar' : ''} and the panel side by side, none under the lever or the controls`, lo.chart && lo.sounder && apart && cols.every((c) => !overlap(c, lo.lever) && !overlap(c, lo.controls) && c.right <= lo.vw + 1), JSON.stringify({ cols, lever: lo.lever }));
+      }
       check(`${name}: the chart stays on screen while fishing, clear of the sounder, panel and controls`, lo.chart && lo.chart.left >= 0 && lo.chart.top >= 0 && !overlap(lo.chart, lo.sounder) && !overlap(lo.chart, lo.op) && !overlap(lo.chart, lo.controls), JSON.stringify({ chart: lo.chart, op: lo.op }));
       await page.screenshot({ path: path.join(outDir, `${slug}-3-operating.png`) });
       await page.tap('#btnPort');
