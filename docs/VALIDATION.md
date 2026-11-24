@@ -5,7 +5,7 @@
 | コマンド | 結果 |
 | --- | --- |
 | `cd game && npm run lint` / `npm test` | エラー0 / **157件すべて合格**（追加：`tests/sound.test.js` 2件） |
-| `cd game && npm run e2e`（PC） | 下の追記を参照 |
+| `cd game && npm run e2e`（PC） | **100項目すべて合格**（音の1項目を追加） |
 | `cd game && npm run build:page && node tests/e2e/mobile.cjs` | **64項目すべて合格** |
 
 - ヘッドレスChromium（ユーザー操作が要る自動再生の決まりのまま）で、出港の操作のあと音が動き出し、波とエンジンの音量が0より大きい。増速するとエンジンの音量が上がる。「音」ボタンで 中→大→なし→小→中 と変わり、`ryoshi-game:sound` に覚える。キー N でも変わる。ページエラーなし。
