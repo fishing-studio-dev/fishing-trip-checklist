@@ -118,3 +118,39 @@ test('クエ: in the holes of the big rocks; takes a live アジ (泳がせ) and
   assert.ok(kueN > 0, 'some クエ landed');
   assert.ok((oy.v.best || {}).kue || (ng.v.best || {}).kue, 'the biggest クエ is noted for the records');
 });
+
+import { liveBaitSteps, reefFace } from '../src/core/voyage.js';
+import { TIDE_PERIOD } from '../src/core/data.js';
+import { HOLDS as H } from '../src/core/season.js';
+
+test('青物の手順: the panel says whether the boat is on the reef face the stream meets and whether the stream runs', () => {
+  const p = createProfile({ worldSeed: 77, now: NOW });
+  p.day = 30;
+  const kita = H.kita;
+  const at = (x, y, phase) => {
+    const dep = markDeparture(p, NOW);
+    const t = 9 * 3600;
+    // phase 0.25: the flood at its strongest (toward NE); 0: slack
+    const v = createVoyage(dep, { scenario: { conditions: { ...CALM, tideAmp: 0.3, highWater: t - TIDE_PERIOD * phase }, schools: [] }, start: { x, y, heading: 0 }, radio: [] });
+    v.world.time = t;
+    v.hold.counts.aji.m = 5;
+    assert.ok(setMethod(v, 'oyogase').ok);
+    return v;
+  };
+  // flood toward NE: the SW face is the 潮表
+  const sw = at(kita.x - 120, kita.y - 120, 0.25);
+  const ne = at(kita.x + 120, kita.y + 120, 0.25);
+  const step = (v, id) => liveBaitSteps(v).steps.find((x) => x.id === id);
+  assert.equal(step(sw, 'face').ok, true, step(sw, 'face').text);
+  assert.match(step(sw, 'face').text, /北の瀬の潮表（潮が当たる南西側）/);
+  assert.equal(step(ne, 'face').ok, false);
+  assert.match(step(ne, 'face').text, /南西側へ回る/);
+  assert.equal(step(sw, 'tide').ok, true);
+  // slack: the stream does not run, the panel says so; it never blocks the start
+  const slack = at(kita.x - 120, kita.y - 120, 0);
+  assert.equal(step(slack, 'tide').ok, false);
+  assert.match(step(slack, 'tide').text, /潮止まり/);
+  assert.equal(liveBaitSteps(slack).ready, true, 'bait aboard and stopped: ready');
+  // far from any reef: no face to speak of
+  assert.equal(reefFace(at(1200, 900, 0.25)), null);
+});

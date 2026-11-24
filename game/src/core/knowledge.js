@@ -352,6 +352,7 @@ function conditionNotes(methodId, fc) {
     else notes.push(`${tc}：潮が動き、青物の食いが立ちやすい`);
     notes.push(fc.waterTemp <= 18.6 ? `水温${fc.waterTemp}℃：ブリの多い頃（一般的な目安）` : `水温${fc.waterTemp}℃：ヒラマサの多い頃（一般的な目安）`);
     notes.push('活きエサのアジを先に釣っておく');
+    notes.push('瀬や大きな根の、潮が当たる側（潮表）にベイトが溜まり、その下に青物が付く。北東へ流れる時は南西側、南西へ流れる時は北東側');
   } else if (methodId === 'negyo') {
     if (tc === '大潮') notes.push('大潮：流れが速く、根の真上を一瞬で通り過ぎやすい。潮上から何度も流し直す');
     else if (tc === '小潮系') notes.push(`${fc.tideName}：流れが緩く、根の上に長く留まれる`);

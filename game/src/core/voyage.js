@@ -27,7 +27,8 @@ import {
   longlineTargetSpeed,
   longlineHelmTarget,
 } from './longline.js';
-import { depthAt, areaNameAt, currentAt, windAt, fmtClock, bottomIsRocky, visibilityAt } from './sea.js';
+import { depthAt, areaNameAt, currentAt, windAt, fmtClock, bottomIsRocky, visibilityAt, compass8 } from './sea.js';
+import { HOLDS } from './season.js';
 import { levelFromXp } from './progress.js';
 import { radioReports, peerName } from './reports.js';
 import { logTags } from './knowledge.js';
@@ -509,10 +510,41 @@ export function liveBaitSteps(v) {
   }
   const echo = midWaterEcho(v);
   const rock = v.obs.cols.slice(-60).some((c) => c.bottomCenter - c.bottom > 1.5);
-  steps.push({ id: 'echo', ok: echo || rock, text: echo ? '魚探に中層の反応（ベイトか青物）がある' : rock ? '根・瀬の上（底の起伏）にいる' : 'ベイトの団子や、その下・横の太い「へ」の字、または根や瀬を探す（ソナー・鳥山も手掛かり）' });
+  const face = reefFace(v, rock);
+  steps.push(face ? { id: 'face', ...face } : { id: 'face', ok: false, text: '瀬や大きな根へ（潮が当たる側＝潮表にエサが溜まり、青物が付く）。海図の瀬・自分の印・ソナーが手掛かり' });
+  // the stream: 青物 feed while it runs; at slack they stop
+  const tp = tidePhase(v.world.cond, v.world.time);
+  steps.push({ id: 'tide', ok: tp.slack < 0.5, text: tp.slack < 0.5 ? `潮が動いている（${tp.running > 0.5 ? '効いている' : tp.rising ? '動き始め' : '緩み始め'}）` : '今は潮止まり：反応があっても食いにくい。潮が動き出すまで待つか、その間にアジを釣っておく' });
+  steps.push({ id: 'echo', ok: echo, text: echo ? '魚探に中層の反応（ベイトの団子か、その下の青物）がある' : 'ベイトの団子や、その下・横の太い「へ」の字を探す（ソナー・鳥山も手掛かり）' });
   const stopped = Math.abs(v.boat.speed) <= m.maxStartSpeed;
   steps.push({ id: 'stop', ok: stopped, text: stopped ? '船は止まっている' : '減速して止める（S・▼）' });
-  return { method: v.method, steps, ready: steps.every((x) => x.ok || x.id === 'echo') };
+  // the steps that only help (the place, the stream, the echo) never block the start
+  return { method: v.method, steps, ready: steps.every((x) => x.ok || x.id === 'echo' || x.id === 'face' || x.id === 'tide') };
+}
+
+/**
+ * 潮表: is the boat on the side of a reef the stream meets? From the chart's
+ * named reefs, or a big rock the sounder is showing now, and the stream the
+ * boat is in (never from the fish). Null when no reef is near.
+ */
+export function reefFace(v, rockNow = false) {
+  const t = v.world.time;
+  const c = currentAt(v.world.cond, t);
+  const sp = Math.hypot(c.x, c.y);
+  let best = null;
+  for (const h of Object.values(HOLDS)) {
+    const dist = Math.hypot(v.boat.x - h.x, v.boat.y - h.y);
+    if (dist > h.face * 1.8 + 60) continue;
+    if (!h.area && !rockNow) continue; // a pinnacle off the chart counts once the sounder shows it
+    if (!best || dist < best.dist) best = { h, dist };
+  }
+  if (!best) return null;
+  const name = best.h.area || '大きな根';
+  if (sp < 0.08) return { ok: false, text: `${name}にいる。今は潮止まり（潮が動き出すと、潮が当たる側にエサと魚が寄る）` };
+  const up = -((v.boat.x - best.h.x) * c.x + (v.boat.y - best.h.y) * c.y) / sp;
+  const side = compass8(-c.x, -c.y);
+  if (up > best.h.face * 0.3) return { ok: true, text: `${name}の潮表（潮が当たる${side}側）にいる` };
+  return { ok: false, text: `${name}の潮裏か真上にいる → 潮が当たる${side}側へ回る（潮は${compass8(c.x, c.y)}へ流れている）` };
 }
 
 /** How many fish of a species are in the hold (live bait for 泳がせ). */
