@@ -228,7 +228,7 @@ export function portScreen(app) {
     ${boatCard(p)}
     <div class="card"><h2>資金・記録</h2>
       <dl class="kv"><dt>資金</dt><dd class="big-num">${money(p.funds)}</dd><dt>出漁回数</dt><dd>${p.stats.voyages}回</dd><dt>累計漁獲</dt><dd>${p.stats.fish}尾・${p.stats.kg.toFixed(1)}kg</dd><dt>操業記録</dt><dd>${p.logs.length}件</dd></dl>
-      <div class="actions"><button type="button" class="btn" data-act="log">操業日誌</button><button type="button" class="btn" data-act="openSave">セーブ管理</button></div>
+      <div class="actions"><button type="button" class="btn" data-act="log">操業日誌</button><button type="button" class="btn" data-act="ledger">収支</button><button type="button" class="btn" data-act="openSave">セーブ管理</button></div>
       <p class="note">${saveLine(app.saveStatus)}</p></div>
   </div>
   <p class="note">保存は「帰港して水揚げしたとき」「装備を買ったとき」「港で仲間の話を聞いたとき」に自動で行います。海上では数秒ごとに途中経過も保存するので、海上でページを閉じても、次に開いたときに海上から続けられます（別の端末やブラウザでは続けられず、その航海は中断扱いになります）。</p>
@@ -302,7 +302,7 @@ export function receiptScreen(app) {
       <p class="note">航行 ${(r.distanceM / 1000).toFixed(1)}km・操業 ${Math.round(r.opSeconds / 60)}分</p></div>
   </div>
   <p class="note">${saveLine(app.saveStatus)}</p>
-  <div class="actions"><button type="button" class="btn primary" data-act="toPort">港に戻る（翌朝の話を聞く）</button><button type="button" class="btn" data-act="equip">装備・船</button><button type="button" class="btn" data-act="log">操業日誌</button></div></div>`;
+  <div class="actions"><button type="button" class="btn primary" data-act="toPort">港に戻る（翌朝の話を聞く）</button><button type="button" class="btn" data-act="equip">装備・船</button><button type="button" class="btn" data-act="log">操業日誌</button><button type="button" class="btn" data-act="ledger">収支</button></div></div>`;
 }
 
 function reelCompare(level, fromId, toId) {
@@ -633,4 +633,107 @@ export function marksList(rows, { atSea = false, editKey = null, delKey = null, 
     <p class="note">印は見たときの位置・時刻・水深の記録です（今そこに魚がいるとは限りません）。帰港すると残り、翌日以降の海図と港の海図にも出ます。${atSea ? '開いている間、海は止まっています。' : ''}</p>
     <ul class="mk-list">${body}</ul>
     <div class="actions"><button type="button" class="btn" data-act="closeModal">閉じる</button></div></div>`;
+}
+
+// ---------------------------------------------------------------- 収支 (item 13)
+/** Sum up ledger lines per method: days fished, sales, minutes. */
+export function ledgerByMethod(lines) {
+  const out = {};
+  for (const l of lines) {
+    for (const [m, e] of Object.entries(l.byMethod || {})) {
+      const o = (out[m] = out[m] || { days: 0, sales: 0, minutes: 0, count: 0, kg: 0 });
+      o.days += 1;
+      o.sales += e.sales;
+      o.minutes += e.minutes;
+      o.count += e.count;
+      o.kg += e.kg;
+    }
+  }
+  return out;
+}
+
+/** A small bar chart of the last days' net (one series; losses go below the line). */
+function netBars(lines) {
+  const W = 640;
+  const H = 180;
+  const padL = 46;
+  const padB = 22;
+  const padT = 10;
+  const n = lines.length;
+  const vals = lines.map((l) => l.net);
+  const hi = Math.max(1000, ...vals);
+  const lo = Math.min(0, ...vals);
+  const y = (v) => padT + ((hi - v) / (hi - lo)) * (H - padT - padB);
+  const slot = (W - padL - 8) / Math.max(n, 1);
+  const bw = Math.max(4, Math.min(28, slot - 4));
+  // round ticks: 0, and steps of a tidy size up to the top (and down to the worst loss)
+  const span = hi - lo;
+  const raw = span / 3;
+  const mag = Math.pow(10, Math.floor(Math.log10(raw)));
+  const step = [1, 2, 5, 10].map((k) => k * mag).find((st) => st >= raw) || raw;
+  const ticks = [];
+  for (let t = Math.ceil(lo / step) * step; t <= hi + 1e-6; t += step) ticks.push(t);
+  const fmtTick = (t) => (Math.abs(t) >= 10000 ? `${(t / 10000).toFixed(Math.abs(t) % 10000 ? 1 : 0)}万` : `${Math.round(t).toLocaleString('ja-JP')}`);
+  const grid = ticks.map((t) => `<line x1="${padL}" x2="${W - 4}" y1="${y(t).toFixed(1)}" y2="${y(t).toFixed(1)}" class="lg-grid${t === 0 ? ' zero' : ''}"/><text x="${padL - 6}" y="${(y(t) + 4).toFixed(1)}" class="lg-axis" text-anchor="end">${fmtTick(t)}</text>`).join('');
+  const bars = lines
+    .map((l, i) => {
+      const x = padL + i * slot + (slot - bw) / 2;
+      const y0 = y(0);
+      const y1 = y(l.net);
+      const top = Math.min(y0, y1);
+      const h = Math.max(1, Math.abs(y1 - y0));
+      const r = Math.min(4, bw / 2, h);
+      // rounded at the data end, square on the baseline
+      const d = l.net >= 0
+        ? `M${x},${y0} V${top + r} Q${x},${top} ${x + r},${top} H${x + bw - r} Q${x + bw},${top} ${x + bw},${top + r} V${y0} Z`
+        : `M${x},${y0} V${top + h - r} Q${x},${top + h} ${x + r},${top + h} H${x + bw - r} Q${x + bw},${top + h} ${x + bw},${top + h - r} V${y0} Z`;
+      const methods = Object.keys(l.byMethod || {}).map((m) => METHODS[m] ? METHODS[m].name : m).join('・') || '—';
+      return `<g class="lg-bar${l.net < 0 ? ' loss' : ''}"><title>${l.day}日目${l.night ? '（夕方）' : ''}：純益 ${money(l.net)}（売上 ${money(l.sales)}・経費 ${money(l.costs.total)}）${esc(methods)}</title><rect x="${x - 2}" y="${padT}" width="${bw + 4}" height="${H - padT - padB}" class="lg-hit"/><path d="${d}"/>${n <= 14 ? `<text x="${x + bw / 2}" y="${H - 6}" class="lg-axis" text-anchor="middle">${l.day}</text>` : ''}</g>`;
+    })
+    .join('');
+  return `<svg class="lg-chart" viewBox="0 0 ${W} ${H}" role="img" aria-label="直近${n}日の純益">${grid}${bars}</svg>`;
+}
+
+export function ledgerScreen(app) {
+  const p = app.profile;
+  const lines = (p.ledger || []).slice();
+  if (!lines.length) {
+    return `<div class="sheet"><h1>収支</h1><div class="card"><p>まだ記録がありません。帰港すると、その日の売上・経費・純益と、漁法ごとの稼ぎがここに残ります。</p>
+      <p class="note">これまでの合計：航海${p.stats.voyages}回・売上${money(p.stats.sales)}（この画面の記録は、この版から先の航海の分です）</p></div>
+      <div class="actions"><button type="button" class="btn primary" data-act="toPort">港に戻る</button></div></div>`;
+  }
+  const last = lines.slice(-14);
+  const week = lines.slice(-7);
+  const sum = (arr, k) => arr.reduce((a, l) => a + l[k], 0);
+  const weekNet = sum(week, 'net');
+  const tiles = [
+    ['直近7航海の純益', money(weekNet), `売上 ${money(sum(week, 'sales'))}・経費 ${money(week.reduce((a, l) => a + l.costs.total, 0))}`],
+    ['1航海あたりの純益', money(sum(lines, 'net') / lines.length), `記録した${lines.length}航海の平均`],
+    ['いまの資金', money(p.funds), `これまでの売上 ${money(p.stats.sales)}`],
+  ];
+  const by = ledgerByMethod(lines);
+  const rows = Object.entries(by)
+    .sort((a, b) => b[1].sales - a[1].sales)
+    .map(([m, o]) => {
+      const perHour = o.minutes ? (o.sales / o.minutes) * 60 : 0;
+      return { m, o, perHour };
+    });
+  const maxHour = Math.max(1, ...rows.map((r) => r.perHour));
+  const mrows = rows
+    .map(({ m, o, perHour }) => `<tr><td>${esc(METHODS[m] ? METHODS[m].name : m)}</td><td class="num">${o.days}日</td><td class="num">${money(o.sales)}</td><td class="num">${money(o.sales / o.days)}</td>
+      <td class="num lg-rate"><span class="lg-inline"><i style="width:${Math.round((perHour / maxHour) * 100)}%"></i></span>${money(perHour)}</td></tr>`)
+    .join('');
+  const daily = lines
+    .slice()
+    .reverse()
+    .slice(0, 30)
+    .map((l) => `<tr><td>${l.day}日目${l.night ? '<span class="tag">夕方</span>' : ''}</td><td>${esc(Object.keys(l.byMethod || {}).map((m) => (METHODS[m] ? METHODS[m].name : m)).join('・') || '—')}</td><td class="num">${money(l.sales)}</td><td class="num">${money(l.costs.fuel)}</td><td class="num">${money(l.costs.base + l.costs.crew)}</td><td class="num ${l.net < 0 ? 'neg' : ''}">${money(l.net)}</td></tr>`)
+    .join('');
+  return `<div class="sheet wide"><h1>収支</h1>
+  <div class="lg-tiles">${tiles.map(([k, v, sub]) => `<div class="card lg-tile"><div class="lg-k">${esc(k)}</div><div class="lg-v">${v}</div><div class="note">${esc(sub)}</div></div>`).join('')}</div>
+  <div class="card full"><h2>航海ごとの純益（直近${last.length}航海）</h2>${netBars(last)}<p class="note">棒にさわる（マウスを載せる）とその日の内訳。線より下は赤字（経費が売上を上回った日）。</p></div>
+  <div class="card full"><h2>漁法ごとの稼ぎ（記録した全航海）</h2><div class="table-wrap"><table class="data"><tr><th>漁法</th><th class="num">使った日</th><th class="num">売上</th><th class="num">1日あたり</th><th class="num">操業1時間あたり</th></tr>${mrows}</table></div>
+    <p class="note">売上は、その漁法で獲った魚を水揚げの値段で数えたもの。泳がせのエサに使ったアジはエサ代として泳がせから引いています（合計はその日の売上と同じ）。燃料などの経費は漁法に分けていません。</p></div>
+  <div class="card full"><h2>航海ごと</h2><div class="table-wrap"><table class="data"><tr><th>日</th><th>漁法</th><th class="num">売上</th><th class="num">燃料</th><th class="num">出漁費・日当</th><th class="num">純益</th></tr>${daily}</table></div></div>
+  <div class="actions"><button type="button" class="btn primary" data-act="toPort">港に戻る</button><button type="button" class="btn" data-act="log">操業日誌</button></div></div>`;
 }

@@ -823,7 +823,14 @@ const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
     check('根魚: rockfish are sold at landing and 根魚釣り gains experience', /カサゴ|キジハタ|アラ/.test(rcN) && /根魚釣り/.test(rcN), rcN.slice(0, 80));
     void sN;
     await pg.click('[data-act=toPort]');
-    await pg.click('[data-act=log]');
+    // item 13: the 収支 screen lists the day with what 根魚釣り earned
+    await pg.click('#screen [data-act=ledger]');
+    await pg.waitForSelector('.lg-chart');
+    const lgText = await pg.textContent('#screen');
+    const lgLast = await pg.evaluate(() => window.__ryoshi.app.profile.ledger.at(-1));
+    check('収支: the day just landed is in the ledger (sales, costs, net) with 根魚釣り among the methods', !!lgLast && lgLast.byMethod.negyo && /漁法ごとの稼ぎ/.test(lgText) && /根魚釣り/.test(lgText) && lgText.includes(lgLast.net.toLocaleString('ja-JP')), JSON.stringify(lgLast && { net: lgLast.net, m: Object.keys(lgLast.byMethod) }));
+    await shot('38-ledger');
+    await pg.click('#screen [data-act=log]');
     await pg.waitForSelector('table.data');
     check('根魚: the logbook shows 根魚釣り with the species', /根魚釣り/.test(await pg.textContent('#screen')) && /カサゴ|キジハタ|アラ/.test(await pg.textContent('#screen')));
     await pg.click('[data-act=toPort]');

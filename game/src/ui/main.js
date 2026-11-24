@@ -143,6 +143,9 @@ function show(screen) {
     case 'log':
       html = S.logScreen(app);
       break;
+    case 'ledger':
+      html = S.ledgerScreen(app);
+      break;
     case 'save':
       html = S.saveScreen(app);
       break;
@@ -957,6 +960,9 @@ document.addEventListener('click', (e) => {
       break;
     case 'log':
       show('log');
+      break;
+    case 'ledger':
+      show('ledger');
       break;
     case 'openSave':
       show('save');

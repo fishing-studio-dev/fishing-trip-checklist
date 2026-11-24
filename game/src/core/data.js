@@ -56,9 +56,9 @@ export const SPECIES = {
     id: 'sawara',
     name: 'サワラ',
     sizes: {
-      s: { label: 'サゴシ', kg: 1.0, pricePerKg: 350 },
-      m: { label: 'サワラ', kg: 2.5, pricePerKg: 600 },
-      l: { label: '大サワラ', kg: 4.5, pricePerKg: 800 },
+      s: { label: 'サゴシ', kg: 1.0, pricePerKg: 550 },
+      m: { label: 'サワラ', kg: 2.5, pricePerKg: 900 },
+      l: { label: '大サワラ', kg: 4.5, pricePerKg: 1200 },
     },
     sizeOrder: ['s', 'm', 'l'],
     habit: 'pelagic',
@@ -268,7 +268,7 @@ export const METHODS = {
     defaultFrac: 0.4, // with no echo the jigs work at 40% of the depth (the squid's night layer)
     echoThreshold: 0.3,
     lights: true,
-    gatherRate: 0.000012, // squid drawn in per squid in the area per second under full darkness
+    gatherRate: 0.00004, // squid drawn in per squid in the area per second under full darkness
     gatherReach: 250, // m added to a school's spread: how far the light reaches
     maxStartSpeed: 0.6,
     gearType: 'lights',

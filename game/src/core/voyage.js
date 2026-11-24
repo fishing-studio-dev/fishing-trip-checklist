@@ -1066,6 +1066,7 @@ export function summarizeVoyage(v) {
     crew: v.crew,
     crewWage: v.crew ? CREW.wage : 0,
     baitUsed: v.baitUsed ? JSON.parse(JSON.stringify(v.baitUsed)) : {},
+    night: !!v.night,
     bathyCells: v.bathy ? v.bathy.cells : {},
     marks: v.obs.marks.filter((m) => m.kind !== 'auto').map((m) => ({ ...m })),
     opSeconds: Math.round(v.opSeconds),

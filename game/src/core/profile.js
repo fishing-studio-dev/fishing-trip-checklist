@@ -3,7 +3,7 @@
 import { ECONOMY, START_PROFILE, BOATS, EQUIPMENT, METHODS, fits } from './data.js';
 import { emptyBathy } from './bathy.js';
 
-export const PROFILE_SCHEMA = 7;
+export const PROFILE_SCHEMA = 8;
 
 export function createProfile({ worldSeed, now = new Date().toISOString() } = {}) {
   const seed = worldSeed != null ? worldSeed >>> 0 : (Math.floor(Math.random() * 0xffffffff) >>> 0);
@@ -26,6 +26,7 @@ export function createProfile({ worldSeed, now = new Date().toISOString() } = {}
     activeVoyage: null,
     interruptedVoyages: [],
     stats: { voyages: 0, fish: 0, kg: 0, sales: 0 },
+    ledger: [], // 収支: one line per settled voyage (sales, costs, net, per method)
     knowledge: { reports: [], briefedDay: 0 },
     boatSeq: 1,
     boatHistory: [], // boats traded in: {uid, model, name, tradeIn, day}
@@ -33,6 +34,14 @@ export function createProfile({ worldSeed, now = new Date().toISOString() } = {}
     marks: [], // the player's own marks, kept across days: {id, x, y, name, memo, day, t, kind, depth}
     markSeq: 0,
   };
+}
+
+/** Schema 7 -> 8: the ledger (収支) starts empty; earlier voyages are only in the totals. */
+export function migrateProfile7to8(p7) {
+  const p = clone(p7);
+  p.schema = 8;
+  p.ledger = Array.isArray(p.ledger) ? p.ledger : [];
+  return p;
 }
 
 /** Schema 6 -> 7: experience for the new methods (根魚釣り・泳がせ釣り・イカ釣り), all from 0. */
@@ -170,6 +179,7 @@ export function validateProfile(p) {
   }
   if (typeof p.boatSeq !== 'number' || !Array.isArray(p.boatHistory)) errs.push('船の記録が不正です');
   if (!p.bathy || typeof p.bathy.tiles !== 'object' || !Array.isArray(p.marks) || typeof p.markSeq !== 'number') errs.push('海図の記録（水深・印）が不正です');
+  if (!Array.isArray(p.ledger)) errs.push('収支の記録がありません');
   if (!Array.isArray(p.storage)) errs.push('storage が配列ではありません');
   else for (const s of p.storage) if (!s || !EQUIPMENT[s.itemId]) errs.push('倉庫に未知の装備');
   if (!Array.isArray(p.logs)) errs.push('logs が配列ではありません');

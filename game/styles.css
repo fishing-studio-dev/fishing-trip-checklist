@@ -362,3 +362,19 @@ body.chart-open .toast { top: 38%; bottom: auto; }
 #hud.phone-land .guide-text { font-size: 12px; line-height: 1.4; margin-bottom: 3px; }
 #hud.phone-land .coach .tool { min-height: 28px; font-size: 12px; padding: 2px 8px; }
 #btnSound small { font-size: .75em; margin-left: 2px; opacity: .85; }
+
+/* item 13: 収支 */
+.lg-tiles { display: grid; grid-template-columns: repeat(auto-fit, minmax(180px, 1fr)); gap: 10px; margin-bottom: 10px; }
+.lg-tile .lg-k { font-size: 12px; color: var(--sub); }
+.lg-tile .lg-v { font-size: 26px; font-weight: 800; margin: 2px 0; }
+.lg-chart { width: 100%; height: auto; display: block; }
+.lg-chart .lg-grid { stroke: var(--line); stroke-width: 1; }
+.lg-chart .lg-grid.zero { stroke: rgba(200, 225, 235, 0.55); }
+.lg-chart .lg-axis { fill: var(--sub); font-size: 11px; }
+.lg-chart .lg-bar path { fill: var(--accent); }
+.lg-chart .lg-bar.loss path { fill: var(--warn); }
+.lg-chart .lg-hit { fill: transparent; }
+.lg-chart .lg-bar:hover path { opacity: .8; }
+.lg-inline { display: inline-block; width: 64px; height: 6px; margin-right: 8px; vertical-align: middle; background: rgba(255,255,255,.08); border-radius: 3px; overflow: hidden; }
+.lg-inline i { display: block; height: 100%; background: var(--accent); border-radius: 0 3px 3px 0; }
+td.neg { color: var(--warn); }

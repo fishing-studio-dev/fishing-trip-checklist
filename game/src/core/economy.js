@@ -25,6 +25,43 @@ export function priceLines(holdCounts) {
   return lines;
 }
 
+export const MAX_LEDGER = 365;
+
+/** Market value of a catch count table {s, m, l} of one species. */
+function catchValue(spId, c) {
+  const sp = SPECIES[spId];
+  let v = 0;
+  for (const k of sp.sizeOrder) v += Math.round((c[k] || 0) * sp.sizes[k].kg * sp.sizes[k].pricePerKg);
+  return v;
+}
+
+/**
+ * What each method earned on a voyage, at the market prices of what it
+ * landed. Fish used as live bait are charged to the method that used them
+ * (泳がせ), so the methods add up to the day's sales.
+ */
+export function methodEarnings(summary) {
+  const out = {};
+  const add = (m) => (out[m] = out[m] || { sales: 0, count: 0, kg: 0, minutes: 0, ops: 0 });
+  for (const l of summary.logs) {
+    const m = add(l.methodId || 'handline');
+    const tables = l.bySpecies ? Object.entries(l.bySpecies) : [[l.species || 'aji', l.catches]];
+    for (const [sp, c] of tables) m.sales += catchValue(sp, c);
+    m.count += l.count;
+    m.kg = Math.round((m.kg + l.kg) * 10) / 10;
+    m.minutes += Math.round(l.durationS / 60);
+    m.ops += 1;
+  }
+  for (const [sp, c] of Object.entries(summary.baitUsed || {})) {
+    const v = catchValue(sp, c);
+    if (!v) continue;
+    const m = add('oyogase');
+    m.sales -= v;
+    m.baitCost = (m.baitCost || 0) + v;
+  }
+  return out;
+}
+
 /** Land and sell the whole catch, pay the trip cost, gain XP. Exactly once per voyage. */
 export function settleVoyage(profile, summary) {
   if (profile.settledVoyages.includes(summary.id)) return { ok: false, reason: 'この航海はすでに精算済みです。' };
@@ -85,6 +122,21 @@ export function settleVoyage(profile, summary) {
   p.stats.fish += summary.hold.count;
   p.stats.kg = Math.round((p.stats.kg + summary.hold.kg) * 100) / 100;
   p.stats.sales += sales;
+
+  // the ledger (収支): one line per voyage — what was sold and paid, and what each method earned
+  const byMethod = methodEarnings(summary);
+  if (!Array.isArray(p.ledger)) p.ledger = [];
+  p.ledger.push({
+    voyageId: summary.id,
+    day: summary.day,
+    night: !!summary.night,
+    sales,
+    costs: { base: ECONOMY.tripBaseCost, fuel, crew, total: costTotal },
+    net: sales - payable,
+    paid: payable,
+    byMethod,
+  });
+  if (p.ledger.length > MAX_LEDGER) p.ledger.splice(0, p.ledger.length - MAX_LEDGER);
 
   const receipt = {
     voyageId: summary.id,
