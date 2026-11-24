@@ -1457,7 +1457,8 @@ function layoutHud() {
     const phone = land || port;
     const topY = phone ? 4 : rel(top.getBoundingClientRect().bottom) + 6;
     const sndEl = $('sounderPanel');
-    const right = !phone && !sndEl.hidden ? appR.right - sndEl.getBoundingClientRect().left + 8 : phone ? 4 : 8;
+    // landscape phone: the lever keeps its column at the right edge
+    const right = !phone && !sndEl.hidden ? appR.right - sndEl.getBoundingClientRect().left + 8 : land ? 112 : phone ? 4 : 8;
     cp.style.top = `${topY}px`;
     cp.style.bottom = `${aboveControls}px`;
     cp.style.left = phone ? '4px' : '8px';
