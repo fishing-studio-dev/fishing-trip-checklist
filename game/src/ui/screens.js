@@ -42,21 +42,21 @@ const labelHtml = (l) => `<span class="tag ${LABEL_CLASS[l] || ''}">${esc(l)}</s
 
 export function titleScreen({ storageNote }) {
   return `<div class="sheet">
-  <h1>漁師ゲーム <span class="tag">試作 M3</span></h1>
-  <p class="lead">仲間の話・自分の日誌・今日の海況から狙いを決め、魚探を頼りに自分で群れとポイントを探す。操業は自動。漁を重ねて手際が上がり、設備で同じ時間により多く獲れるようになる——その核を確かめる試作です。</p>
+  <h1>漁師ゲーム <span class="tag">試作</span></h1>
+  <p class="lead">玄界灘を思わせる海で、小さな和船から始める漁師暮らし。仲間の話・自分の日誌・今日の海況から狙いを決め、魚探を頼りに群れとポイントを探す。釣る作業は自動で、腕（手際）と装備で同じ時間により多く獲れるようになる。決まったゴールはなく、1年60日（季節ごとに15日）を何年でも続けられます。</p>
   <div class="grid">
-    <div class="card"><h2>この試作でできること</h2><ul>
-      <li>港で「今日の海図」：仲間2人の話（観測した時刻と聞いた時刻つき）、自分の日誌、予報から候補を確認</li>
-      <li>一本釣り（アジ）：停船して自動操業、流し直し・移動を判断</li>
-      <li>曳縄（サワラ）：航路を決めれば航行と仕掛けの作業は自動（曳縄具の購入が必要）</li>
-      <li>漁法ごとのレベル（手際）、電動リール・曳縄具、帰港で自動保存</li>
-      <li>船の買い替え（新艇・中古）、装備の付け替え・倉庫・売却、2本仕掛け</li>
-      <li>延縄（マダイ）：縄を張って浸け、その間に他の漁もできる。揚げる時機は自分で決める（延縄具の購入が必要）</li>
-      <li>甲板を歩いて見て回る（視点切替 V）。持ち場へのショートカット</li>
+    <div class="card"><h2>できること</h2><ul>
+      <li>7つの漁法：一本釣り・根魚釣り・泳がせ釣り・ジギング・曳縄・延縄（最大3本）・イカ釣り</li>
+      <li>19種の魚。季節・水温・潮・時間帯で食い方が変わり、魚探の映り方にも魚ごとの癖がある</li>
+      <li>漁師仲間（漁法ごとに1人）の話と自分の日誌から「今日の海図」を作る</li>
+      <li>毎日の相場（大漁の魚は値崩れ）、仲間や料理屋からの注文、図鑑と大物記録、1年ごとの振り返り</li>
+      <li>船の買い替え（新艇・中古）、装備の付け替え、甲板員を乗せる、海の上での途中保存</li>
+      <li>始めるときに難易度（お金の厳しさ）を選ぶ。海と魚はどれも同じ</li>
     </ul></div>
-    <div class="card"><h2>まだ無いもの</h2><ul>
-      <li>追加の海域・季節の移り変わり、乗組員を雇う仕組み</li>
-      <li>海上での途中保存（帰港時のみ保存）</li>
+    <div class="card"><h2>はじめての人へ</h2><ul>
+      <li>港の「手引き」で、画面の見方・漁法ごとのやり方・魚探の読み方を図つきで見られます（海の上の「？」からも開けます）</li>
+      <li>はじめは小型和船と手巻きリールの一本釣りだけ。稼いで装備を足していきます</li>
+      <li>天気が悪くても出漁はできます。休むかどうかは自分で決めます</li>
     </ul></div>
   </div>
   ${storageNote ? `<p class="save-bad">${esc(storageNote)}</p>` : ''}
@@ -67,8 +67,11 @@ export function titleScreen({ storageNote }) {
 </div>`;
 }
 
+/** The playtest save's funds in words (e.g. 「200万G」). */
+export const playtestFundsLabel = () => `${(ECONOMY.playtestFunds / 10000).toLocaleString('ja-JP')}万${ECONOMY.currency}`;
+
 /**
- * The playtest save: one button to try the boat purchase with 300,000G, and
+ * The playtest save: one button to try the boat purchase with ECONOMY.playtestFunds, and
  * one button back to the player's own progress (kept aside, never deleted).
  */
 export function playtestCard(app) {
@@ -77,9 +80,9 @@ export function playtestCard(app) {
     <p class="note">切り替える前の自分の進行は別に残してあります。いつでも戻せます（試遊用セーブでの進行は消えます）。</p>
     <div class="actions"><button type="button" class="btn" data-act="playtestRestore">自分の進行に戻す</button></div></div>`;
   }
-  return `<div class="card playtest"><h2>試遊用：資金30万Gで試す</h2>
-    <p class="note">船の買い替えや高い装備（ソナー・サイドビュー魚探など）をすぐ試せる進行（小型和船・曳縄具付き・資金300,000G）に切り替えます。${app ? '今の進行は別に残し、あとで「自分の進行に戻す」で戻せます。' : ''}</p>
-    <div class="actions"><button type="button" class="btn" data-act="playtestLoad">試遊用セーブ（資金30万G）で遊ぶ</button></div></div>`;
+  return `<div class="card playtest"><h2>試遊用：資金${playtestFundsLabel()}で試す</h2>
+    <p class="note">船の買い替えや高い装備（ソナー・サイドビュー魚探など）をすぐ試せる進行（小型和船・曳縄具付き・資金${money(ECONOMY.playtestFunds)}）に切り替えます。${app ? '今の進行は別に残し、あとで「自分の進行に戻す」で戻せます。' : ''}</p>
+    <div class="actions"><button type="button" class="btn" data-act="playtestLoad">試遊用セーブ（資金${playtestFundsLabel()}）で遊ぶ</button></div></div>`;
 }
 
 export function saveProblemScreen(res) {
@@ -316,7 +319,7 @@ export function portScreen(app) {
       <div class="cands">${cands.map((c) => candidateCard(c, today, p, !!(app.forecast && app.forecast.weather && app.forecast.weather.storm))).join('')}</div>
     </div>
     ${app.forecast && app.forecast.weather && app.forecast.weather.storm ? `<div class="card storm"><h2>時化のため出漁中止</h2><p>風が強く海が荒れています（${app.forecast.windSpeed.toFixed(0)}m/s前後）。仲間も今日は出ません。港で休んで明日に備えます。</p>
-      <div class="actions"><button type="button" class="btn primary" data-act="restDay">今日は休む（翌朝へ）</button><button type="button" class="btn" data-act="help">操作説明</button></div></div>` : `${crewChoice(app)}${nightChoice(app)}
+      <div class="actions"><button type="button" class="btn primary" data-act="restDay">今日は休む（翌朝へ）</button><button type="button" class="btn" data-act="help">手引き</button></div></div>` : `${crewChoice(app)}${nightChoice(app)}
     <div class="actions"><button type="button" class="btn" data-act="depart">狙いを決めずに出港</button><button type="button" class="btn" data-act="restDay">今日は休む（翌朝へ）</button><button type="button" class="btn" data-act="help">手引き</button></div>`}
   </div>
   <div class="grid">
