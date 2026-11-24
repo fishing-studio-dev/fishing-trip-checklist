@@ -6,6 +6,7 @@ import { createVoyage, advanceVoyage, startOperation, stopOperation, isOperating
 import { settleVoyage, methodEarnings } from '../src/core/economy.js';
 import { loadSave, memoryStorage, KEYS, writeSave } from '../src/core/save.js';
 import { CALM, denseSchool } from './helpers.js';
+import { SPECIES } from '../src/core/data.js';
 
 const NOW = '2026-11-24T00:00:00.000Z';
 
@@ -53,11 +54,12 @@ test('live bait is charged to 泳がせ, so the methods still add up to the sale
     ],
     baitUsed: { aji: { s: 4, m: 0, l: 0 } },
   });
-  const ajiValue = Math.round(0.12 * 400) * 10; // 10 small アジ
-  const bait = Math.round(4 * 0.12 * 400);
+  const smallAji = SPECIES.aji.sizes.s;
+  const ajiValue = Math.round(10 * smallAji.kg * smallAji.pricePerKg); // 10 small アジ
+  const bait = Math.round(4 * smallAji.kg * smallAji.pricePerKg);
   assert.equal(e.handline.sales, ajiValue);
   assert.equal(e.oyogase.baitCost, bait);
-  assert.equal(e.oyogase.sales, Math.round(2.5 * 600) - bait);
+  assert.equal(e.oyogase.sales, Math.round(SPECIES.buri.sizes.s.kg * SPECIES.buri.sizes.s.pricePerKg) - bait);
 });
 
 test('A12 (移行): a format-7 save opens with an empty ledger, nothing else changes', () => {

@@ -85,13 +85,13 @@ test('A11: purchase is all-or-nothing and the old item goes to storage', () => {
   const poor = purchaseEquipment(p, 'reel_electric', 'starboard_reel');
   assert.equal(poor.ok, false);
   assert.equal(p.funds, ECONOMY.startFunds);
-  const rich = { ...p, funds: 20000 };
+  const rich = { ...p, funds: 100000 };
   const pv = purchasePreview(rich, 'reel_electric', 'starboard_reel');
   assert.ok(pv.ok);
-  assert.equal(pv.fundsAfter, 20000 - EQUIPMENT.reel_electric.price);
+  assert.equal(pv.fundsAfter, 100000 - EQUIPMENT.reel_electric.price);
   const res = purchaseEquipment(rich, 'reel_electric', 'starboard_reel');
   assert.ok(res.ok);
-  assert.equal(res.profile.funds, 20000 - EQUIPMENT.reel_electric.price);
+  assert.equal(res.profile.funds, 100000 - EQUIPMENT.reel_electric.price);
   assert.equal(res.profile.boat.slots.starboard_reel.itemId, 'reel_electric');
   assert.deepEqual(res.profile.storage.map((s) => s.itemId), ['reel_hand']);
   assert.deepEqual(validateProfile(res.profile), []);
@@ -113,7 +113,7 @@ test('purchases are refused while at sea', () => {
 });
 
 test('the purchased reel is what the next voyage actually fishes with', () => {
-  const rich = { ...createProfile({ worldSeed: 1, now: NOW }), funds: 20000 };
+  const rich = { ...createProfile({ worldSeed: 1, now: NOW }), funds: 100000 };
   const bought = purchaseEquipment(rich, 'reel_electric', 'starboard_reel').profile;
   const p = markDeparture(bought, NOW);
   const v = createVoyage(p, { scenario: { conditions: CALM, schools: [] }, start: { x: 1500, y: 1500, heading: 0 } });

@@ -9,6 +9,7 @@ import { loadSave, writeSave, memoryStorage, KEYS, exportSave, checkImport, SAVE
 import { voyageWith, fishFor } from './helpers.js';
 import { PLAYTEST_SAVE } from '../src/ui/playtestSave.js';
 import { readFileSync } from 'node:fs';
+import { ECONOMY } from '../src/core/data.js';
 
 const NOW = '2026-11-23T00:00:00.000Z';
 
@@ -188,12 +189,12 @@ test('a tampered M0 save is rejected before migration (checksum on the original 
   assert.ok(st.getItem(KEYS.quarantinePrefix + 5));
 });
 
-test('the built-in playtest save is a valid current-format save with 300,000G, identical to the e2e fixture', () => {
+test('the built-in playtest save is a valid current-format save with the playtest funds, identical to the e2e fixture', () => {
   const r = checkImport(PLAYTEST_SAVE);
   assert.ok(r.ok, r.error);
   assert.equal(r.migratedFrom, null, 'already in the current format');
   assert.equal(r.envelope.schemaVersion, SAVE_SCHEMA);
-  assert.equal(r.profile.funds, 300000);
+  assert.equal(r.profile.funds, ECONOMY.playtestFunds);
   assert.equal(r.profile.boat.model, 'skiff_1');
   assert.equal(r.profile.activeVoyage, null);
   assert.deepEqual(validateProfile(r.profile), []);

@@ -131,9 +131,9 @@ const PLAYS = {
   },
 };
 
-export function runDay({ seed = 77, day, method, level = 1, boat = 'skiff_1', slots = {} }) {
+export function runDay({ seed = 77, day, method, level = 1, boat = 'skiff_1', slots = {}, crew = 0 }) {
   const p = profileFor({ seed, day, level, boat, slots });
-  const dep = markDeparture(p, NOW, null, { night: method === 'ika' });
+  const dep = markDeparture(p, NOW, null, { night: method === 'ika', crew });
   const v = V.createVoyage(dep, { radio: [] });
   if (v.world.cond.weather && v.world.cond.weather.storm) return { day, method, storm: true };
   const endT = (v.endT || TIME.END) - 2400;

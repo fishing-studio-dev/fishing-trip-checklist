@@ -49,7 +49,7 @@ function voyageOf(p, { schools, start, method } = {}) {
 
 test('A11: buying a used boat — trade-in, included gear, own gear moved or stored, all in one step', () => {
   const p = createProfile({ worldSeed: 1, now: NOW });
-  p.funds = 100000;
+  p.funds = 2000000;
   p.boat.slots.stern_troll = { uid: 'eqT', itemId: 'troll_tr1' };
   const before = owned(p);
   const plan = planBoatPurchase(p, 'used_cruiser_a');
@@ -59,7 +59,7 @@ test('A11: buying a used boat — trade-in, included gear, own gear moved or sto
   const res = buyBoat(p, 'used_cruiser_a');
   assert.ok(res.ok);
   const q = res.profile;
-  assert.equal(q.funds, 100000 - plan.payable);
+  assert.equal(q.funds, 2000000 - plan.payable);
   assert.equal(q.boat.model, 'cruiser_2');
   assert.equal(q.boat.name, p.boat.name, 'the boat keeps its name');
   assert.equal(q.boatHistory.length, 1);
@@ -74,11 +74,11 @@ test('A11: buying a used boat — trade-in, included gear, own gear moved or sto
   assert.deepEqual(validateProfile(q), []);
   // the original profile is untouched
   assert.equal(p.boat.model, 'skiff_1');
-  assert.equal(p.funds, 100000);
+  assert.equal(p.funds, 2000000);
 });
 
 test('a new boat comes empty: all gear moves over, nothing to storage', () => {
-  const p = { ...createProfile({ worldSeed: 1, now: NOW }), funds: 200000 };
+  const p = { ...createProfile({ worldSeed: 1, now: NOW }), funds: 2000000 };
   p.boat.slots.stern_troll = { uid: 'eqT', itemId: 'troll_tr1' };
   const res = buyBoat(p, 'new_cruiser');
   assert.ok(res.ok);
@@ -92,7 +92,7 @@ test('a new boat comes empty: all gear moves over, nothing to storage', () => {
 });
 
 test('downsizing: gear that has no place on the smaller boat goes to storage, with the reason; a basic sounder is fitted', () => {
-  const p = { ...cruiserProfile({ reels: ['reel_electric', 'reel_hand'], troll: 'troll_tr2', sounder: 'sounder_es2' }), funds: 100000 };
+  const p = { ...cruiserProfile({ reels: ['reel_electric', 'reel_hand'], troll: 'troll_tr2', sounder: 'sounder_es2' }), funds: 2000000 };
   const before = owned(p);
   const plan = planBoatPurchase(p, 'new_skiff');
   assert.ok(plan.ok, plan.reason);

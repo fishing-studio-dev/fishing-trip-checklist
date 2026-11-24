@@ -55,7 +55,8 @@ function playVoyage(profile) {
 
 test('A01: several full voyages with growth, purchase and save/load between them', () => {
   const st = memoryStorage();
-  let profile = createProfile({ worldSeed: 2026, now: NOW });
+  // these voyages fish only half an hour each, so the save starts with the reel's price at hand (段4の値段)
+  let profile = { ...createProfile({ worldSeed: 2026, now: NOW }), funds: EQUIPMENT.reel_electric.price + 5000 };
   let rev = writeSave(st, profile, 0, NOW).revision;
   const history = [];
   for (let i = 0; i < 5; i++) {
@@ -79,7 +80,7 @@ test('A01: several full voyages with growth, purchase and save/load between them
   assert.equal(profile.day, 5);
   assert.ok(history.reduce((a, h) => a + h.fish, 0) > 50, 'caught fish over the voyages');
   assert.ok(history[4].level > history[0].level - 0 && history[4].level >= 3, 'method level grew');
-  assert.equal(profile.boat.slots.starboard_reel.itemId, 'reel_electric', 'earned and installed the upgrade');
+  assert.equal(profile.boat.slots.starboard_reel.itemId, 'reel_electric', 'bought and installed the upgrade');
   assert.equal(profile.logs.length, history.reduce((a, h) => a + h.ops, 0));
   assert.ok(profile.funds >= 0);
 });

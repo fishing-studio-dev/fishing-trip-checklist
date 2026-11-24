@@ -60,6 +60,13 @@ async function layout(page) {
 }
 
 (async () => {
+  // the money the checks expect, from the game's own data (「ふつう」)
+  const { pathToFileURL } = require('url');
+  const data = await import(pathToFileURL(path.join(root, 'src', 'core', 'data.js')).href);
+  const market = await import(pathToFileURL(path.join(root, 'src', 'core', 'market.js')).href);
+  const normal = { difficulty: 'normal' };
+  const usedB = data.BOAT_OFFERS.find((o) => o.id === 'used_cruiser_b');
+  const money = { playtestFunds: data.ECONOMY.playtestFunds, usedBPayable: market.boatPrice(normal, usedB) - market.tradeInOf(normal, 'skiff_1') };
   const testPage = path.join(root, 'dist', 'ryoshi-game.test.html');
   if (!fs.existsSync(testPage)) {
     console.error('dist/ryoshi-game.test.html がありません。先に npm run build:page を実行してください。');
@@ -199,7 +206,8 @@ async function layout(page) {
       await page.tap('[data-act=playtestLoad]');
       await page.tap('[data-act=playtestLoadConfirm]');
       await page.waitForSelector('[data-act=playtestRestore]');
-      check(`${name}: playtest save (300,000G) loads with one button on the boat market`, (await page.evaluate(() => window.__ryoshi.state().funds)) === 300000);
+      const ptFunds = await page.evaluate(() => window.__ryoshi.state().funds);
+      check(`${name}: playtest save (${money.playtestFunds.toLocaleString('en-US')}G) loads with one button on the boat market`, ptFunds === money.playtestFunds);
       await page.screenshot({ path: path.join(outDir, `${slug}-5a-playtest.png`) });
       await page.evaluate(() => document.getElementById('screen').scrollTo(0, 0));
       await page.waitForSelector('[data-act=boatQuote][data-offer=used_cruiser_b]');
@@ -218,7 +226,7 @@ async function layout(page) {
       await page.tap('[data-act=buyBoatConfirm]');
       await sleep(300);
       const sb = await page.evaluate(() => window.__ryoshi.state());
-      check(`${name}: used boat bought by touch and saved`, sb.boatModel === 'cruiser_2' && sb.funds === 300000 - 70000 && sb.saveStatus.ok, `funds ${sb.funds}`);
+      check(`${name}: used boat bought by touch and saved`, sb.boatModel === 'cruiser_2' && sb.funds === money.playtestFunds - money.usedBPayable && sb.saveStatus.ok, `funds ${sb.funds}`);
       // the marks list (item 5) opens from the port by touch and fits the screen
       if (await page.isVisible('#modal [data-act=closeModal]')) await page.tap('#modal [data-act=closeModal]'); // the purchase lands on the port screen
       await page.waitForSelector('#screen [data-act=marks]');

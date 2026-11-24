@@ -1,5 +1,5 @@
 // App controller: boot, screens, input, main loop.
-import { TIME, BOATS, PORT, EQUIPMENT, METHODS, SIM, SPECIES, CREW, GUIDES } from '../core/data.js';
+import { TIME, BOATS, PORT, EQUIPMENT, METHODS, SIM, SPECIES, CREW, GUIDES, ECONOMY } from '../core/data.js';
 import { createProfile, markDeparture, resolveInterruptedVoyage, restDay } from '../core/profile.js';
 import { settleVoyage, purchaseEquipment, purchasePreview, equipFromStorage, unmountToStorage, sellStored, buyBoat, planBoatPurchase, purchaseExtraLine } from '../core/economy.js';
 import { loadSave, writeSave, exportSave, checkImport, memoryStorage, KEYS } from '../core/save.js';
@@ -1228,7 +1228,7 @@ function readKey(key) {
 // ---------------------------------------------------------------- playtest save
 function playtestLoad() {
   const own = app.profile && !app.inPlaytest;
-  modal(`<div class="card"><h2>試遊用セーブで遊ぶ</h2><p>資金300,000Gの試遊用の進行（小型和船・曳縄具付き、M1まで遊んだ状態）に切り替えます。</p>
+  modal(`<div class="card"><h2>試遊用セーブで遊ぶ</h2><p>資金${ECONOMY.playtestFunds.toLocaleString('ja-JP')}Gの試遊用の進行（小型和船・曳縄具付き、M1まで遊んだ状態）に切り替えます。</p>
   ${own ? '<p class="note">今の自分の進行は別に残します。「船の買い替え」や「セーブ管理」の「自分の進行に戻す」でいつでも戻せます。</p>' : ''}
   <div class="actions"><button type="button" class="btn primary" data-act="playtestLoadConfirm">切り替える</button><button type="button" class="btn" data-act="closeModal">やめる</button></div></div>`);
 }
@@ -1255,9 +1255,9 @@ function playtestLoadConfirm() {
     }
   }
   commit(resolveInterruptedVoyage(res.profile).profile, '試遊用セーブに切り替え');
-  app.notice = '試遊用セーブ（資金300,000G）に切り替えました。港の「船の買い替え」から試せます。';
+  app.notice = `試遊用セーブ（資金${ECONOMY.playtestFunds.toLocaleString('ja-JP')}G）に切り替えました。港の「船の買い替え」から試せます。`;
   show('market');
-  toast('試遊用セーブ（資金300,000G）に切り替えました');
+  toast(`試遊用セーブ（資金${ECONOMY.playtestFunds.toLocaleString('ja-JP')}G）に切り替えました`);
 }
 
 function playtestRestore() {

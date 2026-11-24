@@ -147,7 +147,7 @@ test('the line hauler winds the line faster than hands (at any level); the catch
 });
 
 test('the hauler mounts on both boats (its own place); buying a boat moves it; it is not offered for other places', () => {
-  let p = { ...skiff(), funds: 200000 };
+  let p = { ...skiff(), funds: 2000000 };
   const r = purchaseEquipment(p, 'hauler_lh1', 'starboard_hauler');
   assert.ok(r.ok, r.reason);
   p = r.profile;

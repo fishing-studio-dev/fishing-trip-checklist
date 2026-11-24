@@ -41,9 +41,9 @@ export const SPECIES = {
     id: 'aji',
     name: 'マアジ',
     sizes: {
-      s: { label: '小アジ', kg: 0.12, pricePerKg: 400 },
-      m: { label: '中アジ', kg: 0.25, pricePerKg: 700 },
-      l: { label: '大アジ', kg: 0.45, pricePerKg: 1000 },
+      s: { label: '小アジ', kg: 0.12, pricePerKg: 240 },
+      m: { label: '中アジ', kg: 0.25, pricePerKg: 420 },
+      l: { label: '大アジ', kg: 0.45, pricePerKg: 600 },
     },
     sizeOrder: ['s', 'm', 'l'],
     habit: 'bottom',
@@ -56,9 +56,9 @@ export const SPECIES = {
     id: 'sawara',
     name: 'サワラ',
     sizes: {
-      s: { label: 'サゴシ', kg: 1.0, pricePerKg: 550 },
-      m: { label: 'サワラ', kg: 2.5, pricePerKg: 900 },
-      l: { label: '大サワラ', kg: 4.5, pricePerKg: 1200 },
+      s: { label: 'サゴシ', kg: 1.0, pricePerKg: 440 },
+      m: { label: 'サワラ', kg: 2.5, pricePerKg: 720 },
+      l: { label: '大サワラ', kg: 4.5, pricePerKg: 960 },
     },
     sizeOrder: ['s', 'm', 'l'],
     habit: 'pelagic',
@@ -74,9 +74,9 @@ export const SPECIES = {
     id: 'madai',
     name: 'マダイ',
     sizes: {
-      s: { label: '小ダイ', kg: 0.5, pricePerKg: 700 },
-      m: { label: 'マダイ', kg: 1.3, pricePerKg: 1000 },
-      l: { label: '大ダイ', kg: 3.0, pricePerKg: 1300 },
+      s: { label: '小ダイ', kg: 0.5, pricePerKg: 420 },
+      m: { label: 'マダイ', kg: 1.3, pricePerKg: 600 },
+      l: { label: '大ダイ', kg: 3.0, pricePerKg: 780 },
     },
     sizeOrder: ['s', 'm', 'l'],
     habit: 'bottom',
@@ -89,9 +89,9 @@ export const SPECIES = {
     id: 'kasago',
     name: 'カサゴ',
     sizes: {
-      s: { label: '小カサゴ', kg: 0.15, pricePerKg: 1000 },
-      m: { label: 'カサゴ', kg: 0.25, pricePerKg: 1400 },
-      l: { label: '大カサゴ', kg: 0.4, pricePerKg: 1800 },
+      s: { label: '小カサゴ', kg: 0.15, pricePerKg: 600 },
+      m: { label: 'カサゴ', kg: 0.25, pricePerKg: 840 },
+      l: { label: '大カサゴ', kg: 0.4, pricePerKg: 1080 },
     },
     sizeOrder: ['s', 'm', 'l'],
     habit: 'reef',
@@ -102,9 +102,9 @@ export const SPECIES = {
     id: 'kijihata',
     name: 'キジハタ',
     sizes: {
-      s: { label: '小キジハタ', kg: 0.4, pricePerKg: 2000 },
-      m: { label: 'キジハタ', kg: 0.8, pricePerKg: 2800 },
-      l: { label: '大キジハタ', kg: 1.4, pricePerKg: 3500 },
+      s: { label: '小キジハタ', kg: 0.4, pricePerKg: 1200 },
+      m: { label: 'キジハタ', kg: 0.8, pricePerKg: 1680 },
+      l: { label: '大キジハタ', kg: 1.4, pricePerKg: 2100 },
     },
     sizeOrder: ['s', 'm', 'l'],
     habit: 'reef',
@@ -134,9 +134,9 @@ export const SPECIES = {
     id: 'kensaki',
     name: 'ケンサキイカ',
     sizes: {
-      s: { label: '小ケンサキ', kg: 0.1, pricePerKg: 1000 },
-      m: { label: 'ケンサキイカ', kg: 0.18, pricePerKg: 1400 },
-      l: { label: '大ケンサキ', kg: 0.3, pricePerKg: 1800 },
+      s: { label: '小ケンサキ', kg: 0.1, pricePerKg: 800 },
+      m: { label: 'ケンサキイカ', kg: 0.18, pricePerKg: 1120 },
+      l: { label: '大ケンサキ', kg: 0.3, pricePerKg: 1440 },
     },
     sizeOrder: ['s', 'm', 'l'],
     habit: 'squid',
@@ -147,9 +147,9 @@ export const SPECIES = {
     id: 'yari',
     name: 'ヤリイカ',
     sizes: {
-      s: { label: '小ヤリイカ', kg: 0.08, pricePerKg: 800 },
-      m: { label: 'ヤリイカ', kg: 0.15, pricePerKg: 1200 },
-      l: { label: '大ヤリイカ', kg: 0.25, pricePerKg: 1500 },
+      s: { label: '小ヤリイカ', kg: 0.08, pricePerKg: 640 },
+      m: { label: 'ヤリイカ', kg: 0.15, pricePerKg: 960 },
+      l: { label: '大ヤリイカ', kg: 0.25, pricePerKg: 1200 },
     },
     sizeOrder: ['s', 'm', 'l'],
     habit: 'squid',
@@ -163,9 +163,9 @@ export const SPECIES = {
     id: 'buri',
     name: 'ブリ',
     sizes: {
-      s: { label: 'ハマチ', kg: 2.5, pricePerKg: 600 },
-      m: { label: 'メジロ', kg: 5.0, pricePerKg: 800 },
-      l: { label: 'ブリ', kg: 9.0, pricePerKg: 1000 },
+      s: { label: 'ハマチ', kg: 2.5, pricePerKg: 480 },
+      m: { label: 'メジロ', kg: 5.0, pricePerKg: 640 },
+      l: { label: 'ブリ', kg: 9.0, pricePerKg: 800 },
     },
     sizeOrder: ['s', 'm', 'l'],
     habit: 'roam',
@@ -176,9 +176,9 @@ export const SPECIES = {
     id: 'hiramasa',
     name: 'ヒラマサ',
     sizes: {
-      s: { label: '小ヒラマサ', kg: 3.0, pricePerKg: 1100 },
-      m: { label: 'ヒラマサ', kg: 6.0, pricePerKg: 1500 },
-      l: { label: '大ヒラマサ', kg: 10.0, pricePerKg: 1900 },
+      s: { label: '小ヒラマサ', kg: 3.0, pricePerKg: 880 },
+      m: { label: 'ヒラマサ', kg: 6.0, pricePerKg: 1200 },
+      l: { label: '大ヒラマサ', kg: 10.0, pricePerKg: 1520 },
     },
     sizeOrder: ['s', 'm', 'l'],
     habit: 'roam',
@@ -189,9 +189,9 @@ export const SPECIES = {
     id: 'ara',
     name: 'アラ',
     sizes: {
-      s: { label: '小アラ', kg: 1.5, pricePerKg: 2600 },
-      m: { label: 'アラ', kg: 3.5, pricePerKg: 3400 },
-      l: { label: '大アラ', kg: 7.0, pricePerKg: 4200 },
+      s: { label: '小アラ', kg: 1.5, pricePerKg: 1560 },
+      m: { label: 'アラ', kg: 3.5, pricePerKg: 2040 },
+      l: { label: '大アラ', kg: 7.0, pricePerKg: 2520 },
     },
     sizeOrder: ['s', 'm', 'l'],
     habit: 'reef',
@@ -205,9 +205,9 @@ export const SPECIES = {
     id: 'isaki',
     name: 'イサキ',
     sizes: {
-      s: { label: '小イサキ', kg: 0.25, pricePerKg: 700 },
-      m: { label: 'イサキ', kg: 0.45, pricePerKg: 1000 },
-      l: { label: '大イサキ', kg: 0.75, pricePerKg: 1400 },
+      s: { label: '小イサキ', kg: 0.25, pricePerKg: 420 },
+      m: { label: 'イサキ', kg: 0.45, pricePerKg: 600 },
+      l: { label: '大イサキ', kg: 0.75, pricePerKg: 840 },
     },
     sizeOrder: ['s', 'm', 'l'],
     habit: 'bottom',
@@ -219,9 +219,9 @@ export const SPECIES = {
     id: 'masaba',
     name: 'マサバ',
     sizes: {
-      s: { label: '小サバ', kg: 0.25, pricePerKg: 150 },
-      m: { label: 'サバ', kg: 0.45, pricePerKg: 250 },
-      l: { label: '大サバ', kg: 0.8, pricePerKg: 450 },
+      s: { label: '小サバ', kg: 0.25, pricePerKg: 90 },
+      m: { label: 'サバ', kg: 0.45, pricePerKg: 150 },
+      l: { label: '大サバ', kg: 0.8, pricePerKg: 270 },
     },
     sizeOrder: ['s', 'm', 'l'],
     habit: 'midwater',
@@ -232,9 +232,9 @@ export const SPECIES = {
     id: 'oomonhata',
     name: 'オオモンハタ',
     sizes: {
-      s: { label: '小オオモンハタ', kg: 0.4, pricePerKg: 1200 },
-      m: { label: 'オオモンハタ', kg: 0.8, pricePerKg: 1700 },
-      l: { label: '大オオモンハタ', kg: 1.5, pricePerKg: 2200 },
+      s: { label: '小オオモンハタ', kg: 0.4, pricePerKg: 720 },
+      m: { label: 'オオモンハタ', kg: 0.8, pricePerKg: 1020 },
+      l: { label: '大オオモンハタ', kg: 1.5, pricePerKg: 1320 },
     },
     sizeOrder: ['s', 'm', 'l'],
     habit: 'reef',
@@ -247,9 +247,9 @@ export const SPECIES = {
     id: 'akahata',
     name: 'アカハタ',
     sizes: {
-      s: { label: '小アカハタ', kg: 0.3, pricePerKg: 1200 },
-      m: { label: 'アカハタ', kg: 0.6, pricePerKg: 1700 },
-      l: { label: '大アカハタ', kg: 1.0, pricePerKg: 2200 },
+      s: { label: '小アカハタ', kg: 0.3, pricePerKg: 720 },
+      m: { label: 'アカハタ', kg: 0.6, pricePerKg: 1020 },
+      l: { label: '大アカハタ', kg: 1.0, pricePerKg: 1320 },
     },
     sizeOrder: ['s', 'm', 'l'],
     habit: 'reef',
@@ -264,9 +264,9 @@ export const SPECIES = {
     id: 'akaamadai',
     name: 'アカアマダイ',
     sizes: {
-      s: { label: '小アカアマダイ', kg: 0.3, pricePerKg: 1800 },
-      m: { label: 'アカアマダイ', kg: 0.6, pricePerKg: 2800 },
-      l: { label: '大アカアマダイ', kg: 1.0, pricePerKg: 3800 },
+      s: { label: '小アカアマダイ', kg: 0.3, pricePerKg: 1080 },
+      m: { label: 'アカアマダイ', kg: 0.6, pricePerKg: 1680 },
+      l: { label: '大アカアマダイ', kg: 1.0, pricePerKg: 2280 },
     },
     sizeOrder: ['s', 'm', 'l'],
     habit: 'burrow',
@@ -276,9 +276,9 @@ export const SPECIES = {
     id: 'shiroamadai',
     name: 'シロアマダイ',
     sizes: {
-      s: { label: '小シロアマダイ', kg: 0.6, pricePerKg: 3500 },
-      m: { label: 'シロアマダイ', kg: 1.2, pricePerKg: 5500 },
-      l: { label: '大シロアマダイ', kg: 2.0, pricePerKg: 7500 },
+      s: { label: '小シロアマダイ', kg: 0.6, pricePerKg: 2100 },
+      m: { label: 'シロアマダイ', kg: 1.2, pricePerKg: 3300 },
+      l: { label: '大シロアマダイ', kg: 2.0, pricePerKg: 4500 },
     },
     sizeOrder: ['s', 'm', 'l'],
     habit: 'burrow',
@@ -289,9 +289,9 @@ export const SPECIES = {
     id: 'shiira',
     name: 'シイラ',
     sizes: {
-      s: { label: 'ペンペン', kg: 1.5, pricePerKg: 250 },
-      m: { label: 'シイラ', kg: 4.0, pricePerKg: 350 },
-      l: { label: '大シイラ', kg: 9.0, pricePerKg: 450 },
+      s: { label: 'ペンペン', kg: 1.5, pricePerKg: 200 },
+      m: { label: 'シイラ', kg: 4.0, pricePerKg: 280 },
+      l: { label: '大シイラ', kg: 9.0, pricePerKg: 360 },
     },
     sizeOrder: ['s', 'm', 'l'],
     habit: 'pelagic',
@@ -303,9 +303,9 @@ export const SPECIES = {
     id: 'yokowa',
     name: 'ヨコワ',
     sizes: {
-      s: { label: '小ヨコワ', kg: 2.0, pricePerKg: 1000 },
-      m: { label: 'ヨコワ', kg: 4.5, pricePerKg: 1400 },
-      l: { label: '大ヨコワ', kg: 8.0, pricePerKg: 1800 },
+      s: { label: '小ヨコワ', kg: 2.0, pricePerKg: 800 },
+      m: { label: 'ヨコワ', kg: 4.5, pricePerKg: 1120 },
+      l: { label: '大ヨコワ', kg: 8.0, pricePerKg: 1440 },
     },
     sizeOrder: ['s', 'm', 'l'],
     habit: 'pelagic',
@@ -316,9 +316,9 @@ export const SPECIES = {
     id: 'kanpachi',
     name: 'カンパチ',
     sizes: {
-      s: { label: 'ショゴ', kg: 2.0, pricePerKg: 800 },
-      m: { label: 'カンパチ', kg: 5.0, pricePerKg: 1300 },
-      l: { label: '大カンパチ', kg: 10.0, pricePerKg: 1700 },
+      s: { label: 'ショゴ', kg: 2.0, pricePerKg: 640 },
+      m: { label: 'カンパチ', kg: 5.0, pricePerKg: 1040 },
+      l: { label: '大カンパチ', kg: 10.0, pricePerKg: 1360 },
     },
     sizeOrder: ['s', 'm', 'l'],
     habit: 'roam',
@@ -677,7 +677,7 @@ export const EQUIPMENT = {
     type: 'sounder',
     mount: 'sounder_l',
     name: '二周波魚探 ES-2',
-    price: 32000,
+    price: 70000,
     desc: '大型の操舵室に付ける魚探。細いビームで真下の反応を分けて映し、弱い反応も拾う。表示の細かさは2倍で、魚群反応の深さを数字で出す。',
     sounder: { halfAngleDeg: 14, binSize: 0.25, maxRange: 120, noise: 0.05, gainK: 850, readout: true },
   },
@@ -686,7 +686,7 @@ export const EQUIPMENT = {
     type: 'sounder',
     mount: 'sounder_l',
     name: 'サイドビュー魚探 SV-1',
-    price: 60000,
+    price: 180000,
     desc: 'ES-2と同じ真下の魚探に加え、船の左右それぞれ60mの海底と底近くの魚を帯状に映す。測った水深を10mごとに記録し、自分だけの細かい海図（デプスマッピング）を作る。大型の操舵室に付ける。',
     sounder: { halfAngleDeg: 14, binSize: 0.25, maxRange: 120, noise: 0.05, gainK: 850, readout: true, side: { range: 60, res: 5 }, mapping: true },
   },
@@ -704,7 +704,7 @@ export const EQUIPMENT = {
     type: 'reel',
     mount: 'reel',
     name: '電動リール DR-1',
-    price: 15000,
+    price: 22000,
     desc: 'モーターで巻き上げる。巻いている間も手が空く。深いタナほど回収時間の短縮が大きい。対応水深150m。',
     reel: { retrieve: 2.6, maxDepth: 150, model: 'electric' },
   },
@@ -713,7 +713,7 @@ export const EQUIPMENT = {
     type: 'troll',
     mount: 'troll',
     name: '曳縄具 TR-1',
-    price: 9000,
+    price: 15000,
     desc: '船尾に竿2本と潜行板付きの仕掛け。曳縄（サワラ狙い）ができるようになる。航路を決めれば航行と仕掛けの作業は自動。',
     troll: { lines: 2, lineLength: 40, lureDepths: [3, 7], spread: [3, 3], towSpeed: 2.6 },
   },
@@ -722,7 +722,7 @@ export const EQUIPMENT = {
     type: 'troll',
     mount: 'troll_l',
     name: '曳縄具 TR-2（アウトリガー）',
-    price: 26000,
+    price: 55000,
     desc: '両舷に張り出すアウトリガーで仕掛けを4本、幅広く曳く。取り込みは一人なので、同時に掛かると順番になる。中型の船尾に付ける。',
     troll: { lines: 4, lineLength: 40, lureDepths: [3, 7, 2, 5], spread: [3, 3, 10, 10], towSpeed: 2.6 },
   },
@@ -731,7 +731,7 @@ export const EQUIPMENT = {
     type: 'longline',
     mount: 'longline',
     name: '延縄具 LL-1（針100本）',
-    price: 12000,
+    price: 18000,
     desc: '餌付きの針100本を6m間隔に並べた縄（約600m）と、両端のブイ。海底に張って浸け、あとで揚げる。小型和船では船尾に付けるので、曳縄具とは付け替えになる。',
     longline: { hooks: 100, spacing: 6, maxDepth: 120 },
   },
@@ -740,7 +740,7 @@ export const EQUIPMENT = {
     type: 'sonar',
     mount: 'sonar',
     name: 'スキャニングソナー CS-1',
-    price: 90000,
+    price: 300000,
     desc: '船底から水中を横向きに見回し、船のまわり150〜600mの魚群反応と、海底から立ち上がる根・漁礁の反応を映す。中型漁船の船底に付ける。',
     sonar: { ranges: [150, 300, 600], gain: 900 },
   },
@@ -749,7 +749,7 @@ export const EQUIPMENT = {
     type: 'hauler',
     mount: 'hauler',
     name: '揚げ縄機 LH-1',
-    price: 18000,
+    price: 40000,
     desc: '延縄を機械で巻き上げる。揚げ縄の速さが腕前によらず毎秒1.3mになる（手で揚げるとLv1で0.45、Lv10で0.9m）。魚を外すのは手作業のまま。延縄具がないと使い道はない。',
     hauler: { haul: 1.3 },
   },
@@ -758,16 +758,16 @@ export const EQUIPMENT = {
     type: 'rod',
     mount: 'rod',
     name: 'ジギングロッド JG-1（ジグ付き）',
-    price: 14000,
+    price: 18000,
     desc: 'ジギング用の竿と手巻きリール、メタルジグ一式。竿立てに置き、漁法「ジギング」ができるようになる。根掛かりで失くしたジグは帰港時に買い足す（1個あたりの代金がかかる）。対応水深120m。',
-    rod: { reel: { retrieve: null, maxDepth: 120, model: 'hand' }, jigPrice: 900 },
+    rod: { reel: { retrieve: null, maxDepth: 120, model: 'hand' }, jigPrice: 1200 },
   },
   lights_ld1: {
     id: 'lights_ld1',
     type: 'lights',
     mount: 'lights',
     name: 'LED集魚灯 LD-1',
-    price: 40000,
+    price: 90000,
     desc: '屋根に付ける集魚灯。夕方から夜に点けると、まわりのイカが船の下に寄ってくる。これがあると港で「夕方から出る（イカ釣り）」を選べ、16時に出て23時まで漁ができる。',
     lights: { power: 1 },
   },
@@ -871,8 +871,8 @@ export const BOATS = {
     accel: 0.4,
     maxTurn: 0.2, // rad/s at full rudder
     windage: 0.025, // drift fraction of wind speed
-    fuelPerKm: 40,
-    tradeIn: 15000,
+    fuelPerKm: 60,
+    tradeIn: 40000,
     range: { maxY: 3000, label: '沿岸（港から約3km、沖の平場まで）' }, // 航行区域 (game setting)
     slots: [
       { id: 'helm_sounder', label: '操舵席（魚探）', accepts: ['sounder'] },
@@ -894,8 +894,8 @@ export const BOATS = {
     accel: 0.32,
     maxTurn: 0.17,
     windage: 0.018, // heavier hull: the wind pushes it less
-    fuelPerKm: 60,
-    tradeIn: 55000,
+    fuelPerKm: 110,
+    tradeIn: 180000,
     range: { maxY: null, label: '沖の瀬まで（港から約4.5km）' },
     slots: [
       { id: 'helm_sounder', label: '操舵室（魚探・大型可）', accepts: ['sounder', 'sounder_l'] },
@@ -916,11 +916,11 @@ export const BOATS = {
 // (a basic sounder is fitted if none of yours fits). Used: cheaper, comes with
 // the previous owner's gear already fitted. No hidden faults either way.
 export const BOAT_OFFERS = [
-  { id: 'new_cruiser', kind: 'new', model: 'cruiser_2', price: 110000, title: '新艇 中型漁船', note: '取付位置はすべて空き。今の装備を移し、好きな構成にできる。', included: {} },
-  { id: 'used_cruiser_a', kind: 'used', model: 'cruiser_2', price: 65000, title: '中古 中型漁船（元「第三浜丸」・船齢12年）', note: '一本釣り向けの装備付き。', included: { helm_sounder: 'sounder_es1', starboard_reel: 'reel_hand', port_reel: 'reel_hand' } },
-  { id: 'used_cruiser_b', kind: 'used', model: 'cruiser_2', price: 85000, title: '中古 中型漁船（元「千代丸」・船齢8年）', note: '大型魚探と電動リール、曳縄具付き。', included: { helm_sounder: 'sounder_es2', starboard_reel: 'reel_electric', stern_troll: 'troll_tr1' } },
-  { id: 'new_skiff', kind: 'new', model: 'skiff_1', price: 40000, title: '新艇 小型和船', note: '小回りが利き、燃料が少なくて済む。', included: {} },
-  { id: 'used_skiff', kind: 'used', model: 'skiff_1', price: 22000, title: '中古 小型和船（船齢15年）', note: '最低限の装備付き。', included: { helm_sounder: 'sounder_es1', starboard_reel: 'reel_hand' } },
+  { id: 'new_cruiser', kind: 'new', model: 'cruiser_2', price: 420000, title: '新艇 中型漁船', note: '取付位置はすべて空き。今の装備を移し、好きな構成にできる。', included: {} },
+  { id: 'used_cruiser_a', kind: 'used', model: 'cruiser_2', price: 230000, title: '中古 中型漁船（元「第三浜丸」・船齢12年）', note: '一本釣り向けの装備付き。', included: { helm_sounder: 'sounder_es1', starboard_reel: 'reel_hand', port_reel: 'reel_hand' } },
+  { id: 'used_cruiser_b', kind: 'used', model: 'cruiser_2', price: 320000, title: '中古 中型漁船（元「千代丸」・船齢8年）', note: '大型魚探と電動リール、曳縄具付き。', included: { helm_sounder: 'sounder_es2', starboard_reel: 'reel_electric', stern_troll: 'troll_tr1' } },
+  { id: 'new_skiff', kind: 'new', model: 'skiff_1', price: 120000, title: '新艇 小型和船', note: '小回りが利き、燃料が少なくて済む。', included: {} },
+  { id: 'used_skiff', kind: 'used', model: 'skiff_1', price: 70000, title: '中古 小型和船（船齢15年）', note: '最低限の装備付き。', included: { helm_sounder: 'sounder_es1', starboard_reel: 'reel_hand' } },
 ];
 
 // ---- Crew (乗組員) ----
@@ -929,13 +929,13 @@ export const BOAT_OFFERS = [
 // while the fisher keeps hauling. He works at the fisher's own pace (same
 // handling skill). Optional: everything works without him (handover §4.1).
 export const CREW = {
-  wage: 1800, // G per voyage, paid at settlement with the other costs (仮設定)
+  wage: 8000, // G per voyage, paid at settlement with the other costs (仮設定)
   label: '甲板員',
 };
 
 // 延縄の縄（R07）: one comes with the longline gear; up to two more can be
 // bought, each laid on its own (separate places, separate soaks).
-export const LONGLINE_LINES = { max: 3, extraPrice: 8000 };
+export const LONGLINE_LINES = { max: 3, extraPrice: 15000 };
 
 // ---- 難易度（R05）: chosen when a new game starts and fixed for that save. ----
 // Only the money changes — the sea, the fish, their bite and the weather are
@@ -957,7 +957,7 @@ export const MARKET = {
   dailySwing: 0.12, // the day-to-day wobble (smooth across days: yesterday's board hints at today)
   afterRough: 1.15, // the day after a rough day
   tiers: [1, 0.8, 0.6, 0.45], // price for each successive `depthKg` of one fish sold the same day
-  depthKg: { aji: 50, isaki: 30, masaba: 60, sawara: 40, shiira: 60, yokowa: 40, madai: 30, akaamadai: 12, shiroamadai: 6, kasago: 10, kijihata: 8, akahata: 8, oomonhata: 10, ara: 15, buri: 80, hiramasa: 60, kanpachi: 50, kensaki: 25, yari: 25 },
+  depthKg: { aji: 30, isaki: 30, masaba: 60, sawara: 40, shiira: 60, yokowa: 40, madai: 30, akaamadai: 12, shiroamadai: 6, kasago: 10, kijihata: 8, akahata: 8, oomonhata: 10, ara: 15, buri: 80, hiramasa: 60, kanpachi: 50, kensaki: 25, yari: 25 },
 };
 
 // ---- 注文（R02）: requests from the market and the cooks — take them or not. ----
@@ -971,8 +971,9 @@ export const ORDERS = {
 export const ECONOMY = {
   startFunds: 10000, // the 「ふつう」 start (DIFFICULTY.normal.startFunds)
   currency: 'G',
-  tripBaseCost: 300, // 氷・餌など1航海の定額
-  fuelPerKm: 40, // under power (default; boats set their own)
+  tripBaseCost: 1500, // 氷・餌など1航海の定額
+  fuelPerKm: 60, // under power (default; boats set their own)
+  playtestFunds: 1500000, // the playtest save's funds (tests/e2e/fixtures/make-rich-save.mjs)
 };
 
 export const START_PROFILE = {

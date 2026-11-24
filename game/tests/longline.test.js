@@ -236,7 +236,7 @@ test('setting needs the gear, enough deep water and a long enough route; setting
 });
 
 test('slots: the small boat carries trolling gear OR the longline on the stern; the medium boat has its own longline deck; gear moves with the boat', () => {
-  let p = { ...createProfile({ worldSeed: 1, now: NOW }), funds: 200000 };
+  let p = { ...createProfile({ worldSeed: 1, now: NOW }), funds: 2000000 };
   p = purchaseEquipment(p, 'troll_tr1', 'stern_troll').profile;
   const r = purchaseEquipment(p, 'longline_ll1', 'stern_troll');
   assert.ok(r.ok, r.reason);
