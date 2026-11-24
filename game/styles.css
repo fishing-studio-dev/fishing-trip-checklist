@@ -342,3 +342,22 @@ body.chart-open .toast { top: 38%; bottom: auto; }
 @media (max-width: 360px) { #hud.chart-mode.phone-port .tool { padding: 4px 7px; font-size: 13px; min-width: 34px; } }
 #hud.chart-mode.phone-port .chart-msg, #hud.chart-mode.phone-land .chart-msg { font-size: 12px; margin-bottom: 2px; }
 @media (max-height: 600px) { #hud.chart-mode.phone-port .chart-msg { display: none; } }
+
+/* item 11: the first-time guide */
+.guide { position: absolute; left: 50%; transform: translateX(-50%); width: min(460px, calc(100% - 16px)); z-index: 7; background: var(--panel-solid); border: 1px solid var(--accent); border-radius: 12px; padding: 10px 12px; box-shadow: 0 6px 24px rgba(0,0,0,.35); }
+.guide-title { font-size: 12px; color: var(--accent); font-weight: 700; margin-bottom: 4px; }
+.guide-text { margin: 0 0 8px; font-size: 14px; line-height: 1.5; }
+.guide-acts { display: flex; gap: 8px; justify-content: flex-end; }
+#hud.phone-port .guide-text, #hud.phone-land .guide-text { font-size: 13px; }
+#hud.phone-land .guide { width: min(420px, calc(100% - 300px)); padding: 6px 10px; }
+#hud.phone-land .guide-text { margin-bottom: 4px; }
+#hud.phone-land .guide .tool { min-height: 32px; font-size: 13px; padding: 3px 9px; }
+.card.first-day { border-color: var(--accent); margin-bottom: 12px; }
+.card.first-day ol { margin: 6px 0 8px 1.2em; padding: 0; }
+.card.first-day li { margin: 4px 0; line-height: 1.5; }
+#hud.phone-land .guide { max-height: 46vh; overflow-y: auto; }
+#hud.phone-port .guide { max-height: 40vh; overflow-y: auto; }
+#hud.phone-land .guide { width: min(440px, calc(100% - 330px)); max-height: 34vh; padding: 5px 9px; }
+#hud.phone-land .guide-title { font-size: 11px; margin-bottom: 2px; }
+#hud.phone-land .guide-text { font-size: 12px; line-height: 1.4; margin-bottom: 3px; }
+#hud.phone-land .guide .tool { min-height: 28px; font-size: 12px; padding: 2px 8px; }

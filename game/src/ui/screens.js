@@ -208,6 +208,7 @@ export function portScreen(app) {
   <h1>港 <span class="tag">${app.nightTrip ? `${today}日目・夕方${fmtClock(TIME.NIGHT.DEPART)} 出港（イカ釣り）` : `${today}日目の朝・${fmtClock(TIME.DEPART)} 出港`}</span></h1>
   <p class="lead">仲間の話・自分の日誌・今日の予報から狙いを決め、海では魚探で確かめて場所を決めます。候補は自分が聞いた・記録した情報だけから作っています。候補以外の場所へ行くのも自由です。</p>
   ${app.notice ? `<div class="card" style="margin-bottom:12px;border-color:var(--warn)"><p>${esc(app.notice)}</p></div>` : ''}
+  ${!p.logs.length && !app.guideOff ? firstDayCard() : ''}
   <div class="card full brief"><h2>今日の海図 — 狙いの候補</h2>
     <div class="brief-grid">
       <div class="brief-chart"><canvas id="portChart" width="380" height="380"></canvas>
@@ -582,7 +583,16 @@ export function helpModal() {
   <li><b>甲板を歩く</b>：W/S で前後、A/D で向き。画面の持ち場ボタン（操舵席・右舷・船尾・魚倉など）で移動。操業中は釣り人が持ち場で作業するので歩けません。歩いても海や漁獲は変わりません。</li>
   <li><b>スマホ</b>：画面下のボタンで同じ操作ができます。舵のボタンは押している間だけ効きます。曳縄の航路は、海図の「拡大」を押してから海図をタップ。</li></ul>
   <p class="note">探す・決めるのはあなた、作業は自動。一本釣りは魚探の反応の潮上で止まって流す。曳縄は群れがいそうな場所を通る航路を決める（自動航行は決めた航路を走るだけで、魚を探しに行くことはありません）。表示の切替で海や魚が変わることはありません。</p>
-  <div class="actions"><button type="button" class="btn primary" data-act="closeModal">閉じる</button></div></div>`;
+  <div class="actions"><button type="button" class="btn primary" data-act="closeModal">閉じる</button><button type="button" class="btn" data-act="guideReset">はじめての案内をもう一度出す</button></div></div>`;
+}
+
+/** Port, before the very first voyage: what the day looks like, in three lines. */
+export function firstDayCard() {
+  return `<div class="card first-day"><h2>はじめての出港</h2><ol>
+    <li><b>港</b>：下の候補（A〜C）は、仲間の話と自分の記録から作った「今日の狙い」です。どれかの「狙って出港」か「狙いを決めずに出港」を押します。</li>
+    <li><b>海</b>：魚探で群れの反応を探し、潮上で止まって「操業開始」。釣る作業は自動です。海でも案内が出ます。</li>
+    <li><b>帰港</b>：港に着くと自動で水揚げ・精算して保存します。</li></ol>
+    <div class="actions"><button type="button" class="btn small" data-act="help">操作説明</button><button type="button" class="btn small" data-act="guideOff">案内を出さない</button></div></div>`;
 }
 
 // ---------------------------------------------------------------- the player's marks (印)

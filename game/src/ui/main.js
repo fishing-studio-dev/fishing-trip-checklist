@@ -10,6 +10,7 @@ import {
 } from '../core/voyage.js';
 import { sonarToWorld } from '../core/sonar.js';
 import { surfaceCues } from '../core/surface.js';
+import { loadGuide, saveGuide, guideView, guideNow } from './guide.js';
 import { longlineLabel, baitLeft, nearestBuoy, buoys } from '../core/longline.js';
 import { acquireBriefing, buildCandidates, planSummary } from '../core/knowledge.js';
 import { reportLine, peerName } from '../core/reports.js';
@@ -252,6 +253,8 @@ function ownCells() {
 /** Put a voyage (new or resumed) on screen. */
 function enterSea(v) {
   app.voyage = v;
+  app.guideNewcomer = !(app.profile && app.profile.logs.length); // the voyage guide is for the first voyages
+  app.guideNote = null;
   $('msgs').dataset.last = '';
   app.carry = 0;
   app.seenMsg = 0;
@@ -1019,6 +1022,33 @@ document.addEventListener('click', (e) => {
     case 'help':
       modal(S.helpModal());
       break;
+    case 'guideOk': {
+      // this note is understood: do not show it again
+      const n = app.guideNote;
+      if (n && n.kind === 'step' && !guide.done.includes(n.id)) guide.done.push(n.id);
+      if (n && n.kind === 'tip' && !guide.tips.includes(n.id)) guide.tips.push(n.id);
+      saveGuide(guideStore(), guide);
+      app.guideNote = null;
+      $('guide').hidden = true;
+      break;
+    }
+    case 'guideOff':
+      guide.off = true;
+      app.guideOff = true;
+      saveGuide(guideStore(), guide);
+      $('guide').hidden = true;
+      toast('案内を出さないようにしました（操作説明からもう一度出せます）');
+      if (app.screen === 'port') show('port');
+      break;
+    case 'guideReset':
+      guide = { off: false, done: [], tips: [] };
+      app.guideOff = false;
+      app.guideNewcomer = true;
+      saveGuide(guideStore(), guide);
+      modal(null);
+      toast('はじめての案内をもう一度出します');
+      if (app.screen === 'port') show('port');
+      break;
     case 'closeModal':
       modal(null);
       break;
@@ -1262,6 +1292,20 @@ function layoutHud() {
     cp.style.left = phone ? '4px' : '8px';
     cp.style.right = `${right}px`;
   } else cp.style.top = cp.style.bottom = cp.style.left = cp.style.right = '';
+  // the guide card: under the status chips (PC, landscape), just above the messages on a portrait phone
+  const gd = $('guide');
+  if (!gd.hidden) {
+    gd.style.top = gd.style.bottom = '';
+    if (port) {
+      const mt = msgs.childElementCount ? msgs.getBoundingClientRect().top : ctl.top;
+      gd.style.bottom = `${appR.bottom - mt + 6}px`;
+    } else if (land) {
+      // just above the controls (and the deck-walk bar when it is out), never over them
+      const wbar = $('walkBar');
+      gd.style.bottom = `${aboveControls + (wbar.hidden ? 0 : wbar.getBoundingClientRect().height + 6)}px`;
+    }
+    else gd.style.top = `${rel(top.getBoundingClientRect().bottom) + 6}px`;
+  }
   $('walkBar').style.bottom = `${aboveControls}px`;
   const snd = ($('sounderPanel').hidden ? $('sounderOpen') : $('sounderPanel')).getBoundingClientRect();
   if (!land && !port) {
@@ -1476,6 +1520,43 @@ function consumeEvents(v) {
 // ---------------------------------------------------------------- loop
 let bathyAt = 0;
 let sonarAt = 0;
+let guideAt = 0;
+/** Where the guide state lives: this browser's storage (a UI preference, not the save). */
+function guideStore() {
+  try {
+    return window.localStorage;
+  } catch {
+    return null;
+  }
+}
+let guide = loadGuide(guideStore());
+app.guideOff = guide.off;
+
+/** The guide card at sea: follows what the player is doing; never touches the simulation. */
+function updateGuide(v, now) {
+  if (now - guideAt < 300) return;
+  guideAt = now;
+  const el = $('guide');
+  const r = guideNow(guideView(v, { portX: PORT.dock.x, portY: PORT.dock.y }), guide, { everFished: !app.guideNewcomer });
+  if (r.passed.length) {
+    guide.done.push(...r.passed.filter((id) => !guide.done.includes(id)));
+    saveGuide(guideStore(), guide);
+  }
+  const hide = !r.note || app.chartBig || v.phase !== 'sea'; // the open chart has its own hints
+  app.guideNote = hide ? null : r.note;
+  if (hide) {
+    if (!el.hidden) el.hidden = true;
+    return;
+  }
+  if ($('guideText').textContent !== r.note.text) {
+    $('guideTitle').textContent = r.note.title;
+    $('guideText').textContent = r.note.text;
+  }
+  if (el.hidden) {
+    el.hidden = false;
+    layoutHud();
+  }
+}
 let cuesAt = 0;
 let cuesNow = [];
 let bathyNow = null;
@@ -1529,6 +1610,7 @@ function frame(now) {
     else if (app.chartBig) hint = v.plannedRoute.length ? 'クリックで経由点を追加・G で航路に沿って移動・X で消去' : 'クリックで行き先（経由点）を置くと、G でそこへ移動できます';
     const reps = chartReports([...app.profile.knowledge.reports, ...v.heard], v.day);
     const showLine = v.line && v.line.state !== 'aboard' ? v.line : null;
+    updateGuide(v, now);
     if (now - bathyAt > 1000) {
       bathyAt = now;
       bathyNow = bathyCanvas(ownCells(), v.bathy && v.bathy.cells);

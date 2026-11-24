@@ -976,6 +976,38 @@ const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
     await shot('99-weather-failure').catch(() => {});
   }
 
+  // ---------------------------------------------------------------- はじめての案内 (item 11): a brand-new player in a fresh browser
+  try {
+    const gctx = await browser.newContext({ viewport: { width: 1280, height: 860 } });
+    const gp = await gctx.newPage();
+    gp.on('pageerror', (e) => errors.push(`guide: ${e.message}`));
+    await gp.goto(`http://localhost:${port}/?dev=1&seed=77`);
+    await gp.click('[data-act=newGame]');
+    await gp.waitForSelector('#portChart');
+    check('案内: before the first voyage the port explains the day in three steps', /はじめての出港/.test(await gp.textContent('#screen')));
+    await gp.click('[data-act=depart]');
+    await gp.waitForFunction(() => window.__ryoshi.state().screen === 'sea');
+    await sleep(500);
+    const g1 = await gp.textContent('#guide');
+    const vis1 = await gp.isVisible('#guide');
+    // steering out of the harbour moves the guide on by itself
+    await gp.evaluate(() => { const v = window.__ryoshi.app.voyage; v.boat.y += 700; });
+    await gp.evaluate(() => window.__ryoshi.fastForward(5));
+    await sleep(600);
+    const g2 = await gp.textContent('#guideTitle');
+    check('案内: at sea the guide shows step 1 and moves to step 2 once the boat is out', vis1 && /はじめての航海 1\/6/.test(g1) && /2\/6/.test(g2), `${g1.slice(0, 30)} → ${g2}`);
+    await gp.click('[data-act=guideOff]');
+    await sleep(300);
+    const kept = await gp.evaluate(() => JSON.parse(localStorage.getItem('ryoshi-game:guide') || '{}').off);
+    await gp.reload();
+    await gp.waitForSelector('#app');
+    await sleep(800);
+    check('案内: 「案内を出さない」 hides it and is remembered in this browser', !(await gp.isVisible('#guide')) && kept === true);
+    await gctx.close();
+  } catch (e) {
+    check('案内 playthrough', false, e.message);
+  }
+
   check('no page errors or console errors', errors.length === 0, errors.slice(0, 5).join(' | '));
   await browser.close();
   server.kill();
