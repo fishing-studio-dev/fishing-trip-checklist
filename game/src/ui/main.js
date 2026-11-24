@@ -950,8 +950,8 @@ document.addEventListener('click', (e) => {
       break;
     case 'restDay': {
       if (!app.profile || app.profile.activeVoyage) break;
-      commit(restDay(app.profile), '時化で休んだ');
-      app.notice = `${app.profile.day}日目は時化で港で休みました。`;
+      commit(restDay(app.profile), '港で休んだ');
+      app.notice = `${app.profile.day}日目は港で休みました（自分で決めた休み）。`;
       show('port');
       toast('港で休みました（翌朝）');
       break;

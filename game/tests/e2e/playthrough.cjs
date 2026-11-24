@@ -965,24 +965,24 @@ const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
     await shot('99-ika-failure').catch(() => {});
   }
 
-  // ---------------------------------------------------------------- 天候 (item 10): a storm day keeps everyone in port
+  // ---------------------------------------------------------------- 天候 (item 10, R17): a rough day — nobody is kept in; resting is the player's call
   try {
     const pg = page;
     await pg.goto(`http://localhost:${port}/?dev=1&seed=77`);
     await pg.waitForSelector('#portChart');
-    // (test convenience: move the own progress to the eve of a storm; seed 77 has one on day 8)
-    await pg.evaluate(() => { window.__ryoshi.app.profile = { ...window.__ryoshi.app.profile, day: 7 }; });
+    // (test convenience: move the own progress to the eve of a rough day; seed 77 has one on day 13)
+    await pg.evaluate(() => { window.__ryoshi.app.profile = { ...window.__ryoshi.app.profile, day: 12 }; });
     await pg.click('[data-act=log]');
     await pg.click('[data-act=toPort]');
     await pg.waitForSelector('#portChart');
     const portS = await pg.textContent('#screen');
-    const disabled = await pg.evaluate(() => [...document.querySelectorAll('[data-act=departPlan]')].every((b) => b.disabled) && !document.querySelector('[data-act=depart]'));
-    check('天候: on a storm day port says 出漁中止, departures are disabled, and the peers stayed in', /時化のため出漁中止/.test(portS) && /天気：時化/.test(portS) && disabled && /時化/.test(portS));
-    await shot('34-storm');
+    const canGo = await pg.evaluate(() => !!document.querySelector('[data-act=depart]') && [...document.querySelectorAll('[data-act=departPlan]')].some((b) => !b.disabled));
+    check('天候 (R17): on a rough day the port says so, departures stay open and the peers went out', /天気：やや時化/.test(portS) && !/出漁中止/.test(portS) && canGo, portS.match(/天気：[^\n]{0,20}/)?.[0]);
+    await shot('34-rough');
     await pg.click('[data-act=restDay]');
     await pg.waitForSelector('#portChart');
     const after = await st();
-    check('天候: 今日は休む passes the day (saved) and the next morning is shown', after.day === 8 && after.saveStatus.ok && /8日目は時化で港で休みました/.test(await pg.textContent('#screen')), `day ${after.day}`);
+    check('天候: 今日は休む (the player\'s own call) passes the day (saved) and the next morning is shown', after.day === 13 && after.saveStatus.ok && /13日目は港で休みました/.test(await pg.textContent('#screen')), `day ${after.day}`);
   } catch (e) {
     check('天候 playthrough', false, e.message);
     await shot('99-weather-failure').catch(() => {});
