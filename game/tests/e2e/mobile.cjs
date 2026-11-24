@@ -30,6 +30,12 @@ const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 
 const overlap = (a, b) => a && b && a.left < b.right - 1 && b.left < a.right - 1 && a.top < b.bottom - 1 && b.top < a.bottom - 1;
 
+/** Tap a button of the less used group: in landscape it folds under 「その他」 (open it first). */
+async function tapSys(page, sel) {
+  if (!(await page.isVisible(sel)) && (await page.isVisible('#btnMore'))) await page.tap('#btnMore');
+  await page.tap(sel);
+}
+
 async function layout(page) {
   return page.evaluate(() => {
     const r = (sel) => {
@@ -131,8 +137,8 @@ async function layout(page) {
       await page.tap('[data-act=clearRoute]');
       await page.tap('#chartToggle');
       // walking the deck by touch: view button twice, the walk pad and the work-position bar
-      await page.tap('#btnView');
-      await page.tap('#btnView');
+      await tapSys(page, '#btnView');
+      await tapSys(page, '#btnView');
       await sleep(300);
       const wbox = await page.evaluate(() => {
         const r = (id) => { const e = document.getElementById(id); if (!e || e.hidden) return null; const b = e.getBoundingClientRect(); return { left: b.left, top: b.top, right: b.right, bottom: b.bottom }; };
@@ -146,7 +152,7 @@ async function layout(page) {
       await sleep(500);
       check(`${name}: 甲板を歩く by touch: walk pad and work-position bar on screen, not covering the controls`, wbox.view === 'walk' && wbox.bar && wbox.pad && wbox.bar.left >= 0 && wbox.bar.right <= wbox.vw + 1 && wbox.bar.top >= 0 && !overlap(wbox.bar, wbox.controls), JSON.stringify(wbox));
       await page.screenshot({ path: path.join(outDir, `${slug}-2b-walk.png`) });
-      await page.tap('#btnView');
+      await tapSys(page, '#btnView');
       // run on out of the harbour (fishing is refused within 300 m of the dock), then stop with taps
       // (clearing the route in chart mode stopped the boat: speed up again first)
       await page.tap('[data-act=throttleSet][data-step="4"]');

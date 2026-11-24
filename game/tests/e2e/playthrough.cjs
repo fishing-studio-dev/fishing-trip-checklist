@@ -1018,6 +1018,11 @@ const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
     const oyoPanel = await pg.textContent('#opPanel');
     check('段2: the 泳がせ checklist says to catch アジ first when there are none', /泳がせ釣りの手順/.test(oyoPanel) && /一本釣りでアジを釣る/.test(oyoPanel), oyoPanel.slice(0, 120));
     // ジギング at the nearest 根 (dev: the structure's place, read only to head there)
+    // the lever (R15): a click on a notch sets the throttle; back to 中立
+    await pg.click('[data-act=throttleSet][data-step="3"]');
+    const lv = await pg.evaluate(() => window.__ryoshi.app.voyage.boat.throttle);
+    await pg.click('[data-act=throttleSet][data-step="1"]');
+    check('段3: the lever sets the throttle by its notches (微速, then 中立)', lv === 3 && (await pg.evaluate(() => window.__ryoshi.app.voyage.boat.throttle)) === 1, `${lv}`);
     // (test convenience: head straight for the 大きな根 n1 with the movement assistance)
     await pg.evaluate(async () => {
       const V = await import('/src/core/voyage.js');
@@ -1032,6 +1037,16 @@ const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
     const jigPanel = await pg.textContent('#opPanel');
     check('段2: ジギング runs by itself — the jig is jerked up and dropped again', /ジギング/.test(jigPanel) && /しゃくり/.test(jigPanel) && /しゃくり上げる範囲/.test(jigPanel), jigPanel.slice(0, 160));
     await shot('35-jigging');
+    // the manual (R10) opens at the chapter for what is being done, with the sounder pictures drawn
+    await pg.click('#controls [data-act=help]');
+    await pg.waitForSelector('#modal .manual');
+    const manJ = await pg.textContent('#modal .manual-body h2');
+    await pg.click('#modal [data-act=manual][data-chapter=sounder]');
+    await sleep(400);
+    const drawn = await pg.evaluate(() => [...document.querySelectorAll('#modal canvas.echo-ex')].map((c) => { const d = c.getContext('2d').getImageData(0, 0, c.width, c.height).data; let lit = 0; for (let i = 0; i < d.length; i += 4) if (d[i] + d[i + 1] + d[i + 2] > 120) lit++; return lit; }));
+    check('段3: the manual opens at the method\'s chapter (ジギング) and its sounder chapter draws every example', manJ === 'ジギング' && drawn.length >= 9 && drawn.every((n) => n > 200), JSON.stringify({ manJ, drawn: drawn.length }));
+    await shot('36-manual');
+    await pg.click('#modal [data-act=closeModal]');
     await returnAndLand('段2');
     await pg.click('[data-act=toPort]');
     await pg.click('[data-act=market]');

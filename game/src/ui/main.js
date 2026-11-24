@@ -29,6 +29,8 @@ import { drawSonar, sonarTap } from './sonarView.js';
 import { cellsFromBathy } from '../core/bathy.js';
 import { createSounderView } from './sounderView.js';
 import { demoObservation } from './sounderDemo.js';
+import { manualHtml, chapterFor } from './manual.js';
+import { ECHO_EXAMPLES, exampleObservation } from './echoExamples.js';
 import * as S from './screens.js';
 import { PLAYTEST_SAVE } from './playtestSave.js';
 import { snapshotVoyage, restoreVoyage } from '../core/voyageSnapshot.js';
@@ -518,6 +520,21 @@ function importConfirm() {
   commit(p, 'ファイルから読み込み');
   app.notice = r.interrupted ? `読み込んだセーブには${r.interrupted.day}日目の航海中の記録がありました。海上の途中経過はこのブラウザの中にしかないため、この航海は中断扱いにしました。` : 'セーブを読み込みました。';
   show('port');
+}
+
+/** Open the manual at a chapter; its sounder pictures are drawn with the game's own sounder. */
+function openManual(chapter) {
+  app.manualChapter = chapter;
+  modal(manualHtml(chapter));
+  const spec = EQUIPMENT.sounder_es2.sounder;
+  requestAnimationFrame(() => {
+    for (const c of document.querySelectorAll('#modal canvas.echo-ex')) {
+      const ex = ECHO_EXAMPLES.find((e) => e.id === c.dataset.echo);
+      if (ex) createSounderView(c).draw(exampleObservation(ex, spec), { readout: true, fit: true });
+    }
+    const body = document.querySelector('#modal .manual-body');
+    if (body) body.scrollTop = 0;
+  });
 }
 
 // ---------------------------------------------------------------- sea commands
@@ -1066,8 +1083,14 @@ document.addEventListener('click', (e) => {
       if (app.profile) commit(app.profile, '再試行');
       show(app.screen);
       break;
-    case 'help':
-      modal(S.helpModal());
+    case 'help': {
+      // 手引き（R10）: opens at the chapter that fits what the player is doing
+      const v = app.voyage;
+      openManual(app.screen === 'sea' && v ? chapterFor({ atSea: true, method: v.method }) : app.manualChapter || chapterFor({ atSea: false }));
+      break;
+    }
+    case 'manual':
+      openManual(b.dataset.chapter);
       break;
     case 'sound':
       cycleSound();

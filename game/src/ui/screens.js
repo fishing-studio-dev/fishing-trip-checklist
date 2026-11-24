@@ -236,7 +236,7 @@ export function portScreen(app) {
     </div>
     ${app.forecast && app.forecast.weather && app.forecast.weather.storm ? `<div class="card storm"><h2>時化のため出漁中止</h2><p>風が強く海が荒れています（${app.forecast.windSpeed.toFixed(0)}m/s前後）。仲間も今日は出ません。港で休んで明日に備えます。</p>
       <div class="actions"><button type="button" class="btn primary" data-act="restDay">今日は休む（翌朝へ）</button><button type="button" class="btn" data-act="help">操作説明</button></div></div>` : `${crewChoice(app)}${nightChoice(app)}
-    <div class="actions"><button type="button" class="btn" data-act="depart">狙いを決めずに出港</button><button type="button" class="btn" data-act="restDay">今日は休む（翌朝へ）</button><button type="button" class="btn" data-act="help">操作説明</button></div>`}
+    <div class="actions"><button type="button" class="btn" data-act="depart">狙いを決めずに出港</button><button type="button" class="btn" data-act="restDay">今日は休む（翌朝へ）</button><button type="button" class="btn" data-act="help">手引き</button></div>`}
   </div>
   <div class="grid">
     ${peersCard(p, today)}
@@ -594,35 +594,13 @@ export function saveScreen(app) {
   <div class="actions"><button type="button" class="btn primary" data-act="${p ? 'toPort' : 'toTitle'}">戻る</button></div></div>`;
 }
 
-export function helpModal() {
-  return `<div class="card"><h2>操作説明</h2><ul>
-  <li><b>W / ↑</b> 増速、<b>S / ↓</b> 減速（後進・停止・極微速・微速・半速・全速）</li>
-  <li><b>A / ←</b>・<b>D / →</b> 押している間だけ舵を切る</li>
-  <li><b>T</b> 漁法の切替（一本釣り／根魚釣り／曳縄／延縄。曳縄・延縄は装備を積んでいるとき）。<b>根魚釣り</b>は根・漁礁の真上か少し潮上で停船して Space。底を切って自動で釣り、外れたら R で流し直し。<b>泳がせ釣り</b>は先に一本釣りで釣ったアジを活きエサにして、根・瀬の周りやベイトの反応の下で青物（ブリ・ヒラマサ）を狙う。<b>イカ釣り</b>は集魚灯を付けた船で港の「夕方から出る」を選び、沖の深い所で暗くなってから。</li>
-  <li><b>Space</b> 操業開始／回収して終了（一本釣りは停船してから。曳縄は走りながら開始）</li>
-  <li><b>R</b> 流し直し（一本釣り：回収→流し始めの地点へ自動で戻って再開）</li>
-  <li><b>C</b> 海図の拡大。拡大した海図をクリックすると航路の経由点を追加（曳縄は曳く航路、延縄は縄を張る向き、ほかは移動の行き先）、<b>X</b> で航路を消去</li>
-  <li><b>H</b> 帰港（港まで移動補助。操船すると取り消し）</li>
-  <li><b>G</b> 航路で移動：拡大した海図をクリックして経由点（行き先）を置き、G でその順に走って終点で止まる（どの漁法でも。操船すると取り消し）</li>
-  <li><b>L</b> 揚げ縄（延縄：縄を浸けているとき。遠ければブイまで移動補助で向かってから揚げる）</li>
-  <li><b>M</b> 海図に印、<b>F</b> 魚探の表示切替、<b>V</b> 視点切替（操船 → 作業 → 甲板を歩く）、<b>1 / 2 / 3</b> 時間の早さ、<b>P</b> 一時停止</li>
-  <li><b>印</b>：<b>M</b> で現在地に印。魚探・サイドビュー・ソナーの画面をタップ（クリック）すると、その反応の位置に印。<b>K</b>（海図の「印」）で印の一覧：名前・メモ・消す・海図で見る・「ここへ」（その印へまっすぐ移動）。印は帰港すると残り、翌日以降の海図と港の海図にも出ます。</li>
-  <li><b>海面の手掛かり</b>：朝のうちはベイトが浮いて<b>鳥山</b>ができ、下で青物やサワラが追っていると<b>ナブラ</b>（水しぶき）が立ちます。潮が速い時間は駆け上がりや瀬の肩に<b>潮目</b>が出ます。見えると見張りが知らせます（M で印を付けておけます）。</li>
-  <li><b>N</b> 音の大きさ（中→大→なし→小。画面下の「音」ボタンでも）。音は最初に画面に触れたときから鳴ります。</li>
-  <li><b>O</b> ソナー（積んでいるとき）。魚探パネルの「左右」でサイドビュー（サイドビュー魚探のとき）。</li>
-  <li><b>甲板を歩く</b>：W/S で前後、A/D で向き。画面の持ち場ボタン（操舵席・右舷・船尾・魚倉など）で移動。操業中は釣り人が持ち場で作業するので歩けません。歩いても海や漁獲は変わりません。</li>
-  <li><b>スマホ</b>：画面下のボタンで同じ操作ができます。舵のボタンは押している間だけ効きます。曳縄の航路は、海図の「拡大」を押してから海図をタップ。</li></ul>
-  <p class="note">探す・決めるのはあなた、作業は自動。一本釣りは魚探の反応の潮上で止まって流す。曳縄は群れがいそうな場所を通る航路を決める（自動航行は決めた航路を走るだけで、魚を探しに行くことはありません）。表示の切替で海や魚が変わることはありません。</p>
-  <div class="actions"><button type="button" class="btn primary" data-act="closeModal">閉じる</button><button type="button" class="btn" data-act="guideReset">はじめての案内をもう一度出す</button></div></div>`;
-}
-
 /** Port, before the very first voyage: what the day looks like, in three lines. */
 export function firstDayCard() {
   return `<div class="card first-day"><h2>はじめての出港</h2><ol>
     <li><b>港</b>：下の候補（A〜C）は、仲間の話と自分の記録から作った「今日の狙い」です。どれかの「狙って出港」か「狙いを決めずに出港」を押します。</li>
     <li><b>海</b>：魚探で群れの反応を探し、潮上で止まって「操業開始」。釣る作業は自動です。海でも案内が出ます。</li>
     <li><b>帰港</b>：港に着くと自動で水揚げ・精算して保存します。</li></ol>
-    <div class="actions"><button type="button" class="btn small" data-act="help">操作説明</button><button type="button" class="btn small" data-act="guideOff">案内を出さない</button></div></div>`;
+    <div class="actions"><button type="button" class="btn small" data-act="help">手引きを読む</button><button type="button" class="btn small" data-act="guideOff">案内を出さない</button></div></div>`;
 }
 
 // ---------------------------------------------------------------- the player's marks (印)
