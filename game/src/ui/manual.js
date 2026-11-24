@@ -3,7 +3,7 @@
 // season of each fish, how it feeds), and the sounder pictures are drawn with
 // the game's own sounder (echoExamples.js), so the manual never drifts from
 // the game. It only reads data; it never touches the simulation.
-import { SPECIES, SEASONALITY, FEEDING, METHODS, EQUIPMENT, LONGLINE_LINES, PEERS } from '../core/data.js';
+import { SPECIES, SEASONALITY, FEEDING, METHODS, EQUIPMENT, LONGLINE_LINES, PEERS, ORDERS } from '../core/data.js';
 import { WATER_TEMP_MONTHLY } from '../core/sea.js';
 import { ECHO_EXAMPLES } from './echoExamples.js';
 
@@ -183,7 +183,12 @@ export const MANUAL_CHAPTERS = [
   {
     id: 'money',
     title: 'お金と船',
-    body: () => `<ul><li>帰港すると魚を売り、氷・餌の定額・燃料（走った距離）・甲板員の日当・失くしたジグの代金を払います。「収支」で日ごと・漁法ごとの稼ぎが見られます。</li>
+    body: () => `<ul><li><b>難易度</b>（始めるときに選ぶ・あとから変えられない）：やさしい・ふつう・きびしい。違うのは魚の値段・経費・装備や船の値段・始めの資金だけで、海と魚は同じです。</li>
+    <li><b>相場</b>：魚の値段は日ごとに動きます。旬で量の多い魚は安く、少ない魚や時化の翌日は高め。港の「相場と注文」で昨日の値段が見られます。同じ魚を一度にたくさん揚げると、1kgあたりの値が下がります。</li>
+    <li><b>注文</b>：毎朝、仲買さんや料理屋さんから「○○を何kg、何日までに」の注文が出ます。受けると、その量までは上乗せの値段で買い取られます。同時に${ORDERS.maxActive}件まで。間に合わなくても罰はありません。</li>
+    <li><b>図鑑と大物記録</b>（港の「図鑑」）：獲った魚と、いちばん大きい1尾。魚は1尾ずつ重さが違い、まれに大物がいます。</li>
+    <li><b>1年の振り返り</b>：60日ごと（新しい年の最初の朝）に、その年の稼ぎ・季節ごとの成績・よく獲れた魚・大物を前の年と比べて見せます。「収支」からいつでも見返せます。ゲームに終わりはありません。</li>
+    <li>帰港すると魚を売り、氷・餌の定額・燃料（走った距離）・甲板員の日当・失くしたジグの代金を払います。「収支」で日ごと・漁法ごとの稼ぎが見られます。</li>
     <li>装備は港の「装備」で買って取り付けます。外した装備は倉庫に残り、売ることもできます。</li>
     <li>船は「船の買い替え」で新艇・中古艇を選べます（今の船は下取り）。中型漁船は魚倉が大きく、沖の瀬まで行けます。</li>
     <li>資金が足りなくても出漁はできます（払えない分は免除）。</li></ul>`,
