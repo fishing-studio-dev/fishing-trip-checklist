@@ -937,8 +937,39 @@ export const CREW = {
 // bought, each laid on its own (separate places, separate soaks).
 export const LONGLINE_LINES = { max: 3, extraPrice: 8000 };
 
+// ---- 難易度（R05）: chosen when a new game starts and fixed for that save. ----
+// Only the money changes — the sea, the fish, their bite and the weather are
+// the same at every level. price: what the fish fetch; cost: ice, bait, fuel,
+// the deckhand; gear: equipment, boats, lines, jigs (and what they sell for).
+export const DIFFICULTY = {
+  easy: { id: 'easy', name: 'やさしい', price: 1.2, cost: 0.75, gear: 0.8, startFunds: 30000, desc: '魚が高く売れ、経費と装備が安い。のんびり漁師を楽しみたい人向け。' },
+  normal: { id: 'normal', name: 'ふつう', price: 1, cost: 1, gear: 1, startFunds: 10000, desc: '釣れない日は赤字。腕と判断で少しずつ船と装備を良くしていく。' },
+  hard: { id: 'hard', name: 'きびしい', price: 0.85, cost: 1.3, gear: 1.25, startFunds: 3000, desc: '相場が安く経費がかさむ。漁場と漁法の選び方が暮らしに直結する。' },
+};
+
+// ---- 相場（R19・本作設定） ----
+// The price of a fish moves from day to day: plentiful (in season) fish sell
+// cheaper, scarce ones dearer, and after a rough day (few boats out) prices
+// rise. One day's market only takes so much of one fish at the full price:
+// beyond `depthKg` the price per kg falls step by step (tiers).
+export const MARKET = {
+  seasonSwing: 0.3, // in-season fish up to 15% cheaper, out-of-season up to 15% dearer
+  dailySwing: 0.12, // the day-to-day wobble (smooth across days: yesterday's board hints at today)
+  afterRough: 1.15, // the day after a rough day
+  tiers: [1, 0.8, 0.6, 0.45], // price for each successive `depthKg` of one fish sold the same day
+  depthKg: { aji: 50, isaki: 30, masaba: 60, sawara: 40, shiira: 60, yokowa: 40, madai: 30, akaamadai: 12, shiroamadai: 6, kasago: 10, kijihata: 8, akahata: 8, oomonhata: 10, ara: 15, buri: 80, hiramasa: 60, kanpachi: 50, kensaki: 25, yari: 25 },
+};
+
+// ---- 注文（R02）: requests from the market and the cooks — take them or not. ----
+export const ORDERS = {
+  maxActive: 3, // accepted and not yet done
+  perDay: [1, 3], // offered each morning
+  days: [1, 3], // days to deliver (including today)
+  bonus: [0.25, 0.6], // added to the market price for the ordered kg
+};
+
 export const ECONOMY = {
-  startFunds: 5000,
+  startFunds: 10000, // the 「ふつう」 start (DIFFICULTY.normal.startFunds)
   currency: 'G',
   tripBaseCost: 300, // 氷・餌など1航海の定額
   fuelPerKm: 40, // under power (default; boats set their own)

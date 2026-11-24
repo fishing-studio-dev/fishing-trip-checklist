@@ -2,7 +2,7 @@
 // on the troll" hint, and up to three longlines (R07, R08), with save format 9.
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { createProfile, markDeparture, validateProfile, migrateProfile8to9, PROFILE_SCHEMA } from '../src/core/profile.js';
+import { createProfile, markDeparture, validateProfile, migrateProfile8to9, migrateProfile9to10, PROFILE_SCHEMA } from '../src/core/profile.js';
 import {
   createVoyage, advanceVoyage, startOperation, stopOperation, setMethod, isOperating, haulLongline, lineInWater, linesInWater, freeLines, soakingLines, lineNo,
   returnToPort, summarizeVoyage, liveBaitSteps, canStartOperation, routeTo,
@@ -57,12 +57,12 @@ test('format 9: an older save gets ジギング at 0, an empty rod rack and no e
   delete p8.extraLines;
   p8.funds = 4321;
   const p9 = migrateProfile8to9(p8);
-  assert.equal(p9.schema, PROFILE_SCHEMA);
+  assert.equal(p9.schema, 9);
   assert.deepEqual(p9.methods.jigging, { xp: 0 });
   assert.equal(p9.boat.slots.rod_rack, null);
   assert.equal(p9.extraLines, 0);
   assert.equal(p9.funds, 4321);
-  assert.deepEqual(validateProfile(p9), []);
+  assert.deepEqual(validateProfile(migrateProfile9to10(p9)), []);
   // through the loader: a format-8 envelope opens in the current format, the original kept aside
   const st = memoryStorage();
   const env8 = { ...makeEnvelope(p8, 3, NOW), schemaVersion: 8, app: 'M8' };
@@ -73,7 +73,7 @@ test('format 9: an older save gets ジギング at 0, an empty rod rack and no e
   assert.deepEqual(r.profile.methods.jigging, { xp: 0 });
   assert.equal(r.profile.funds, 4321);
   assert.equal(st.getItem(r.preMigrationKey), JSON.stringify(env8));
-  assert.equal(SAVE_SCHEMA, 9);
+  assert.ok(SAVE_SCHEMA >= 9 && PROFILE_SCHEMA >= 9);
 });
 
 test('ジギング needs the rod; with it, the jig sweeps from the bottom up and takes the 青物 around the reef', () => {

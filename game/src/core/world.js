@@ -1,7 +1,7 @@
 // World state: game time, the day's conditions and fish schools.
 // One shared state feeds the sounder, the catch and the logs (A05).
 import { SPECIES, FEEDING, TIDE_PERIOD, ECHO } from './data.js';
-import { createRng, rngNext, noise1 } from './rng.js';
+import { createRng, rngNext, noise1, hashFloat } from './rng.js';
 import { dayPlan } from './season.js';
 import { depthAt, makeDayConditions, currentAt } from './sea.js';
 import { dayTimes, daylightAt, twilightAt } from './calendar.js';
@@ -300,7 +300,14 @@ export function takeFish(world, schoolIndex) {
   }
   if (s.counts[size] <= 0) size = SPECIES[s.species].sizeOrder.find((k) => s.counts[k] > 0);
   s.counts[size] -= 1;
-  return { schoolId: s.id, species: s.species, size, kg: SPECIES[s.species].sizes[size].kg, rid: world.nextReservation++ };
+  // the fish's own weight (大物記録): around its size's weight, now and then a big one among the large.
+  // From a hash of the reservation number — no random draw, so the sea and the catch are unchanged.
+  const kg = SPECIES[s.species].sizes[size].kg;
+  const seed = world.cond.seed || 0;
+  const rid = world.nextReservation;
+  let w = kg * (0.82 + 0.36 * hashFloat(seed, world.cond.day || 0, rid, 9001));
+  if (size === 'l' && hashFloat(seed, world.cond.day || 0, rid, 9002) < 0.06) w = kg * (1.35 + 0.5 * hashFloat(seed, world.cond.day || 0, rid, 9003));
+  return { schoolId: s.id, species: s.species, size, kg, w: Math.round(w * 100) / 100, rid: world.nextReservation++ };
 }
 
 /** Give a reserved fish back (e.g. if a hooked fish is released). */

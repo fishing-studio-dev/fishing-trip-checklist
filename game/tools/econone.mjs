@@ -1,7 +1,7 @@
 // Balance check: average daily earnings of one method (see tools/econbot.mjs).
-// Usage: node tools/econone.mjs <handline|negyo|oyogase|troll|longline|ika> <days, e.g. 10,11,12> [level]
+// Usage: node tools/econone.mjs <handline|negyo|oyogase|jigging|troll|longline|ika> <days, e.g. 10,11,12> [level]
 import { runDay } from './econbot.mjs';
-const SL = { handline: {}, negyo: {}, oyogase: {}, troll: { stern_troll: 'troll_tr1' }, longline: { stern_troll: 'longline_ll1' }, ika: { roof_lights: 'lights_ld1' } };
+const SL = { handline: {}, negyo: {}, oyogase: {}, troll: { stern_troll: 'troll_tr1' }, longline: { stern_troll: 'longline_ll1' }, ika: { roof_lights: 'lights_ld1' }, jigging: { rod_rack: 'rod_jg1' } };
 const [m, daysArg, lv] = process.argv.slice(2);
 const days = daysArg.split(',').map(Number);
 const level = Number(lv || 1);

@@ -1,11 +1,11 @@
 // Persistent player progress (what the save file holds).
 // The live sea (WorldState) is NOT part of this; it is regenerated per voyage.
-import { ECONOMY, START_PROFILE, BOATS, EQUIPMENT, METHODS, fits } from './data.js';
+import { START_PROFILE, BOATS, EQUIPMENT, METHODS, DIFFICULTY, fits } from './data.js';
 import { emptyBathy } from './bathy.js';
 
-export const PROFILE_SCHEMA = 9;
+export const PROFILE_SCHEMA = 10;
 
-export function createProfile({ worldSeed, now = new Date().toISOString() } = {}) {
+export function createProfile({ worldSeed, now = new Date().toISOString(), difficulty = 'normal' } = {}) {
   const seed = worldSeed != null ? worldSeed >>> 0 : (Math.floor(Math.random() * 0xffffffff) >>> 0);
   let seq = 0;
   const inst = (itemId) => ({ uid: `eq${++seq}`, itemId });
@@ -15,10 +15,14 @@ export function createProfile({ worldSeed, now = new Date().toISOString() } = {}
     schema: PROFILE_SCHEMA,
     createdAt: now,
     worldSeed: seed,
-    funds: ECONOMY.startFunds,
+    difficulty: DIFFICULTY[difficulty] ? difficulty : 'normal', // 難易度（R05）: fixed for this save
+    funds: (DIFFICULTY[difficulty] || DIFFICULTY.normal).startFunds,
     day: 0, // number of days started
     methods: { handline: { xp: 0 }, troll: { xp: 0 }, longline: { xp: 0 }, negyo: { xp: 0 }, oyogase: { xp: 0 }, ika: { xp: 0 }, jigging: { xp: 0 } },
     extraLines: 0, // 延縄: lines bought beyond the one that comes with the gear (R07)
+    orders: [], // 注文: accepted and not yet done {id, species, kg, filledKg, bonus, lastDay, from}
+    records: {}, // 図鑑と大物記録: per fish {firstDay, firstArea, count, kg, max: {w, day, area, size}}
+    years: { reviewed: 0 }, // the last year whose 振り返り has been shown
     boat: { uid: 'boat1', model: START_PROFILE.boatModel, name: START_PROFILE.boatName, slots },
     storage: [],
     equipSeq: seq,
@@ -35,6 +39,32 @@ export function createProfile({ worldSeed, now = new Date().toISOString() } = {}
     marks: [], // the player's own marks, kept across days: {id, x, y, name, memo, day, t, kind, depth}
     markSeq: 0,
   };
+}
+
+/**
+ * Schema 9 -> 10 (第2期・段4): the difficulty of a save made before it is 「ふつう」;
+ * no orders yet; the records start from the catch logged so far (count and kg,
+ * no biggest — fish had no weight of their own before); no year reviewed.
+ */
+export function migrateProfile9to10(p9) {
+  const p = clone(p9);
+  p.schema = 10;
+  p.difficulty = DIFFICULTY[p.difficulty] ? p.difficulty : 'normal';
+  p.orders = Array.isArray(p.orders) ? p.orders : [];
+  if (!p.records || typeof p.records !== 'object') {
+    p.records = {};
+    for (const l of p.logs || []) {
+      const tables = l.bySpecies ? Object.entries(l.bySpecies) : [[l.species || 'aji', l.catches || {}]];
+      for (const [sp, c] of tables) {
+        const n = (c.s || 0) + (c.m || 0) + (c.l || 0);
+        if (!n) continue;
+        const r = (p.records[sp] = p.records[sp] || { firstDay: l.day || null, firstArea: l.area || null, count: 0, kg: 0, max: null });
+        r.count += n;
+      }
+    }
+  }
+  p.years = p.years && typeof p.years.reviewed === 'number' ? p.years : { reviewed: Math.floor(Math.max(0, p.day - 1) / 60) };
+  return p;
 }
 
 /**
@@ -196,6 +226,8 @@ export function validateProfile(p) {
   if (!p.bathy || typeof p.bathy.tiles !== 'object' || !Array.isArray(p.marks) || typeof p.markSeq !== 'number') errs.push('海図の記録（水深・印）が不正です');
   if (!Array.isArray(p.ledger)) errs.push('収支の記録がありません');
   if (typeof p.extraLines !== 'number' || p.extraLines < 0 || p.extraLines > 2) errs.push('延縄の縄の数が不正です');
+  if (!DIFFICULTY[p.difficulty]) errs.push('難易度が不正です');
+  if (!Array.isArray(p.orders) || !p.records || typeof p.records !== 'object' || !p.years || typeof p.years.reviewed !== 'number') errs.push('注文・図鑑・振り返りの記録が不正です');
   if (!Array.isArray(p.storage)) errs.push('storage が配列ではありません');
   else for (const s of p.storage) if (!s || !EQUIPMENT[s.itemId]) errs.push('倉庫に未知の装備');
   if (!Array.isArray(p.logs)) errs.push('logs が配列ではありません');

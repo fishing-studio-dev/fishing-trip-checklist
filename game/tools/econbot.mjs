@@ -9,6 +9,7 @@ const { currentAt, STRUCTURES, depthAt } = await import(G + 'sea.js');
 const { PROGRESSION, TIME } = await import(G + 'data.js');
 
 const NOW = '2026-11-24T00:00:00.000Z';
+const SPECIES_ROAM = ['buri', 'hiramasa', 'kanpachi'];
 
 function profileFor({ seed, day, level, boat, slots }) {
   const p = createProfile({ worldSeed: seed, now: NOW });
@@ -17,7 +18,7 @@ function profileFor({ seed, day, level, boat, slots }) {
   p.boat.model = boat;
   const base = boat === 'cruiser_2'
     ? { helm_sounder: 'sounder_es2', starboard_reel: 'reel_electric', port_reel: 'reel_electric', stern_troll: null, deck_longline: null, starboard_hauler: null, hull_sonar: null, roof_lights: null }
-    : { helm_sounder: 'sounder_es1', starboard_reel: 'reel_hand', stern_troll: null, starboard_hauler: null, roof_lights: null };
+    : { helm_sounder: 'sounder_es1', starboard_reel: 'reel_hand', stern_troll: null, starboard_hauler: null, roof_lights: null, rod_rack: null };
   const all = { ...base, ...slots };
   let n = 0;
   p.boat.slots = Object.fromEntries(Object.entries(all).map(([k, id]) => [k, id ? { uid: `b${++n}`, itemId: id } : null]));
@@ -105,6 +106,16 @@ const PLAYS = {
       adv(v, 2700); // soak
       V.haulLongline(v);
       for (let i = 0; i < 7200 && (V.isOperating(v) || v.autopilot); i += 5) adv(v, 5);
+    }
+  },
+  jigging(v, endT) {
+    V.setMethod(v, 'jigging');
+    while (v.world.time < endT) {
+      const b = best(v, (s) => SPECIES_ROAM.includes(s.species));
+      if (!b) break;
+      goto(v, b.c.x, b.c.y);
+      if (!fishFor(v, 1200)) adv(v, 300);
+      if (V.roomKg(v) < 12) break;
     }
   },
   ika(v, endT) {

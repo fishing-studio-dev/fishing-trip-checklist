@@ -532,10 +532,14 @@ function takeLiveBait(v, species) {
 }
 
 function landFish(v, fish) {
+  if (!v.best) v.best = {};
   for (const f of fish) {
     v.hold.counts[f.species][f.size] += 1;
     v.hold.kg += f.kg;
     v.hold.count += 1;
+    // the biggest of each fish this voyage (大物記録), with where and when
+    const w = f.w || f.kg;
+    if (!v.best[f.species] || w > v.best[f.species].w) v.best[f.species] = { w, size: f.size, x: Math.round(v.boat.x), y: Math.round(v.boat.y), t: Math.round(v.world.time), area: areaNameAt(v.boat.x, v.boat.y) };
   }
   emit(v, { type: 'landed', fish: fish.map((f) => ({ species: f.species, size: f.size, kg: f.kg })) });
 }
@@ -1233,6 +1237,7 @@ export function summarizeVoyage(v) {
     crewWage: v.crew ? CREW.wage : 0,
     baitUsed: v.baitUsed ? JSON.parse(JSON.stringify(v.baitUsed)) : {},
     jigsLost: v.logs.reduce((a, l) => a + (l.jigsLost || 0), 0),
+    best: v.best ? JSON.parse(JSON.stringify(v.best)) : {},
     jigPrice: EQUIPMENT.rod_jg1.rod.jigPrice,
     night: !!v.night,
     bathyCells: v.bathy ? v.bathy.cells : {},
