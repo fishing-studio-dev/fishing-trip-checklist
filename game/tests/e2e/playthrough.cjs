@@ -929,11 +929,12 @@ const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
     await pg.waitForSelector('#nightTrip');
     await pg.check('#nightTrip');
     await pg.waitForSelector('#portChart');
-    check('イカ: with the lamp fitted, port offers leaving in the evening (16:00, home by 23:00)', /夕方から出る/.test(confL) && /夕方16:00 出港（イカ釣り）/.test(await pg.textContent('h1')));
+    check('イカ: with the lamp fitted, port offers leaving in the evening (an hour before sunset, home late at night)', /夕方から出る/.test(confL) && /夕方\d\d:\d\d 出港（イカ釣り）/.test(await pg.textContent('h1')));
     await pg.click('[data-act=depart]');
     await waitFor((x) => x.screen === 'sea', 'at sea (イカ)');
     const t0 = await pg.evaluate(() => window.__ryoshi.app.voyage.world.time);
-    check('イカ: the evening trip starts at 16:00', Math.abs(t0 - 16 * 3600) < 5, `${t0}`);
+    const nightHours = await pg.evaluate(() => { const v = window.__ryoshi.app.voyage; return { sunset: v.world.cond.sun.sunset, depart: v.world.cond.sun.night.depart, end: v.endT }; });
+    check('イカ: the evening trip starts an hour before sunset (R18)', Math.abs(t0 - nightHours.depart) < 5 && nightHours.sunset - t0 >= 2400 && nightHours.sunset - t0 <= 4200 && nightHours.end > nightHours.sunset + 3 * 3600, JSON.stringify({ t0, ...nightHours }));
     // to the nearest squid within the small boat's zone (dev: read only to head there)
     const sq = await pg.evaluate(() => window.__ryoshi.schoolCenters().filter((s) => s.species === 'kensaki' || s.species === 'yari').sort((a, b) => a.y - b.y)[0]);
     await press('c');
