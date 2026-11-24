@@ -20,7 +20,7 @@ import { linePhaseLabel, recentPace } from '../core/fishing.js';
 import { fmtClock, compass8, areaNameAt, currentAt, makeDayConditions, forecastOf, visibilityAt } from '../core/sea.js';
 import { levelFromXp } from '../core/progress.js';
 import { calendarOf, dayTimes } from '../core/calendar.js';
-import { schoolCenter } from '../core/world.js';
+import { schoolCenter, tidePhase } from '../core/world.js';
 import { buildStaticMap, drawChart, drawBriefingChart, chartToWorld, worldToChart, bathyCanvas, CHART_SPANS } from './chart.js';
 import { drawSideView, sideViewHit } from './sideView.js';
 import { markList, editSavedMark, removeSavedMark, MARK_KINDS, MARK_LIMITS } from '../core/marks.js';
@@ -1727,6 +1727,16 @@ function bigNums(items) {
   return `<div class="op-big">${items.map(([k, val, unit, sub]) => `<div><span class="k">${k}</span><b>${val}<small>${unit}</small></b>${sub ? `<span class="s">${sub}</span>` : ''}</div>`).join('')}</div>`;
 }
 
+/** 潮（R: 潮表）: where the stream runs, how fast, and its phase — what the fish on a reef answer to. */
+function tideLabel(v) {
+  const t = v.world.time;
+  const c = currentAt(v.world.cond, t);
+  const tp = tidePhase(v.world.cond, t);
+  const kt = Math.hypot(c.x, c.y) * 1.944;
+  const phase = tp.slack > 0.5 ? '止まり' : tp.running > 0.5 ? '効いている' : tp.rising ? '動き始め' : '緩み始め';
+  return tp.slack > 0.5 ? `潮止まり ${kt.toFixed(1)}kt` : `${compass8(c.x, c.y)}へ ${kt.toFixed(1)}kt（${phase}）`;
+}
+
 let hudAt = 0;
 function updateHud(now) {
   const v = app.voyage;
@@ -1747,6 +1757,7 @@ function updateHud(now) {
   html += chip('船首', `<svg class="hdg-arrow" viewBox="0 0 10 10" style="transform:rotate(${hdg}deg)" aria-hidden="true"><path d="M5 0.5 L9 9.5 L5 7 L1 9.5 Z"/></svg>${String(hdg).padStart(3, '0')}° ${compass8(Math.sin(b.heading), Math.cos(b.heading))}`, 'hdg');
   if (!opMode) html += chip('対地', `${(sog * 1.944).toFixed(1)}kt ${sog > 0.05 ? compass8(b.vx, b.vy) : ''}`);
   html += chip('水深', last ? `${last.bottom.toFixed(1)}m` : '--');
+  html += chip('潮', tideLabel(v));
   html += chip('場所', S.esc(areaNameAt(b.x, b.y)));
   if (!opMode) {
     html += chip('漁法', METHODS[v.method].name);

@@ -5,22 +5,63 @@
 // Everything is a pure function of (worldSeed, day) — no stored world state.
 import { SEASON_SCRIPT, SPECIES, MOODS } from './data.js';
 import { hashFloat, hashString } from './rng.js';
-import { makeDayConditions, STRUCTURES, areaNameAt, depthAt } from './sea.js';
+import { makeDayConditions, STRUCTURES, FEATURES, areaNameAt, depthAt } from './sea.js';
 import { abundanceOf, bigShareOf } from './almanac.js';
 import { calendarOf } from './calendar.js';
 
 // Places where マアジ schools tend to hold in this fictional sea (game setting).
 export const HABITATS = [
-  { id: 'kita_e', area: '北の瀬', x: 2190, y: 2270, drift: [2120, 2330], weight: 1.0, big: 0.35 },
-  { id: 'kita_s', area: '北の瀬', x: 1990, y: 2030, drift: [2040, 2110], weight: 1.0, big: 0.3 },
-  { id: 'kita_w', area: '北の瀬', x: 1800, y: 2300, drift: [1880, 2240], weight: 0.8, big: 0.3 },
-  { id: 'nishi', area: '西の根', x: 640, y: 1240, drift: [700, 1330], weight: 0.9, big: 0.25 },
+  { id: 'kita_e', hold: 'kita', area: '北の瀬', x: 2190, y: 2270, drift: [2120, 2330], weight: 1.0, big: 0.35 },
+  { id: 'kita_s', hold: 'kita', area: '北の瀬', x: 1990, y: 2030, drift: [2040, 2110], weight: 1.0, big: 0.3 },
+  { id: 'kita_w', hold: 'kita', area: '北の瀬', x: 1800, y: 2300, drift: [1880, 2240], weight: 0.8, big: 0.3 },
+  { id: 'nishi', hold: 'nishi', area: '西の根', x: 640, y: 1240, drift: [700, 1330], weight: 0.9, big: 0.25 },
   { id: 'higashi_s', area: '東の駆け上がり', x: 2460, y: 1450, drift: [2470, 1650], weight: 0.8, big: 0.2 },
   { id: 'higashi_n', area: '東の駆け上がり', x: 2480, y: 2000, drift: [2450, 1850], weight: 0.6, big: 0.2 },
   { id: 'minami', area: '南の浅場', x: 1050, y: 700, drift: [1150, 760], weight: 0.6, big: 0.05 },
   // 沖の瀬 (M5): far, lightly fished — bigger schools with more large fish (game setting)
-  { id: 'okise', area: '沖の瀬', x: 1650, y: 4080, drift: [1740, 3990], weight: 1.2, big: 0.5, rich: 1.5, far: true },
+  { id: 'okise', hold: 'okise', area: '沖の瀬', x: 1650, y: 4080, drift: [1740, 3990], weight: 1.2, big: 0.5, rich: 1.5, far: true },
 ];
+
+// 潮表（本作設定・漁の基本に沿う）: where the tidal stream meets a reef it is
+// pushed up the slope; plankton gathers on that face, the bait (イワシ・アジ)
+// feeds there and the big fish follow the bait. Fish tied to a reef sit on
+// its up-current face while the stream runs, cross over the top around slack
+// water, and go to the other face when the tide turns (world.js holdOffset).
+// face: how far from the reef's centre that face lies (m).
+const ne = (id) => STRUCTURES.find((st) => st.id === id);
+export const HOLDS = {
+  kita: { id: 'kita', area: '北の瀬', x: FEATURES.kitaNoSe.x, y: FEATURES.kitaNoSe.y, face: Math.round(FEATURES.kitaNoSe.r * 0.78) },
+  nishi: { id: 'nishi', area: '西の根', x: FEATURES.nishiNoNe.x, y: FEATURES.nishiNoNe.y, face: Math.round(FEATURES.nishiNoNe.r * 0.8) },
+  okise: { id: 'okise', area: '沖の瀬', x: FEATURES.okiNoSe.x, y: FEATURES.okiNoSe.y, face: Math.round(FEATURES.okiNoSe.r * 0.78) },
+  n1: { id: 'n1', x: ne('n1').x, y: ne('n1').y, face: ne('n1').r + 15 },
+  n2: { id: 'n2', x: ne('n2').x, y: ne('n2').y, face: ne('n2').r + 15 },
+  n3: { id: 'n3', x: ne('n3').x, y: ne('n3').y, face: ne('n3').r + 15 },
+};
+// the stream's axis (flood toward NE, ebb toward SW: sea.js makeDayConditions)
+const FLOOD = { x: Math.sin((40 * Math.PI) / 180), y: Math.cos((40 * Math.PI) / 180) };
+
+/**
+ * Tie a school to a reef: its own place is kept across the stream (schools
+ * line up along the face), the part along the stream is replaced by the
+ * tide's swing from face to face. The morning drift and wide circling stop.
+ * `share`: how far toward the face it goes (1 = right on it).
+ */
+export function holdToReef(school, holdId, share = 1, maxOrbit = 25) {
+  const h = HOLDS[holdId];
+  if (!h) return school;
+  const rx = school.a.x - h.x;
+  const ry = school.a.y - h.y;
+  const along = rx * FLOOD.x + ry * FLOOD.y;
+  // across the stream, kept within the face (a reef's face is about as wide as the reef)
+  const lat = Math.max(-h.face, Math.min(h.face, 0.6 * (rx * FLOOD.y - ry * FLOOD.x)));
+  void along;
+  const base = { x: h.x + lat * FLOOD.y, y: h.y - lat * FLOOD.x };
+  school.a = base;
+  school.b = { ...base };
+  school.orbitR = Math.min(school.orbitR || 0, maxOrbit);
+  school.holdTo = { id: h.id, x: h.x, y: h.y, face: Math.round(h.face * share) };
+  return school;
+}
 
 // Open-water zones where サワラ waves pass (game setting).
 export const SAWARA_ZONES = [
@@ -33,11 +74,11 @@ export const SAWARA_ZONES = [
 export const MADAI_GROUNDS = [
   { id: 'hira', area: '沖の平場', x: 1150, y: 1900, spread: 300, weight: 0.85 },
   { id: 'kake', area: '東の駆け上がり', x: 2470, y: 1250, spread: 220, weight: 0.8 },
-  { id: 'nishi', area: '西の根', x: 820, y: 1520, spread: 150, weight: 0.6 },
+  { id: 'nishi', hold: 'nishi', area: '西の根', x: 820, y: 1520, spread: 150, weight: 0.6 },
   // only in the 乗っ込み season (warming water): マダイ gather on the flank of 北の瀬
-  { id: 'kita', area: '北の瀬', x: 2150, y: 2060, spread: 180, weight: 0, nokkomi: true },
+  { id: 'kita', hold: 'kita', area: '北の瀬', x: 2150, y: 2060, spread: 180, weight: 0, nokkomi: true },
   // 沖の瀬 (M5): around the far reef, more large fish
-  { id: 'okise', area: '沖の瀬', x: 1560, y: 3930, spread: 260, weight: 0.9, big: 0.3, far: true },
+  { id: 'okise', hold: 'okise', area: '沖の瀬', x: 1560, y: 3930, spread: 260, weight: 0.9, big: 0.3, far: true },
 ];
 
 // 根魚（本作設定）: how many live on each kind of small structure (a range; the
@@ -106,11 +147,11 @@ export function reefSchools(seed, d) {
 // 青物（本作設定）: grounds they roam around (reefs, pinnacles, the far reef), and
 // open-water zones where bait (イワシ) schools pass. Away from the アジ grounds.
 export const BLUE_GROUNDS = [
-  { id: 'n1', x: 1500, y: 2200, spread: 120 },
-  { id: 'n2', x: 2700, y: 2300, spread: 120 },
-  { id: 'kita_kata', x: 2250, y: 2480, spread: 160 },
-  { id: 'okise', x: 1650, y: 4050, spread: 200, rich: 1.5 },
-  { id: 'n3', x: 1900, y: 3800, spread: 120 },
+  { id: 'n1', hold: 'n1', x: 1500, y: 2200, spread: 120 },
+  { id: 'n2', hold: 'n2', x: 2700, y: 2300, spread: 120 },
+  { id: 'kita_kata', hold: 'kita', x: 2250, y: 2480, spread: 160 },
+  { id: 'okise', hold: 'okise', x: 1650, y: 4050, spread: 200, rich: 1.5 },
+  { id: 'n3', hold: 'n3', x: 1900, y: 3800, spread: 120 },
 ];
 export const BAIT_ZONES = [
   { id: 'oki', x: 1350, y: 1700, spread: 300 },
@@ -118,6 +159,36 @@ export const BAIT_ZONES = [
   { id: 'okise_oki', x: 1450, y: 3650, spread: 250 },
   { id: 'higashi_oki', x: 2750, y: 2050, spread: 200 },
 ];
+
+// ベイトの溜まる瀬（本作設定）: in the bait season, イワシ gather over the
+// up-current face of the reefs to feed on what the stream brings up the slope,
+// and the reef's 青物 stay under them (blueSchools).
+export const REEF_BAIT = ['kita', 'okise', 'nishi', 'n1', 'n2', 'n3'];
+
+function reefBait(seed, d, holdId, k) {
+  const h = HOLDS[holdId];
+  const r = (j) => hashFloat(seed, k, d, j, 541);
+  const n = Math.round(2000 + r(1) * 4000);
+  const ax = h.x + (r(2) - 0.5) * h.face * 0.8;
+  const ay = h.y + (r(3) - 0.5) * h.face * 0.8;
+  const school = {
+    id: `D${d}-rbait-${holdId}`,
+    species: 'iwashi',
+    habitat: `reef-${holdId}`,
+    area: h.area || areaNameAt(h.x, h.y),
+    a: { x: ax, y: ay },
+    b: { x: ax, y: ay },
+    orbitR: 15 + r(4) * 20,
+    orbitPeriod: (20 + r(5) * 20) * 60,
+    orbitPhase: r(6) * Math.PI * 2,
+    sigmaH: 28 + r(7) * 18,
+    sigmaZ: 2 + r(8) * 1.5,
+    depthBias: 5 + r(9) * 6, // deeper than the open-water bait: in the up-welling over the face
+    noiseSeed: Math.floor(r(10) * 1e9),
+    counts: splitCounts(n, 0.2, 0.4),
+  };
+  return holdToReef(school, holdId, 1.05, 20);
+}
 
 function baitSchool(seed, d, zone, k) {
   const zi = BAIT_ZONES.indexOf(zone);
@@ -192,13 +263,22 @@ export function blueSchools(seed, d) {
         sigmaH: 45 + hashFloat(seed, zi, d, 505) * 20,
         sigmaZ: 7,
         baitDepth: { depthBias: bait.depthBias, noiseSeed: bait.noiseSeed },
+        follows: bait.id,
         below: 4 + hashFloat(seed, zi, d, 506) * 4,
         noiseSeed: Math.floor(hashFloat(seed, zi, d, 507) * 1e9),
         counts: splitCounts(n, Math.min(0.6, 0.25 * bigShareOf(sp, d)), 0.4),
       });
     }
   });
-  // 青物 roaming around the reefs: multi-day stays
+  // bait over the reefs' up-current faces
+  const reefBaits = {};
+  const reefBaitP = 0.55 * Math.min(1, abundanceOf(seed, 'iwashi', d));
+  REEF_BAIT.forEach((hid, k) => {
+    if (hashFloat(seed, k, d, 542) > reefBaitP) return;
+    reefBaits[hid] = reefBait(seed, d, hid, k + 20);
+    out.push(reefBaits[hid]);
+  });
+  // 青物 around the reefs: multi-day stays, and visits to a reef that has bait
   BLUE_GROUNDS.forEach((g, gi) => {
     let start = 0;
     let ep = null;
@@ -210,14 +290,15 @@ export function blueSchools(seed, d) {
       }
       start += len;
     }
-    if (!ep || !ep.present) return;
+    const bait = g.hold ? reefBaits[g.hold] : null;
+    if (!(ep && ep.present) && !(bait && hashFloat(seed, gi, d, 524) < 0.4)) return;
     const species = blueSpecies(seed, d, gi);
     if (!species) return;
     const r = (j) => hashFloat(seed, gi, d, j, 531);
     const n = Math.round((6 + hashFloat(seed, gi, ep.i, 523) * 14) * (g.rich || 1));
     const cx = g.x + (r(1) - 0.5) * g.spread;
     const cy = g.y + (r(2) - 0.5) * g.spread;
-    out.push({
+    const school = {
       id: `D${d}-blue-${g.id}`,
       species,
       habitat: g.id,
@@ -232,7 +313,18 @@ export function blueSchools(seed, d) {
       depthFrac: species === 'kanpachi' ? 0.7 + r(7) * 0.15 : 0.5 + r(7) * 0.25, // カンパチ keep lower, close to the 根
       noiseSeed: Math.floor(r(8) * 1e9),
       counts: splitCounts(n, Math.min(0.6, (0.25 + (g.rich ? 0.1 : 0)) * bigShareOf(species, d)), 0.35),
-    });
+    };
+    if (bait) {
+      // under the bait on the up-current face, following it from face to face with the tide
+      school.a = { ...bait.a };
+      school.b = { ...bait.a };
+      school.orbitR = 20 + r(9) * 25;
+      school.baitDepth = { depthBias: bait.depthBias, noiseSeed: bait.noiseSeed };
+      school.follows = bait.id;
+      school.below = 3 + r(10) * 5;
+      school.holdTo = { ...bait.holdTo };
+    } else if (g.hold) holdToReef(school, g.hold, 1, 45); // no bait: patrolling the up-current side, deeper
+    out.push(school);
   });
   return out;
 }
@@ -292,11 +384,11 @@ export function squidSchools(seed, d) {
 // ---- 第2期の魚種（本作設定） ----
 // イサキ: on the tops of the high reefs and pinnacles, for a few days at a time.
 export const ISAKI_GROUNDS = [
-  { id: 'kita_top', area: '北の瀬', x: 2010, y: 2260, spread: 90, weight: 1.0 },
-  { id: 'n1', area: '沖の平場', x: 1500, y: 2200, spread: 30, weight: 0.7 },
-  { id: 'n2', area: '東の駆け上がり', x: 2700, y: 2300, spread: 30, weight: 0.7 },
-  { id: 'n3', area: '沖合', x: 1900, y: 3800, spread: 35, weight: 0.8 },
-  { id: 'okise_top', area: '沖の瀬', x: 1650, y: 4050, spread: 100, weight: 1.1, far: true },
+  { id: 'kita_top', hold: 'kita', area: '北の瀬', x: 2010, y: 2260, spread: 90, weight: 1.0 },
+  { id: 'n1', hold: 'n1', area: '沖の平場', x: 1500, y: 2200, spread: 30, weight: 0.7 },
+  { id: 'n2', hold: 'n2', area: '東の駆け上がり', x: 2700, y: 2300, spread: 30, weight: 0.7 },
+  { id: 'n3', hold: 'n3', area: '沖合', x: 1900, y: 3800, spread: 35, weight: 0.8 },
+  { id: 'okise_top', hold: 'okise', area: '沖の瀬', x: 1650, y: 4050, spread: 100, weight: 1.1, far: true },
 ];
 // マサバ: big schools crossing the open flats in mid water.
 export const MASABA_ZONES = [
@@ -347,7 +439,7 @@ function isakiSchools(seed, d) {
     if (ep.last) n *= 0.5;
     const cx = g.x + (r(1) - 0.5) * g.spread;
     const cy = g.y + (r(2) - 0.5) * g.spread;
-    out.push({
+    const school = {
       id: `D${d}-isaki-${g.id}`,
       species: 'isaki',
       habitat: g.id,
@@ -362,7 +454,9 @@ function isakiSchools(seed, d) {
       offBottomBias: (e(4) - 0.5) * 2,
       noiseSeed: Math.floor(r(8) * 1e9),
       counts: splitCounts(Math.round(n), 0.15 + e(5) * 0.15, 0.35),
-    });
+    };
+    // over the up-current shoulder of the reef top (潮表の肩)
+    out.push(g.hold ? holdToReef(school, g.hold, 0.6, 15) : school);
   });
   return out;
 }
@@ -542,7 +636,7 @@ export function ajiSchool(seed, d, habitatId, n, big, ep) {
   const r = (k) => hashFloat(seed, hi, ep, k);
   const day = (k) => hashFloat(seed, hi, d, k);
   const small = Math.max(0.05, 0.55 - big - r(7) * 0.2);
-  return {
+  const school = {
     id: `D${d}-${habitatId}`,
     species: 'aji',
     habitat: habitatId,
@@ -560,6 +654,8 @@ export function ajiSchool(seed, d, habitatId, n, big, ep) {
     noiseSeed: Math.floor(day(16) * 1e9),
     counts: splitCounts(n, big, small),
   };
+  // on a reef the アジ feed on the up-current face (潮表) and follow the tide from face to face
+  return h.hold ? holdToReef(school, h.hold, 1, 25) : school;
 }
 
 /** School spec for a サワラ school in a zone on day d. */
@@ -612,7 +708,7 @@ export function madaiSchool(seed, d, groundId, n, ep) {
   const ay = g.y + (r(3) - 0.5) * g.spread + (day(4) - 0.5) * 80;
   const ang = day(5) * Math.PI * 2;
   const run = 80 + day(6) * 180;
-  return {
+  const school = {
     id: `D${d}-madai-${groundId}`,
     species: 'madai',
     habitat: groundId,
@@ -630,6 +726,8 @@ export function madaiSchool(seed, d, groundId, n, ep) {
     noiseSeed: Math.floor(day(15) * 1e9),
     counts: splitCounts(n, 0.15, 0.3),
   };
+  // on a reef's flank they lean toward the up-current side (spread widely over the bottom)
+  return g.hold ? holdToReef(school, g.hold, 0.5, 40) : school;
 }
 
 function madaiSchools(seed, d) {

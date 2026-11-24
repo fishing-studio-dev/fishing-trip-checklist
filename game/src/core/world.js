@@ -21,6 +21,8 @@ export function createWorld(worldSeed, day, startTime, scenario = null) {
   } else {
     schools = dayPlan(worldSeed, day).schools.map(normalizeSchool);
   }
+  // fish tied to a reef follow this day's tidal stream from face to face (潮表)
+  for (const s of schools) if (s.holdTo && !s.tide) s.tide = { hw: cond.highWater, amp: cond.tideAmp, axis: cond.axis };
   return {
     time: startTime,
     step: 0,
@@ -64,14 +66,33 @@ export function schoolTotal(school) {
   return school.counts.s + school.counts.m + school.counts.l;
 }
 
+/**
+ * 潮表（本作設定）: how far a reef-tied school stands off its own place toward
+ * the face the stream meets. The tidal stream (sea.js currentAt) runs along
+ * one axis: while it runs the school sits on the up-current face; as it slows
+ * toward slack the school comes back over the reef, and after the turn it
+ * goes to the other face. A weak stream (小潮・長潮) pushes it less far.
+ */
+export function holdOffset(school, t) {
+  const h = school.holdTo;
+  const td = school.tide;
+  if (!h || !td) return { x: 0, y: 0 };
+  const sn = Math.sin((2 * Math.PI * (t - td.hw)) / TIDE_PERIOD);
+  const speed = td.amp * Math.abs(sn);
+  const u = Math.max(0, Math.min(1, (speed - 0.02) / 0.1));
+  const k = Math.sign(sn) * u * u * (3 - 2 * u);
+  return { x: -Math.sin(td.axis) * k * h.face, y: -Math.cos(td.axis) * k * h.face };
+}
+
 /** Horizontal centre of a school at game time t (continuous). */
 export function schoolCenter(school, t) {
   const u = Math.max(0, Math.min(1, (t - school.moveStart) / Math.max(1, school.moveEnd - school.moveStart)));
   const k = u * u * (3 - 2 * u);
   const ang = school.orbitPhase + (2 * Math.PI * t) / school.orbitPeriod;
+  const off = school.holdTo ? holdOffset(school, t) : { x: 0, y: 0 };
   return {
-    x: school.a.x + (school.b.x - school.a.x) * k + Math.cos(ang) * school.orbitR,
-    y: school.a.y + (school.b.y - school.a.y) * k + Math.sin(ang) * school.orbitR * 0.7,
+    x: school.a.x + (school.b.x - school.a.x) * k + Math.cos(ang) * school.orbitR + off.x,
+    y: school.a.y + (school.b.y - school.a.y) * k + Math.sin(ang) * school.orbitR * 0.7 + off.y,
   };
 }
 

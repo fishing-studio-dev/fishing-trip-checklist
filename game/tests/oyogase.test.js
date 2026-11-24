@@ -45,12 +45,13 @@ test('青物 follow the bait: a school under a bait school moves with it, a few 
   for (let d = 1; d <= 30 && checked < 3; d++) {
     const w = createWorld(77, d, 9 * 3600);
     for (const s of w.schools.filter((x) => x.baitDepth)) {
-      const bait = w.schools.find((x) => x.species === 'iwashi' && x.habitat === s.habitat);
-      const t = 9 * 3600;
-      const cb = schoolCenter(bait, t);
-      const cs = schoolCenter(s, t);
-      assert.ok(Math.hypot(cb.x - cs.x, cb.y - cs.y) < 60, 'together');
-      assert.ok(schoolPose(s, t).z > schoolPose(bait, t).z, 'below the bait');
+      const bait = w.schools.find((x) => x.id === s.follows);
+      for (const t of [7 * 3600, 9 * 3600, 13 * 3600]) {
+        const cb = schoolCenter(bait, t);
+        const cs = schoolCenter(s, t);
+        assert.ok(Math.hypot(cb.x - cs.x, cb.y - cs.y) < 60 + (s.orbitR || 0), `together (${s.id})`);
+        assert.ok(schoolPose(s, t, w).z > schoolPose(bait, t, w).z, 'below the bait');
+      }
       checked++;
     }
   }

@@ -8,7 +8,7 @@ import { PEERS, SPECIES, BRIEFING_T, METHODS } from './data.js';
 import { createWorld, schoolPose, schoolTotal, activityAt, offBottomAt, tidePhase } from './world.js';
 import { HABITATS, SAWARA_ZONES, MADAI_GROUNDS } from './season.js';
 import { dayTimes, daylightAt } from './calendar.js';
-import { areaNameAt, fmtClock, makeDayConditions, forecastOf, tideClass, compass8, CHART_LABELS, weatherOf } from './sea.js';
+import { areaNameAt, fmtClock, makeDayConditions, forecastOf, tideClass, compass8, CHART_LABELS, weatherOf, currentAt } from './sea.js';
 import { hashFloat } from './rng.js';
 
 const cache = new Map();
@@ -74,6 +74,17 @@ function biteRemark(w, school, t) {
   return null;
 }
 
+/**
+ * 潮表: where a reef-tied school was, said the way a fisher would — which way
+ * the stream ran and which face it held on (from that day's world).
+ */
+function faceRemark(w, school, t) {
+  if (!school.holdTo) return null;
+  const c = currentAt(w.cond, t);
+  if (Math.hypot(c.x, c.y) < 0.08) return '潮止まりで、群れは瀬の上に散っていた';
+  return `潮が${compass8(c.x, c.y)}へ流れていて、瀬の潮が当たる側（${compass8(-c.x, -c.y)}側）に付いていた`;
+}
+
 function nearest(world, species, x, y, t, radius) {
   let best = null;
   for (const s of world.schools) {
@@ -120,7 +131,9 @@ function genSpot(seed, d) {
 function genFishing(seed, od, spotId, t, idBase) {
   const w = worldFor(seed, od);
   const h = habitat(spotId);
-  const hit = nearest(w, 'aji', h.x, h.y, t, 230);
+  // he follows his own fish on the reef (they move from face to face with the tide)
+  const own = w.schools.find((s) => s.species === 'aji' && s.habitat === spotId && schoolTotal(s) > 0);
+  const hit = own ? { school: own, pose: schoolPose(own, t, w), dist: 0 } : nearest(w, 'aji', h.x, h.y, t, 230);
   const originId = `O${od}-gen-${idBase}`;
   if (!hit) {
     return report({
@@ -139,7 +152,7 @@ function genFishing(seed, od, spotId, t, idBase) {
     originId, speaker: 'gen', kind: 'catch', species: 'aji', methodId: 'handline',
     area: hit.school.area, place, spot: roundPt(hit.pose), obsDay: od, obsT: t, count,
     layer: layerText(hit.school, t, hit.pose, w), sizeLabel: sizeLabel(hit.school),
-    text: `${place}で${sizeLabel(hit.school)}に約${count}尾${slow ? '。食いが落ちていた' : ''}。${layerText(hit.school, t, hit.pose, w)}で食った。${remarkText(biteRemark(w, hit.school, t))}`,
+    text: `${place}で${sizeLabel(hit.school)}に約${count}尾${slow ? '。食いが落ちていた' : ''}。${layerText(hit.school, t, hit.pose, w)}で食った。${remarkText(faceRemark(w, hit.school, t))}${remarkText(biteRemark(w, hit.school, t))}`,
     opinion: slow ? `群れが抜け始めたかもしれん。${placeLabel(other.x, other.y)}あたりも見てみる。` : 'しばらくは同じあたりに付いていると思う。',
     opinionKind: '予想',
   });
@@ -278,14 +291,14 @@ function odaOyogase(seed, od, t, idBase) {
   const act = activityAt(w, pick, t);
   const count = Math.max(0, Math.min(6, Math.round((schoolTotal(pick) * act) / 7)));
   const place = placeLabel(pose.x, pose.y);
-  const under = pick.baitDepth ? 'ベイトの下で' : '根の周りで';
+  const under = pick.baitDepth ? (pick.holdTo ? '瀬に溜まったベイトの下で' : 'ベイトの下で') : '根の周りで';
   return report({
     originId, speaker: 'oda', kind: count > 0 ? 'catch' : 'echo', species: pick.species, methodId: 'oyogase',
     area: pick.area || areaNameAt(pose.x, pose.y), place, spot: roundPt(pose), obsDay: od, obsT: t, count,
     layer: `表層から${Math.round(pose.z)}mくらい`,
     text: count > 0
-      ? `${place}の${under}、活きアジで${SPECIES[pick.species].name}を${count}本。${remarkText(biteRemark(w, pick, t))}`
-      : `${place}の${under}青物の反応は出ていたが、活きアジに食わなかった。${remarkText(biteRemark(w, pick, t))}`,
+      ? `${place}の${under}、活きアジで${SPECIES[pick.species].name}を${count}本。${remarkText(faceRemark(w, pick, t))}${remarkText(biteRemark(w, pick, t))}`
+      : `${place}の${under}青物の反応は出ていたが、活きアジに食わなかった。${remarkText(faceRemark(w, pick, t))}${remarkText(biteRemark(w, pick, t))}`,
     opinion: pick.baitDepth ? '曳縄で食わん日でも、ベイトの下に活きエサを落とすと食うことがある。' : '根に付いた青物はしばらく居る。', opinionKind: '見立て',
   });
 }
@@ -315,8 +328,8 @@ function nakamuraJigging(seed, od, t, idBase) {
     area: pick.area || areaNameAt(pose.x, pose.y), place, spot: roundPt(pose), obsDay: od, obsT: t, count,
     layer: `表層から${Math.round(pose.z)}mくらい`,
     text: count > 0
-      ? `${place}でジギング、${SPECIES[pick.species].name}を${count}本。${nearSaba ? '途中サバに邪魔された。' : ''}${remarkText(biteRemark(w, pick, t))}`
-      : `${place}で青物の反応は出ていたが、ジグには食わなかった。${remarkText(biteRemark(w, pick, t))}`,
+      ? `${place}でジギング、${SPECIES[pick.species].name}を${count}本。${nearSaba ? '途中サバに邪魔された。' : ''}${remarkText(faceRemark(w, pick, t))}${remarkText(biteRemark(w, pick, t))}`
+      : `${place}で青物の反応は出ていたが、ジグには食わなかった。${remarkText(faceRemark(w, pick, t))}${remarkText(biteRemark(w, pick, t))}`,
     opinion: pick.baitDepth ? 'ベイトの下を通すように、反応の少し上までしゃくるといい。' : '根の周りは根掛かりに気をつけろ。ジグがいくつあっても足りん。', opinionKind: '見立て',
   });
 }
@@ -408,8 +421,15 @@ function rules(seed, d, hadSawara) {
   if (d >= PEERS.kuroki.fromDay && tideClass(fc.tideName) === '大潮' && hashFloat(seed, d, 524) < 0.6) {
     out.push(report({ originId: `O${d}-kuroki-rule-tide`, speaker: 'kuroki', kind: 'rule', methodId: 'negyo', obsDay: d, obsT: BRIEFING_T, text: '大潮は潮が速くて底が取りにくい。根魚は潮の緩む時間に勝負だ。潮止まりの前後を狙え。' }));
   }
-  if (d >= PEERS.oda.fromDay && hashFloat(seed, d, 534) < 0.5) {
-    out.push(report({ originId: `O${d}-oda-rule-bait`, speaker: 'oda', kind: 'rule', methodId: 'oyogase', obsDay: d, obsT: BRIEFING_T, text: '表層にベイトがいて曳縄に食わん日は、まず一本釣りでアジを釣って生け簀に入れとく。ベイトの下に太い山形の反応が出たら、そこで止めて泳がせだ。' }));
+  if (d >= PEERS.oda.fromDay) {
+    if (hashFloat(seed, d, 534) < 0.5) {
+      out.push(report({ originId: `O${d}-oda-rule-bait`, speaker: 'oda', kind: 'rule', methodId: 'oyogase', obsDay: d, obsT: BRIEFING_T, text: '表層にベイトがいて曳縄に食わん日は、まず一本釣りでアジを釣って生け簀に入れとく。ベイトの下に太い山形の反応が出たら、そこで止めて泳がせだ。' }));
+    } else {
+      out.push(report({ originId: `O${d}-oda-rule-face`, speaker: 'oda', kind: 'rule', methodId: 'oyogase', obsDay: d, obsT: BRIEFING_T, text: '瀬や大きな根に潮が当たると、その面にエサが溜まってイワシが寄る。青物はその下だ。潮表でベイトの反応を探して、潮が動いとるうちに活きアジを落とせ。潮が止まったら食わん。' }));
+    }
+  }
+  if (hashFloat(seed, d, 535) < 0.35) {
+    out.push(report({ originId: `O${d}-gen-rule-face`, speaker: 'gen', kind: 'rule', methodId: 'handline', obsDay: d, obsT: BRIEFING_T, text: '瀬のアジは潮の当たる側（潮表）に付く。北東へ流れる上げ潮なら南西側、南西へ流れる下げ潮なら北東側だ。潮が変われば反対の面へ回れ。' }));
   }
   if (tideClass(fc.tideName) === '小潮系' && hashFloat(seed, d, 308) < 0.6) {
     out.push(report({ originId: `O${d}-gen-rule-slack`, speaker: 'gen', kind: 'rule', methodId: 'handline', obsDay: d, obsT: BRIEFING_T, text: 'アジは潮が止まると、反応があっても食わん。潮が動き出す時間を潮汐表で見ておけ。' }));

@@ -373,10 +373,11 @@ export function forecastText(cond) {
   lines.push(`水温：${cond.waterTemp.toFixed(1)}℃前後`);
   if (cond.season) lines.push(`季節：${cond.season.calendar || ''}・${cond.season.label}（ここ2日で水温${cond.season.trend >= 0 ? '+' : ''}${cond.season.trend.toFixed(1)}℃/日）${cond.season.nokkomi ? '・マダイの乗っ込みの頃' : ''}`);
   if (cond.sun) lines.push(`日の出 ${fmtClock(cond.sun.sunrise)}・日の入り ${fmtClock(cond.sun.sunset)}（出港 ${fmtClock(cond.sun.depart)}、${fmtClock(cond.sun.end)}に帰港を始める）`);
-  // describe the tide from departure until noon by sampling the closed form
+  // describe the tide from departure until the trip ends by sampling the closed form
   const parts = [];
   let prev = null;
-  for (let h = Math.floor((cond.sun ? cond.sun.depart : 5 * 3600) / 1800) / 2; h <= 12; h += 0.5) {
+  const endH = cond.sun ? cond.sun.end / 3600 : 16;
+  for (let h = Math.floor((cond.sun ? cond.sun.depart : 5 * 3600) / 1800) / 2; h <= endH; h += 0.5) {
     const c = currentAt(cond, h * 3600);
     const sp = Math.hypot(c.x, c.y);
     const label = sp < 0.1 ? '潮止まり' : `${compass8(c.x, c.y)}へ流れる`;
@@ -386,6 +387,7 @@ export function forecastText(cond) {
     }
   }
   lines.push(`潮流（予報）：${parts.join(' → ')}`);
+  lines.push('瀬や根では、潮が当たる側（潮表）にエサが溜まり、魚が付きやすい。北東へ流れる時は南西側、南西へ流れる時は北東側。');
   return lines;
 }
 
