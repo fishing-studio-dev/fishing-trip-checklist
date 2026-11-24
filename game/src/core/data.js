@@ -63,7 +63,7 @@ export const SPECIES = {
     sizeOrder: ['s', 'm', 'l'],
     habit: 'pelagic',
     unit: '本',
-    arriveTemp: 18.8, // ℃: waves only come in at or above this water temperature
+    arriveTemp: 15.3, // ℃: in spring the waves come in once the water warms past this (本作設定)
   },
   // マダイ（本作設定）: scattered thinly over the bottom of the deeper flats and
   // slope edges (30-60 m), hugging the bottom; stays in an area for many days;
@@ -198,15 +198,223 @@ export const SPECIES = {
     unit: '尾',
     group: 'negyo',
   },
+  // ---- 第2期の魚種（本作設定・玄界灘の旬を手本にした仮設定） ----
+  // イサキ: schools stand up over the tops of high reefs and pinnacles in
+  // tidal water; 梅雨イサキ (May–July) feed hard before spawning.
+  isaki: {
+    id: 'isaki',
+    name: 'イサキ',
+    sizes: {
+      s: { label: '小イサキ', kg: 0.25, pricePerKg: 700 },
+      m: { label: 'イサキ', kg: 0.45, pricePerKg: 1000 },
+      l: { label: '大イサキ', kg: 0.75, pricePerKg: 1400 },
+    },
+    sizeOrder: ['s', 'm', 'l'],
+    habit: 'bottom',
+    unit: '尾',
+  },
+  // マサバ: big, dense schools in mid water over the open flats in autumn and
+  // winter, moving fast; they grab any bait (cheap, and they get in the way).
+  masaba: {
+    id: 'masaba',
+    name: 'マサバ',
+    sizes: {
+      s: { label: '小サバ', kg: 0.25, pricePerKg: 150 },
+      m: { label: 'サバ', kg: 0.45, pricePerKg: 250 },
+      l: { label: '大サバ', kg: 0.8, pricePerKg: 450 },
+    },
+    sizeOrder: ['s', 'm', 'l'],
+    habit: 'midwater',
+    unit: '尾',
+  },
+  // オオモンハタ: a grouper that swims a little above the rocks, chasing small fish.
+  oomonhata: {
+    id: 'oomonhata',
+    name: 'オオモンハタ',
+    sizes: {
+      s: { label: '小オオモンハタ', kg: 0.4, pricePerKg: 1200 },
+      m: { label: 'オオモンハタ', kg: 0.8, pricePerKg: 1700 },
+      l: { label: '大オオモンハタ', kg: 1.5, pricePerKg: 2200 },
+    },
+    sizeOrder: ['s', 'm', 'l'],
+    habit: 'reef',
+    unit: '尾',
+    group: 'negyo',
+    offBottom: 2.2, // m: holds higher off the rocks than the other 根魚
+  },
+  // アカハタ: a small red grouper of the shallow rocks (10–30 m), in warm water.
+  akahata: {
+    id: 'akahata',
+    name: 'アカハタ',
+    sizes: {
+      s: { label: '小アカハタ', kg: 0.3, pricePerKg: 1200 },
+      m: { label: 'アカハタ', kg: 0.6, pricePerKg: 1700 },
+      l: { label: '大アカハタ', kg: 1.0, pricePerKg: 2200 },
+    },
+    sizeOrder: ['s', 'm', 'l'],
+    habit: 'reef',
+    unit: '尾',
+    group: 'negyo',
+    maxDepth: 32, // only on the shallow structures
+  },
+  // アマダイ: live in burrows in the sandy mud of the flats, so the sounder
+  // never shows them; taken on the longline. アカアマダイ on the deeper mud,
+  // シロアマダイ on shallower sand — rare and dear.
+  akaamadai: {
+    id: 'akaamadai',
+    name: 'アカアマダイ',
+    sizes: {
+      s: { label: '小アカアマダイ', kg: 0.3, pricePerKg: 1800 },
+      m: { label: 'アカアマダイ', kg: 0.6, pricePerKg: 2800 },
+      l: { label: '大アカアマダイ', kg: 1.0, pricePerKg: 3800 },
+    },
+    sizeOrder: ['s', 'm', 'l'],
+    habit: 'burrow',
+    unit: '尾',
+  },
+  shiroamadai: {
+    id: 'shiroamadai',
+    name: 'シロアマダイ',
+    sizes: {
+      s: { label: '小シロアマダイ', kg: 0.6, pricePerKg: 3500 },
+      m: { label: 'シロアマダイ', kg: 1.2, pricePerKg: 5500 },
+      l: { label: '大シロアマダイ', kg: 2.0, pricePerKg: 7500 },
+    },
+    sizeOrder: ['s', 'm', 'l'],
+    habit: 'burrow',
+    unit: '尾',
+  },
+  // シイラ: summer fish of the surface, along tide lines (潮目) and drifting weed.
+  shiira: {
+    id: 'shiira',
+    name: 'シイラ',
+    sizes: {
+      s: { label: 'ペンペン', kg: 1.5, pricePerKg: 250 },
+      m: { label: 'シイラ', kg: 4.0, pricePerKg: 350 },
+      l: { label: '大シイラ', kg: 9.0, pricePerKg: 450 },
+    },
+    sizeOrder: ['s', 'm', 'l'],
+    habit: 'pelagic',
+    unit: '本',
+    surface: true, // keeps to the top few metres
+  },
+  // ヨコワ（クロマグロの若魚）: fast schools of the upper layer in autumn and winter.
+  yokowa: {
+    id: 'yokowa',
+    name: 'ヨコワ',
+    sizes: {
+      s: { label: '小ヨコワ', kg: 2.0, pricePerKg: 1000 },
+      m: { label: 'ヨコワ', kg: 4.5, pricePerKg: 1400 },
+      l: { label: '大ヨコワ', kg: 8.0, pricePerKg: 1800 },
+    },
+    sizeOrder: ['s', 'm', 'l'],
+    habit: 'pelagic',
+    unit: '本',
+  },
+  // カンパチ: a summer–autumn 青物 that stays lower than ヒラマサ, close around the 根.
+  kanpachi: {
+    id: 'kanpachi',
+    name: 'カンパチ',
+    sizes: {
+      s: { label: 'ショゴ', kg: 2.0, pricePerKg: 800 },
+      m: { label: 'カンパチ', kg: 5.0, pricePerKg: 1300 },
+      l: { label: '大カンパチ', kg: 10.0, pricePerKg: 1700 },
+    },
+    sizeOrder: ['s', 'm', 'l'],
+    habit: 'roam',
+    unit: '本',
+    group: 'aomono',
+  },
 };
+
+// ---- 季節（本作設定） ----
+// How plentiful each fish is through the year: one value per month, April to
+// March (1 = the height of its season, 0 = not here). Shaped after what is
+// generally said of the 玄界灘 (e.g. 梅雨イサキ May–July, 寒ブリ in winter,
+// ヒラマサ at their best in late winter and spring with May–June off, ケンサキイカ
+// in early summer to autumn, ヤリイカ in winter and spring). Game settings.
+// `warm`: how a warmer (+) or colder (−) year than usual changes the numbers,
+// per ℃ of difference (暖冬の寒ブリは薄い).
+export const SEASONALITY = {
+  aji: { months: [0.8, 0.9, 1.0, 1.0, 0.9, 0.85, 0.85, 0.8, 0.7, 0.55, 0.5, 0.6], warm: 0.05 },
+  isaki: { months: [0.25, 0.75, 1.0, 0.9, 0.6, 0.45, 0.35, 0.25, 0.15, 0.1, 0.1, 0.15], warm: 0.1 },
+  masaba: { months: [0.35, 0.25, 0.15, 0.1, 0.1, 0.25, 0.6, 0.9, 1.0, 0.95, 0.8, 0.55], warm: -0.1 },
+  sawara: { months: [0.8, 0.6, 0.15, 0, 0, 0.15, 0.55, 0.85, 1.0, 0.9, 0.6, 0.45], warm: 0 },
+  shiira: { months: [0, 0.05, 0.35, 0.85, 1.0, 0.9, 0.45, 0.1, 0, 0, 0, 0], warm: 0.25 },
+  yokowa: { months: [0, 0, 0, 0, 0, 0.1, 0.5, 0.85, 1.0, 0.8, 0.4, 0.1], warm: 0.1 },
+  madai: { months: [1.0, 0.9, 0.6, 0.5, 0.5, 0.6, 0.85, 0.9, 0.75, 0.6, 0.55, 0.8], warm: 0 },
+  akaamadai: { months: [0.6, 0.55, 0.5, 0.45, 0.45, 0.55, 0.85, 1.0, 1.0, 0.95, 0.85, 0.7], warm: 0 },
+  shiroamadai: { months: [0.4, 0.4, 0.35, 0.35, 0.35, 0.45, 0.75, 0.9, 1.0, 0.9, 0.7, 0.5], warm: 0 },
+  kasago: { months: [0.9, 0.9, 0.85, 0.75, 0.7, 0.75, 0.85, 0.95, 1.0, 1.0, 1.0, 0.95], warm: 0 },
+  kijihata: { months: [0.45, 0.7, 0.95, 1.0, 1.0, 0.95, 0.75, 0.5, 0.3, 0.2, 0.2, 0.3], warm: 0.1 },
+  oomonhata: { months: [0.3, 0.4, 0.55, 0.8, 1.0, 1.0, 0.9, 0.7, 0.45, 0.25, 0.2, 0.25], warm: 0.1 },
+  akahata: { months: [0.35, 0.55, 0.85, 1.0, 1.0, 0.9, 0.7, 0.45, 0.25, 0.15, 0.15, 0.2], warm: 0.15 },
+  ara: { months: [0.7, 0.65, 0.6, 0.55, 0.55, 0.6, 0.7, 0.8, 0.9, 1.0, 1.0, 0.85], warm: 0 },
+  buri: { months: [0.45, 0.25, 0.1, 0.05, 0.05, 0.15, 0.45, 0.7, 0.95, 1.0, 0.95, 0.7], warm: -0.25 },
+  hiramasa: { months: [0.85, 0.25, 0.15, 0.45, 0.5, 0.55, 0.6, 0.7, 0.8, 0.9, 0.95, 1.0], warm: 0 },
+  kanpachi: { months: [0.15, 0.25, 0.45, 0.75, 0.95, 1.0, 0.9, 0.6, 0.3, 0.1, 0.05, 0.1], warm: 0.2 },
+  kensaki: { months: [0.15, 0.55, 0.9, 1.0, 1.0, 0.9, 0.7, 0.35, 0.1, 0, 0, 0.05], warm: 0.15 },
+  yari: { months: [0.6, 0.3, 0.05, 0, 0, 0, 0.05, 0.25, 0.6, 0.9, 1.0, 0.9], warm: -0.15 },
+  iwashi: { months: [0.9, 0.8, 0.7, 0.6, 0.6, 0.7, 0.85, 0.9, 0.8, 0.7, 0.65, 0.8], warm: 0 },
+};
+// ---- 食い（本作設定） ----
+// How each fish feeds (the common wisdom of anglers and fishers, simplified):
+//   tide: [潮止まり, 動き始め, 効いている, 緩み始め] — a multiplier for each phase
+//         of the tidal stream (e.g. アジ hardly bite at slack water and come on
+//         as the stream starts; 根魚 are easiest when it eases or stops).
+//   fast: multiplier once the stream runs very hard (over about 0.3 m/s) —
+//         the rig cannot keep the bottom (マダイ, 根魚).
+//   dawn / dusk: extra at the low-light windows (まずめ) around sunrise and sunset.
+//   day / night: baseline in daylight and in the dark.
+//   temp: the comfortable water [low, high] ℃; outside it they slow down.
+// Nature does not always follow the rule: on some days a school feeds against
+// it (see MOODS). Game settings, not biological facts.
+export const FEEDING = {
+  aji: { tide: [0.2, 1.45, 1.1, 0.75], fast: 1, dawn: 0.45, dusk: 0.3, day: 1, night: 0.3, temp: [15, 26] },
+  isaki: { tide: [0.35, 1.3, 1.15, 0.8], fast: 0.9, dawn: 0.7, dusk: 0.6, day: 0.8, night: 0.6, temp: [16, 26] },
+  masaba: { tide: [0.7, 1.15, 1.1, 0.95], fast: 1, dawn: 0.4, dusk: 0.4, day: 1, night: 0.4, temp: [13, 24] },
+  madai: { tide: [0.3, 1.5, 1.0, 1.35], fast: 0.7, dawn: 0.35, dusk: 0.3, day: 1, night: 0.4, temp: [14, 26] },
+  akaamadai: { tide: [0.8, 1.1, 1.0, 1.0], fast: 0.9, dawn: 0.3, dusk: 0.15, day: 1, night: 0.3, temp: [13, 24] },
+  shiroamadai: { tide: [0.8, 1.1, 1.0, 1.0], fast: 0.9, dawn: 0.3, dusk: 0.15, day: 1, night: 0.3, temp: [13, 24] },
+  kasago: { tide: [1.25, 1.0, 0.75, 1.2], fast: 0.6, dawn: 0.45, dusk: 0.45, day: 1, night: 0.8, temp: [13, 25] },
+  kijihata: { tide: [1.2, 1.05, 0.8, 1.2], fast: 0.6, dawn: 0.45, dusk: 0.5, day: 1, night: 0.6, temp: [18, 28] },
+  akahata: { tide: [1.2, 1.05, 0.8, 1.2], fast: 0.6, dawn: 0.4, dusk: 0.45, day: 1, night: 0.5, temp: [19, 28] },
+  oomonhata: { tide: [0.8, 1.25, 1.1, 1.0], fast: 0.75, dawn: 0.5, dusk: 0.5, day: 1, night: 0.5, temp: [17, 28] },
+  ara: { tide: [0.6, 1.2, 1.15, 0.9], fast: 0.8, dawn: 0.4, dusk: 0.4, day: 1, night: 0.6, temp: [13, 26] },
+  buri: { tide: [0.2, 1.5, 1.25, 0.6], fast: 1, dawn: 0.7, dusk: 0.55, day: 1, night: 0.2, temp: [13, 22] },
+  hiramasa: { tide: [0.2, 1.5, 1.25, 0.6], fast: 1, dawn: 0.7, dusk: 0.55, day: 1, night: 0.2, temp: [14, 25] },
+  kanpachi: { tide: [0.25, 1.45, 1.2, 0.65], fast: 1, dawn: 0.6, dusk: 0.55, day: 1, night: 0.2, temp: [19, 28] },
+  sawara: { tide: [0.45, 1.25, 1.1, 0.8], fast: 1, dawn: 0.7, dusk: 0.4, day: 0.9, night: 0.2, temp: [14, 24] },
+  shiira: { tide: [0.8, 1.1, 1.05, 0.95], fast: 1, dawn: 0.3, dusk: 0.2, day: 1, night: 0.2, temp: [22, 30] },
+  yokowa: { tide: [0.4, 1.35, 1.15, 0.75], fast: 1, dawn: 0.6, dusk: 0.4, day: 1, night: 0.2, temp: [14, 24] },
+  kensaki: { tide: [1.0, 1.1, 0.85, 1.05], fast: 0.6, dawn: 0, dusk: 0.3, day: 0.35, night: 1.2, temp: [17, 28] },
+  yari: { tide: [1.0, 1.1, 0.85, 1.05], fast: 0.6, dawn: 0, dusk: 0.3, day: 0.35, night: 1.2, temp: [12, 19] },
+  iwashi: { tide: [1, 1, 1, 1], fast: 1, dawn: 0, dusk: 0, day: 1, night: 1, temp: [10, 30] },
+};
+// A school's mood for the day (本作設定): most days follow the rule above; on
+// some the school feeds against it (潮止まりに食う・潮が動いても食わない), is off
+// its food all day (反応はあるのに食わない), or feeds madly.
+export const MOODS = [
+  { id: 'usual', p: 0.72, k: 1 },
+  { id: 'contrary', p: 0.12, k: 1 }, // the tide rule turned round
+  { id: 'dull', p: 0.1, k: 0.4 }, // shows on the sounder, hardly bites
+  { id: 'hot', p: 0.06, k: 1.35 }, // bites whatever the tide
+];
+
+// The share of large fish follows the season for some (秋はハマチ・メジロ、冬はブリ).
+export const SIZE_SEASON = {
+  buri: [0.7, 0.6, 0.5, 0.5, 0.5, 0.5, 0.6, 0.8, 1.1, 1.3, 1.3, 1.0],
+};
+
 
 // ---- Fishing methods ----
 export const METHODS = {
   handline: {
     id: 'handline',
     name: '一本釣り',
-    detail: '胴突き仕掛け（3本針）をタナに合わせ、掛かったら回収する流し釣り',
+    detail: '胴突き仕掛け（3本針）を魚探の反応のタナに合わせ、掛かったら回収する流し釣り。アジのほか、瀬の上のイサキ、中層のサバも掛かる',
     target: 'aji',
+    targets: ['aji', 'isaki', 'masaba'], // whatever stands at the tana: アジ, イサキ over the reef tops, サバ in mid water
     hooks: 3,
     hookSpacing: 1.5, // m between hooks above the sinker
     biteRateMax: 0.1, // bites / s / hook at saturation (before activity)
@@ -228,9 +436,9 @@ export const METHODS = {
   oyogase: {
     id: 'oyogase',
     name: '泳がせ釣り',
-    detail: '一本釣りで釣った活きアジを針に付けて泳がせ、根や瀬の周り・ベイトの下を回る青物（ブリ・ヒラマサ）を狙う。エサのアジは魚倉から使う',
+    detail: '一本釣りで釣った活きアジを針に付けて泳がせ、根や瀬の周り・ベイトの下を回る青物（ブリ・ヒラマサ・カンパチ）を狙う。エサのアジは魚倉から使う',
     target: 'buri',
-    targets: ['buri', 'hiramasa'],
+    targets: ['buri', 'hiramasa', 'kanpachi'],
     hooks: 1,
     hookSpacing: 0,
     liveBait: 'aji', // one fish from the hold per bait
@@ -283,9 +491,9 @@ export const METHODS = {
   negyo: {
     id: 'negyo',
     name: '根魚釣り',
-    detail: '2本針の短い仕掛けを、オモリが底から少し上になるように保ち、根・漁礁の真上を流して根魚（カサゴ・キジハタ・アラ）を狙う',
+    detail: '2本針の短い仕掛けを、オモリが底から少し上になるように保ち、根・漁礁の真上を流して根魚（カサゴ・キジハタ・アカハタ・オオモンハタ・アラ）を狙う',
     target: 'kasago',
-    targets: ['kasago', 'kijihata', 'ara'],
+    targets: ['kasago', 'kijihata', 'ara', 'oomonhata', 'akahata'],
     hooks: 2,
     hookSpacing: 0.6,
     firstHook: 0.4, // m above the sinker for the lowest hook
@@ -308,6 +516,7 @@ export const METHODS = {
     name: '曳縄',
     detail: '潜行板付きの仕掛け（曳縄具 TR-1 は2本、TR-2 は4本）を船尾から流し、決めた航路を走りながら掛かった魚を取り込む',
     target: 'sawara',
+    targets: ['sawara', 'shiira', 'yokowa'],
     gearType: 'troll',
     biteRateMax: 0.05, // strikes / s / lure at saturation (before activity)
     densityHalf: 0.0001,
@@ -320,6 +529,7 @@ export const METHODS = {
     name: '延縄',
     detail: '餌を付けた針を並べた長い縄を海底に沿って張り（投縄）、浸けておいて、あとで揚げる（揚げ縄）。浸けている間は他の漁ができる',
     target: 'madai',
+    targets: ['madai', 'akaamadai', 'shiroamadai'],
     gearType: 'longline',
     biteRateMax: 0.00015, // bites / s / baited hook at saturation (before activity and bait)
     densityHalf: 0.0001, // fish / m^3
@@ -684,7 +894,7 @@ export const TIME_BANDS = [
 ];
 
 // Port briefing happens at this game time of the day being prepared.
-export const BRIEFING_T = 4.5 * 3600;
+export const BRIEFING_T = 3.5 * 3600; // before the earliest departure of the year (summer, about 04:10)
 
 // ---- Early-season script (序盤の海の筋書き・仮設定) ----
 // Days 0-6 of a new save use these conditions and fish so that the three
@@ -695,11 +905,11 @@ export const BRIEFING_T = 4.5 * 3600;
 //   d3-4: water warms, サワラ arrive (needs trolling gear)
 //   d5: 大潮 + strong wind, the 北の瀬東 school has thinned -> switch
 export const SEASON_SCRIPT = {
-  0: { cond: { windSpeed: 2.5, windDirDeg: 225, waterTemp: 18.1 }, aji: [['kita_e', 620, 0.3], ['nishi', 380, 0.25]], sawara: [] },
-  1: { cond: { windSpeed: 2.4, windDirDeg: 200, waterTemp: 18.3 }, aji: [['kita_e', 640, 0.32], ['nishi', 360, 0.25], ['minami', 300, 0.05]], sawara: [] },
-  2: { cond: { windSpeed: 3.2, windDirDeg: 210, waterTemp: 18.6 }, aji: [['kita_e', 600, 0.3], ['nishi', 380, 0.22]], sawara: [] },
-  3: { cond: { windSpeed: 3.0, windDirDeg: 30, waterTemp: 19.0 }, aji: [['kita_e', 560, 0.3], ['nishi', 400, 0.25], ['higashi_s', 300, 0.2]], sawara: [['higashi', 40]] },
-  4: { cond: { windSpeed: 4.5, windDirDeg: 40, waterTemp: 19.3 }, aji: [['kita_e', 170, 0.3], ['nishi', 420, 0.25], ['higashi_s', 320, 0.2]], sawara: [['higashi', 45], ['oki', 30]] },
-  5: { cond: { windSpeed: 7.6, windDirDeg: 45, waterTemp: 19.5 }, aji: [['kita_s', 380, 0.3], ['nishi', 420, 0.25]], sawara: [['higashi', 50], ['oki', 35]] },
-  6: { cond: { windSpeed: 3.4, windDirDeg: 60, waterTemp: 19.4 }, aji: [['kita_s', 420, 0.3], ['nishi', 400, 0.25], ['higashi_n', 320, 0.2]], sawara: [['oki', 40]] },
+  0: { cond: { windSpeed: 2.5, windDirDeg: 225, waterTemp: 14.7 }, aji: [['kita_e', 620, 0.3], ['nishi', 380, 0.25]], sawara: [] },
+  1: { cond: { windSpeed: 2.4, windDirDeg: 200, waterTemp: 14.9 }, aji: [['kita_e', 640, 0.32], ['nishi', 360, 0.25], ['minami', 300, 0.05]], sawara: [] },
+  2: { cond: { windSpeed: 3.2, windDirDeg: 210, waterTemp: 15.1 }, aji: [['kita_e', 600, 0.3], ['nishi', 380, 0.22]], sawara: [] },
+  3: { cond: { windSpeed: 3.0, windDirDeg: 30, waterTemp: 15.4 }, aji: [['kita_e', 560, 0.3], ['nishi', 400, 0.25], ['higashi_s', 300, 0.2]], sawara: [['higashi', 40]] },
+  4: { cond: { windSpeed: 4.5, windDirDeg: 40, waterTemp: 15.6 }, aji: [['kita_e', 170, 0.3], ['nishi', 420, 0.25], ['higashi_s', 320, 0.2]], sawara: [['higashi', 45], ['oki', 30]] },
+  5: { cond: { windSpeed: 7.6, windDirDeg: 45, waterTemp: 15.8 }, aji: [['kita_s', 380, 0.3], ['nishi', 420, 0.25]], sawara: [['higashi', 50], ['oki', 35]] },
+  6: { cond: { windSpeed: 3.4, windDirDeg: 60, waterTemp: 15.9 }, aji: [['kita_s', 420, 0.3], ['nishi', 400, 0.25], ['higashi_n', 320, 0.2]], sawara: [['oki', 40]] },
 };

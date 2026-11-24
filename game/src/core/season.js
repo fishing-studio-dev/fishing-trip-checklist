@@ -3,9 +3,11 @@
 // out before leaving; サワラ come in waves while the water is warm enough.
 // Days covered by SEASON_SCRIPT use scripted fish; later days are procedural.
 // Everything is a pure function of (worldSeed, day) — no stored world state.
-import { SEASON_SCRIPT, SPECIES } from './data.js';
+import { SEASON_SCRIPT, SPECIES, MOODS } from './data.js';
 import { hashFloat, hashString } from './rng.js';
-import { makeDayConditions, STRUCTURES, areaNameAt } from './sea.js';
+import { makeDayConditions, STRUCTURES, areaNameAt, depthAt } from './sea.js';
+import { abundanceOf, bigShareOf } from './almanac.js';
+import { calendarOf } from './calendar.js';
 
 // Places where マアジ schools tend to hold in this fictional sea (game setting).
 export const HABITATS = [
@@ -41,17 +43,19 @@ export const MADAI_GROUNDS = [
 // 根魚（本作設定）: how many live on each kind of small structure (a range; the
 // day's number varies a little around the structure's own level), and the
 // rocky tops of the named reefs where they are spread more thinly.
+// The numbers are at the height of each fish's season; through the year they
+// follow SEASONALITY (キジハタ・アカハタ in summer, アラ best in winter).
 export const REEF_STOCK = {
-  gyosho: { kasago: [8, 18], kijihata: [2, 6], ara: [0, 0] },
-  koboreze: { kasago: [5, 12], kijihata: [3, 8], ara: [0, 0] },
-  ne: { kasago: [2, 6], kijihata: [4, 9], ara: [0, 3] },
+  gyosho: { kasago: [8, 18], kijihata: [2, 6], ara: [0, 0], akahata: [2, 6], oomonhata: [1, 3] },
+  koboreze: { kasago: [5, 12], kijihata: [3, 8], ara: [0, 0], akahata: [2, 6], oomonhata: [2, 5] },
+  ne: { kasago: [2, 6], kijihata: [4, 9], ara: [0, 3], oomonhata: [3, 7] },
 };
 export const ROCK_GROUNDS = [
-  { id: 'nishi_rock', area: '西の根', x: 650, y: 1350, sigmaH: 70, stock: { kasago: [10, 22], kijihata: [2, 6] } },
-  { id: 'kita_rock', area: '北の瀬', x: 2000, y: 2250, sigmaH: 90, stock: { kasago: [8, 18], kijihata: [3, 7] } },
-  { id: 'okise_rock', area: '沖の瀬', x: 1650, y: 4050, sigmaH: 90, stock: { kasago: [6, 14], kijihata: [4, 9], ara: [0, 2] } },
+  { id: 'nishi_rock', area: '西の根', x: 650, y: 1350, sigmaH: 70, stock: { kasago: [10, 22], kijihata: [2, 6], akahata: [4, 10] } },
+  { id: 'kita_rock', area: '北の瀬', x: 2000, y: 2250, sigmaH: 90, stock: { kasago: [8, 18], kijihata: [3, 7], oomonhata: [3, 8] } },
+  { id: 'okise_rock', area: '沖の瀬', x: 1650, y: 4050, sigmaH: 90, stock: { kasago: [6, 14], kijihata: [4, 9], ara: [0, 2], oomonhata: [3, 7] } },
 ];
-const REEF_BIG = { kasago: 0.2, kijihata: 0.2, ara: 0.3 };
+const REEF_BIG = { kasago: 0.2, kijihata: 0.2, ara: 0.3, akahata: 0.2, oomonhata: 0.25 };
 const keyOf = (str) => parseInt(hashString(str), 16); // a stable integer per place and species
 
 function reefSchool(seed, d, place, species, n, sigmaH) {
@@ -79,11 +83,13 @@ export function reefSchools(seed, d) {
     const k = keyOf(`${place.id}:${species}`);
     const own = hashFloat(seed, k, 41); // the structure's own level
     const day = hashFloat(seed, k, d, 42); // a little change from day to day
-    return Math.round(lo + (hi - lo) * (0.65 * own + 0.35 * day));
+    const season = 0.35 + 0.65 * Math.min(1, abundanceOf(seed, species, d));
+    return Math.round((lo + (hi - lo) * (0.65 * own + 0.35 * day)) * season);
   };
   for (const st of STRUCTURES) {
     const stock = REEF_STOCK[st.kind];
     for (const sp of Object.keys(stock)) {
+      if (SPECIES[sp].maxDepth && depthAt(st.x, st.y) > SPECIES[sp].maxDepth) continue; // アカハタ: shallow rocks only
       const n = count(st, sp, stock[sp]);
       if (n > 0) out.push(reefSchool(seed, d, st, sp, n, Math.max(10, st.r * 0.7 + 4)));
     }
@@ -141,23 +147,35 @@ function baitSchool(seed, d, zone, k) {
   };
 }
 
-/** Which 青物 the water suits today (ブリ cooler, ヒラマサ warmer; both in between). */
-function blueSpecies(seed, d, k) {
-  const temp = makeDayConditions(seed, d).waterTemp;
-  const pBuri = Math.max(0.15, Math.min(0.85, 0.5 - (temp - 18.6) * 0.6));
-  return hashFloat(seed, d, k, 511) < pBuri ? 'buri' : 'hiramasa';
+/**
+ * Which 青物 the season brings today, weighted by how plentiful each is (寒ブリ in
+ * winter, ヒラマサ late winter to spring, カンパチ summer to autumn). Returns null
+ * when the draw says none is about. `reefOnly`: カンパチ keep to the 根.
+ */
+const BLUE = ['buri', 'hiramasa', 'kanpachi'];
+function blueSpecies(seed, d, k, reefOnly = true) {
+  const w = BLUE.map((sp) => (sp === 'kanpachi' && !reefOnly ? 0.5 : 1) * abundanceOf(seed, sp, d));
+  const total = w.reduce((a, b) => a + b, 0);
+  if (hashFloat(seed, d, k, 512) > Math.min(1, total * 0.9)) return null;
+  let r = hashFloat(seed, d, k, 511) * total;
+  for (let i = 0; i < BLUE.length; i++) {
+    r -= w[i];
+    if (r < 0) return BLUE[i];
+  }
+  return BLUE[BLUE.length - 1];
 }
 
 /** Bait schools and 青物 for day d (a pure function of seed and day). */
 export function blueSchools(seed, d) {
   const out = [];
+  const baitP = 0.7 * Math.min(1, abundanceOf(seed, 'iwashi', d));
   BAIT_ZONES.forEach((z, zi) => {
-    if (hashFloat(seed, zi, d, 502) > 0.7) return; // no bait in this zone today
+    if (hashFloat(seed, zi, d, 502) > baitP) return; // no bait in this zone today
     const bait = baitSchool(seed, d, z, 0);
     out.push(bait);
     // some bait schools have 青物 underneath, following them
-    if (hashFloat(seed, zi, d, 503) < 0.45) {
-      const sp = blueSpecies(seed, d, zi + 10);
+    const sp = hashFloat(seed, zi, d, 503) < 0.45 ? blueSpecies(seed, d, zi + 10, false) : null;
+    if (sp) {
       const n = Math.round(6 + hashFloat(seed, zi, d, 504) * 12);
       out.push({
         id: `D${d}-blue-${z.id}`,
@@ -176,7 +194,7 @@ export function blueSchools(seed, d) {
         baitDepth: { depthBias: bait.depthBias, noiseSeed: bait.noiseSeed },
         below: 4 + hashFloat(seed, zi, d, 506) * 4,
         noiseSeed: Math.floor(hashFloat(seed, zi, d, 507) * 1e9),
-        counts: splitCounts(n, 0.25, 0.4),
+        counts: splitCounts(n, Math.min(0.6, 0.25 * bigShareOf(sp, d)), 0.4),
       });
     }
   });
@@ -193,13 +211,15 @@ export function blueSchools(seed, d) {
       start += len;
     }
     if (!ep || !ep.present) return;
+    const species = blueSpecies(seed, d, gi);
+    if (!species) return;
     const r = (j) => hashFloat(seed, gi, d, j, 531);
     const n = Math.round((6 + hashFloat(seed, gi, ep.i, 523) * 14) * (g.rich || 1));
     const cx = g.x + (r(1) - 0.5) * g.spread;
     const cy = g.y + (r(2) - 0.5) * g.spread;
     out.push({
       id: `D${d}-blue-${g.id}`,
-      species: blueSpecies(seed, d, gi),
+      species,
       habitat: g.id,
       area: areaNameAt(g.x, g.y),
       a: { x: cx, y: cy },
@@ -209,9 +229,9 @@ export function blueSchools(seed, d) {
       orbitPhase: r(5) * Math.PI * 2,
       sigmaH: 45 + r(6) * 25,
       sigmaZ: 8,
-      depthFrac: 0.5 + r(7) * 0.25,
+      depthFrac: species === 'kanpachi' ? 0.7 + r(7) * 0.15 : 0.5 + r(7) * 0.25, // カンパチ keep lower, close to the 根
       noiseSeed: Math.floor(r(8) * 1e9),
-      counts: splitCounts(n, 0.25 + (g.rich ? 0.1 : 0), 0.35),
+      counts: splitCounts(n, Math.min(0.6, (0.25 + (g.rich ? 0.1 : 0)) * bigShareOf(species, d)), 0.35),
     });
   });
   return out;
@@ -227,7 +247,8 @@ export const SQUID_GROUNDS = [
 /** Squid on day d (a pure function of seed and day). */
 export function squidSchools(seed, d) {
   const out = [];
-  const temp = makeDayConditions(seed, d).waterTemp;
+  const aK = abundanceOf(seed, 'kensaki', d);
+  const aY = abundanceOf(seed, 'yari', d);
   SQUID_GROUNDS.forEach((g, gi) => {
     let start = 0;
     let ep = null;
@@ -240,10 +261,11 @@ export function squidSchools(seed, d) {
       start += len;
     }
     if (!ep || !ep.present) return;
+    // ケンサキイカ in early summer to autumn, ヤリイカ in winter and spring (by how plentiful each is today)
+    if (hashFloat(seed, gi, d, 605) > Math.min(1, (aK + aY) * 1.1)) return;
     const r = (j) => hashFloat(seed, gi, d, j, 611);
-    const pKensaki = Math.max(0.15, Math.min(0.85, 0.5 + (temp - 18.6) * 0.6));
-    const species = hashFloat(seed, gi, ep.i, 603) < pKensaki ? 'kensaki' : 'yari';
-    const n = Math.round(400 + hashFloat(seed, gi, ep.i, 604) * 600);
+    const species = hashFloat(seed, gi, ep.i, 603) * (aK + aY) < aK ? 'kensaki' : 'yari';
+    const n = Math.round((400 + hashFloat(seed, gi, ep.i, 604) * 600) * (0.5 + 0.5 * Math.min(1, species === 'kensaki' ? aK : aY)));
     const cx = g.x + (r(1) - 0.5) * g.spread;
     const cy = g.y + (r(2) - 0.5) * g.spread;
     out.push({
@@ -265,6 +287,218 @@ export function squidSchools(seed, d) {
     });
   });
   return out;
+}
+
+// ---- 第2期の魚種（本作設定） ----
+// イサキ: on the tops of the high reefs and pinnacles, for a few days at a time.
+export const ISAKI_GROUNDS = [
+  { id: 'kita_top', area: '北の瀬', x: 2010, y: 2260, spread: 90, weight: 1.0 },
+  { id: 'n1', area: '沖の平場', x: 1500, y: 2200, spread: 30, weight: 0.7 },
+  { id: 'n2', area: '東の駆け上がり', x: 2700, y: 2300, spread: 30, weight: 0.7 },
+  { id: 'n3', area: '沖合', x: 1900, y: 3800, spread: 35, weight: 0.8 },
+  { id: 'okise_top', area: '沖の瀬', x: 1650, y: 4050, spread: 100, weight: 1.1, far: true },
+];
+// マサバ: big schools crossing the open flats in mid water.
+export const MASABA_ZONES = [
+  { id: 'hira', x: 1300, y: 1800, spread: 500 },
+  { id: 'kita_oki', x: 2100, y: 2800, spread: 450 },
+  { id: 'oki', x: 1300, y: 3400, spread: 500 },
+];
+// シイラ: along the tide lines (潮目) and drifting weed in summer.
+export const SHIIRA_LINES = [
+  { id: 'kita', x: 2250, y: 2100, spread: 260 },
+  { id: 'higashi', x: 2400, y: 1580, spread: 300 },
+  { id: 'okise', x: 1510, y: 3830, spread: 220 },
+];
+// ヨコワ: fast schools of the offshore upper layer in autumn and winter.
+export const YOKOWA_ZONES = [
+  { id: 'kita_oki', x: 2200, y: 2900, spread: 500 },
+  { id: 'oki', x: 1200, y: 3500, spread: 600 },
+];
+// アマダイ: resident in burrows on the mud (アカアマダイ, deeper) and sand (シロアマダイ, shallower).
+export const AMADAI_GROUNDS = [
+  { id: 'okideep', species: 'akaamadai', area: '沖の深み', x: 620, y: 2680, spread: 320, n: [60, 120] },
+  { id: 'oki_mud', species: 'akaamadai', area: '沖合', x: 1050, y: 3450, spread: 380, n: [70, 140] },
+  { id: 'oki_mud_e', species: 'akaamadai', area: '沖合', x: 2500, y: 3500, spread: 300, n: [50, 100] },
+  { id: 'hira_sand', species: 'shiroamadai', area: '沖の平場', x: 1150, y: 1550, spread: 260, n: [8, 22] },
+  { id: 'kake_sand', species: 'shiroamadai', area: '東の駆け上がり', x: 2600, y: 1150, spread: 200, n: [6, 16] },
+];
+
+/** A multi-day stay: which episode covers day d, and is the fish there? */
+function episode(seed, key, d, minLen, spread, pPresent) {
+  let start = 0;
+  for (let i = 0; i < 2000; i++) {
+    const len = minLen + Math.floor(hashFloat(seed, key, i, 801) * spread);
+    if (d < start + len) return { i, present: hashFloat(seed, key, i, 802) < pPresent, last: d === start + len - 1 };
+    start += len;
+  }
+  return { i: 0, present: false, last: false };
+}
+
+function isakiSchools(seed, d) {
+  const out = [];
+  const a = Math.min(1.2, abundanceOf(seed, 'isaki', d));
+  ISAKI_GROUNDS.forEach((g, gi) => {
+    const ep = episode(seed, keyOf(`isaki:${g.id}`), d, 3, 4, (0.25 + 0.6 * a) * g.weight);
+    if (!ep.present || a < 0.08) return;
+    const r = (j) => hashFloat(seed, gi, d, j, 811);
+    const e = (j) => hashFloat(seed, gi, ep.i, j, 812);
+    let n = (150 + e(1) * 350) * (0.4 + 0.6 * a) * (g.far ? 1.4 : 1);
+    if (ep.last) n *= 0.5;
+    const cx = g.x + (r(1) - 0.5) * g.spread;
+    const cy = g.y + (r(2) - 0.5) * g.spread;
+    out.push({
+      id: `D${d}-isaki-${g.id}`,
+      species: 'isaki',
+      habitat: g.id,
+      area: g.area,
+      a: { x: cx, y: cy },
+      b: { x: cx + (r(3) - 0.5) * 40, y: cy + (r(4) - 0.5) * 40 },
+      orbitR: 10 + r(5) * 20,
+      orbitPeriod: (40 + r(6) * 40) * 60,
+      orbitPhase: r(7) * Math.PI * 2,
+      sigmaH: 18 + e(2) * 14, // a tall, narrow column over the top of the reef
+      sigmaZ: 3 + e(3) * 1.5,
+      offBottomBias: (e(4) - 0.5) * 2,
+      noiseSeed: Math.floor(r(8) * 1e9),
+      counts: splitCounts(Math.round(n), 0.15 + e(5) * 0.15, 0.35),
+    });
+  });
+  return out;
+}
+
+function masabaSchools(seed, d) {
+  const out = [];
+  const a = Math.min(1.2, abundanceOf(seed, 'masaba', d));
+  MASABA_ZONES.forEach((z, zi) => {
+    if (hashFloat(seed, zi, d, 821) > 0.75 * a) return;
+    const r = (j) => hashFloat(seed, zi, d, j, 822);
+    const ang = r(1) * Math.PI * 2;
+    const run = 700 + r(2) * 900; // they cover a lot of ground in a day
+    const ax = z.x + (r(3) - 0.5) * z.spread;
+    const ay = z.y + (r(4) - 0.5) * z.spread;
+    const n = Math.round((1200 + r(5) * 2800) * (0.5 + 0.5 * a));
+    out.push({
+      id: `D${d}-masaba-${z.id}`,
+      species: 'masaba',
+      habitat: z.id,
+      area: areaNameAt(ax, ay),
+      a: { x: ax, y: ay },
+      b: { x: ax + Math.sin(ang) * run, y: ay + Math.cos(ang) * run },
+      moveStart: (5 + r(6) * 2) * 3600,
+      moveEnd: (13 + r(7) * 3) * 3600,
+      orbitR: 60 + r(8) * 80,
+      orbitPeriod: (25 + r(9) * 25) * 60,
+      orbitPhase: r(10) * Math.PI * 2,
+      sigmaH: 60 + r(11) * 40, // a wide band
+      sigmaZ: 2.5 + r(12) * 2,
+      depthFrac: 0.4 + r(13) * 0.2,
+      noiseSeed: Math.floor(r(14) * 1e9),
+      counts: splitCounts(n, 0.15, 0.4),
+    });
+  });
+  return out;
+}
+
+function shiiraSchools(seed, d) {
+  const out = [];
+  const a = Math.min(1.2, abundanceOf(seed, 'shiira', d));
+  if (a < 0.05) return out;
+  SHIIRA_LINES.forEach((z, zi) => {
+    if (hashFloat(seed, zi, d, 831) > 0.8 * a) return;
+    const r = (j) => hashFloat(seed, zi, d, j, 832);
+    const ax = z.x + (r(1) - 0.5) * z.spread;
+    const ay = z.y + (r(2) - 0.5) * z.spread;
+    const n = Math.round((8 + r(3) * 22) * (0.5 + 0.5 * a));
+    out.push({
+      id: `D${d}-shiira-${z.id}`,
+      species: 'shiira',
+      habitat: z.id,
+      area: areaNameAt(ax, ay),
+      a: { x: ax, y: ay },
+      b: { x: ax + (r(4) - 0.5) * 500, y: ay + (r(5) - 0.5) * 500 },
+      moveStart: (5 + r(6)) * 3600,
+      moveEnd: (14 + r(7) * 3) * 3600,
+      orbitR: 60 + r(8) * 80,
+      orbitPeriod: (20 + r(9) * 20) * 60,
+      orbitPhase: r(10) * Math.PI * 2,
+      sigmaH: 40 + r(11) * 30,
+      sigmaZ: 1.2,
+      depthBias: (r(12) - 0.5) * 2,
+      noiseSeed: Math.floor(r(13) * 1e9),
+      counts: splitCounts(n, 0.15, 0.4),
+    });
+  });
+  return out;
+}
+
+function yokowaSchools(seed, d) {
+  const out = [];
+  const a = Math.min(1.2, abundanceOf(seed, 'yokowa', d));
+  if (a < 0.05) return out;
+  YOKOWA_ZONES.forEach((z, zi) => {
+    if (hashFloat(seed, zi, d, 841) > 0.65 * a) return;
+    const r = (j) => hashFloat(seed, zi, d, j, 842);
+    const ang = r(1) * Math.PI * 2;
+    const run = 1000 + r(2) * 1200; // fast: they cross the whole ground in a day
+    const ax = z.x + (r(3) - 0.5) * z.spread;
+    const ay = z.y + (r(4) - 0.5) * z.spread;
+    const n = Math.round((15 + r(5) * 30) * (0.5 + 0.5 * a));
+    out.push({
+      id: `D${d}-yokowa-${z.id}`,
+      species: 'yokowa',
+      habitat: z.id,
+      area: areaNameAt(ax, ay),
+      a: { x: ax, y: ay },
+      b: { x: ax + Math.sin(ang) * run, y: ay + Math.cos(ang) * run },
+      moveStart: (5 + r(6)) * 3600,
+      moveEnd: (12 + r(7) * 4) * 3600,
+      orbitR: 100 + r(8) * 120,
+      orbitPeriod: (20 + r(9) * 20) * 60,
+      orbitPhase: r(10) * Math.PI * 2,
+      sigmaH: 55 + r(11) * 35,
+      sigmaZ: 2.5,
+      depthBias: (r(12) - 0.5) * 3,
+      noiseSeed: Math.floor(r(13) * 1e9),
+      counts: splitCounts(n, 0.15, 0.45),
+    });
+  });
+  return out;
+}
+
+function amadaiSchools(seed, d) {
+  const out = [];
+  AMADAI_GROUNDS.forEach((g, gi) => {
+    const a = Math.min(1.1, abundanceOf(seed, g.species, d));
+    const own = hashFloat(seed, keyOf(`amadai:${g.id}`), 851);
+    const day = hashFloat(seed, gi, d, 852);
+    const n = Math.round((g.n[0] + (g.n[1] - g.n[0]) * (0.7 * own + 0.3 * day)) * (0.4 + 0.6 * a));
+    if (n <= 0) return;
+    out.push({
+      id: `D${d}-amadai-${g.id}`,
+      species: g.species,
+      habitat: g.id,
+      area: g.area,
+      a: { x: g.x, y: g.y },
+      b: { x: g.x, y: g.y },
+      orbitR: 0,
+      sigmaH: g.spread,
+      sigmaZ: 0.8,
+      noiseSeed: Math.floor(hashFloat(seed, gi, 853) * 1e9),
+      counts: splitCounts(n, 0.2, 0.35),
+    });
+  });
+  return out;
+}
+
+/** The mood of a school for the day (MOODS): most follow the rule, some do not. */
+export function moodOf(seed, d, schoolId) {
+  let r = hashFloat(seed, d, keyOf(schoolId), 861);
+  for (const m of MOODS) {
+    r -= m.p;
+    if (r < 0) return { id: m.id, k: m.k };
+  }
+  return { id: 'usual', k: 1 };
 }
 
 const habIndex = (id) => HABITATS.findIndex((h) => h.id === id);
@@ -408,12 +642,13 @@ function madaiSchools(seed, d) {
       const n = (130 + hashFloat(seed, gi, d, 405) * 80) * (0.9 + 0.2 * hashFloat(seed, gi, d, 406));
       const s = madaiSchool(seed, d, g.id, Math.round(n), 1000 + Math.floor(d / 6));
       s.counts = splitCounts(Math.round(n), 0.3, 0.2);
+      s.nokkomi = true; // the gathering stands well off the bottom in the mornings
       out.push(s);
       return;
     }
     const ep = madaiEpisode(seed, gi, d);
     if (!ep.present) return;
-    let n = (70 + hashFloat(seed, gi, ep.i, 403) * 90) * (0.9 + 0.2 * hashFloat(seed, gi, d, 404));
+    let n = (70 + hashFloat(seed, gi, ep.i, 403) * 90) * (0.9 + 0.2 * hashFloat(seed, gi, d, 404)) * (0.45 + 0.55 * Math.min(1, abundanceOf(seed, 'madai', d)));
     if (ep.last) n *= 0.6;
     if (nokkomi && !g.far) n *= 0.6; // many have moved up onto the reef flank
     const s = madaiSchool(seed, d, g.id, Math.round(n), ep.i);
@@ -430,7 +665,7 @@ function ajiFromEpisode(seed, d, h, hi) {
   const base = 300 + hashFloat(seed, hi, ep.i, 103) * 600;
   let n = base * (0.9 + 0.2 * hashFloat(seed, hi, d, 104)) * (h.rich || 1);
   if (ep.last) n *= 0.45; // thinning out before leaving
-  if (makeDayConditions(seed, d).waterTemp <= 18.0) n *= 0.7; // fewer アジ on the grounds in cold water (本作設定)
+  n *= 0.35 + 0.65 * Math.min(1, abundanceOf(seed, 'aji', d)); // fewer アジ on the grounds in the cold months (本作設定)
   const big = Math.min(0.6, Math.max(0, h.big + (hashFloat(seed, hi, ep.i, 105) - 0.4) * 0.25));
   return [ajiSchool(seed, d, h.id, Math.round(n), big, ep.i)];
 }
@@ -450,13 +685,18 @@ export function dayPlan(seed, d) {
     schools.push(...reefSchools(seed, d));
     schools.push(...blueSchools(seed, d));
     schools.push(...squidSchools(seed, d));
+    schools.push(...secondRound(seed, d));
+    // the scripted first days teach the basics: every school follows the rule
     return { schools, scripted: true };
   }
   HABITATS.forEach((h, hi) => schools.push(...ajiFromEpisode(seed, d, h, hi)));
   const temp = makeDayConditions(seed, d).waterTemp;
   const wave = sawaraWave(seed, d);
-  if (wave.present && temp >= SPECIES.sawara.arriveTemp) {
-    const k = 1 + Math.floor(hashFloat(seed, wave.i, 203) * 3);
+  const aS = abundanceOf(seed, 'sawara', d);
+  // spring: the waves come once the water warms past arriveTemp; autumn–winter: while it cools
+  const spring = calendarOf(d).season === 'spring';
+  if (wave.present && aS > 0.12 && (!spring || temp >= SPECIES.sawara.arriveTemp)) {
+    const k = 1 + Math.floor(hashFloat(seed, wave.i, 203) * (1 + 2 * Math.min(1, aS)));
     for (let j = 0; j < k; j++) {
       const zone = SAWARA_ZONES[Math.floor(hashFloat(seed, wave.i, j, 204) * SAWARA_ZONES.length)];
       const n = Math.round((20 + hashFloat(seed, wave.i, j, 205) * 35) * (0.85 + 0.3 * hashFloat(seed, d, j, 206)));
@@ -467,5 +707,12 @@ export function dayPlan(seed, d) {
   schools.push(...reefSchools(seed, d));
   schools.push(...blueSchools(seed, d));
   schools.push(...squidSchools(seed, d));
+  schools.push(...secondRound(seed, d));
+  for (const s of schools) s.mood = moodOf(seed, d, s.id);
   return { schools, scripted: false };
+}
+
+/** The fish added in the second round (本作設定). */
+function secondRound(seed, d) {
+  return [...isakiSchools(seed, d), ...masabaSchools(seed, d), ...shiiraSchools(seed, d), ...yokowaSchools(seed, d), ...amadaiSchools(seed, d)];
 }

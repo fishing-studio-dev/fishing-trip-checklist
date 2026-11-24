@@ -222,6 +222,9 @@ export function stepLonglineOperation(op, set, ctx, dt) {
     const f = h.fish;
     h.fish = null;
     op.landed[f.size] += 1;
+    if (!op.landedBy) op.landedBy = {};
+    if (!op.landedBy[f.species]) op.landedBy[f.species] = { s: 0, m: 0, l: 0 };
+    op.landedBy[f.species][f.size] += 1;
     op.landedKg += f.kg;
     op.landedCount += 1;
     op.landings.push({ t, n: 1, kg: f.kg });
@@ -287,11 +290,11 @@ export function soakLongline(set, ctx, dt) {
   const { world } = ctx;
   const t = world.time;
   let poses = null;
-  const fishMax = maxFishKg(m.target);
+  const fishMax = maxFishKg(m.targets || m.target);
   for (const h of set.hooks) {
     if (h.up || h.fish) continue;
     if (!poses) poses = posesAt(world);
-    const d = densityAt(world, h.x, h.y, h.z, poses, m.target);
+    const d = densityAt(world, h.x, h.y, h.z, poses, m.targets || m.target);
     if (d.total <= 0 || d.best == null) continue;
     const act = activityAt(world, world.schools[d.best], t);
     const bait = Math.exp(-(t - h.setT) / m.baitLife);

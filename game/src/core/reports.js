@@ -4,9 +4,10 @@
 // fish moved, the school thinned) or because it was a sighting/estimate, never
 // because of an arbitrary lie. Predictions and rules of thumb are kept apart
 // from observations (handover §7.2).
-import { PEERS, SPECIES, TIME, BRIEFING_T, METHODS } from './data.js';
+import { PEERS, SPECIES, BRIEFING_T, METHODS } from './data.js';
 import { createWorld, schoolPose, schoolTotal, activityAt, offBottomAt } from './world.js';
 import { HABITATS, SAWARA_ZONES, MADAI_GROUNDS } from './season.js';
+import { dayTimes, daylightAt } from './calendar.js';
 import { areaNameAt, fmtClock, makeDayConditions, forecastOf, tideClass, compass8, CHART_LABELS, weatherOf } from './sea.js';
 import { hashFloat } from './rng.js';
 
@@ -15,7 +16,7 @@ function worldFor(seed, d) {
   const k = `${seed}:${d}`;
   if (!cache.has(k)) {
     if (cache.size > 40) cache.delete(cache.keys().next().value);
-    cache.set(k, createWorld(seed, d, TIME.DEPART));
+    cache.set(k, createWorld(seed, d, dayTimes(d).depart));
   }
   return cache.get(k);
 }
@@ -43,17 +44,17 @@ function sizeLabel(school) {
   return `${sp.sizes[best].label}主体`;
 }
 
-function layerText(school, t, pose) {
+function layerText(school, t, pose, world = null) {
   if (school.species === 'sawara') return `表層から${Math.max(1, Math.round(pose.z))}mくらい`;
   if (school.species === 'madai') return '底べったり';
-  return `底から${Math.max(1, Math.round(offBottomAt(school, t)))}mくらい`;
+  return `底から${Math.max(1, Math.round(offBottomAt(school, t, world)))}mくらい`;
 }
 
 function nearest(world, species, x, y, t, radius) {
   let best = null;
   for (const s of world.schools) {
     if (s.species !== species || schoolTotal(s) <= 0) continue;
-    const pose = schoolPose(s, t);
+    const pose = schoolPose(s, t, world);
     const dist = Math.hypot(pose.x - x, pose.y - y);
     if (dist <= radius && (!best || dist < best.dist)) best = { school: s, pose, dist };
   }
@@ -113,8 +114,8 @@ function genFishing(seed, od, spotId, t, idBase) {
   return report({
     originId, speaker: 'gen', kind: 'catch', species: 'aji', methodId: 'handline',
     area: hit.school.area, place, spot: roundPt(hit.pose), obsDay: od, obsT: t, count,
-    layer: layerText(hit.school, t, hit.pose), sizeLabel: sizeLabel(hit.school),
-    text: `${place}で${sizeLabel(hit.school)}に約${count}尾${slow ? '。食いが落ちていた' : ''}。${layerText(hit.school, t, hit.pose)}で食った。`,
+    layer: layerText(hit.school, t, hit.pose, w), sizeLabel: sizeLabel(hit.school),
+    text: `${place}で${sizeLabel(hit.school)}に約${count}尾${slow ? '。食いが落ちていた' : ''}。${layerText(hit.school, t, hit.pose, w)}で食った。`,
     opinion: slow ? `群れが抜け始めたかもしれん。${placeLabel(other.x, other.y)}あたりも見てみる。` : 'しばらくは同じあたりに付いていると思う。',
     opinionKind: '予想',
   });
@@ -136,8 +137,8 @@ function hamadaTrolling(seed, od, t0, idBase, stepS = 2700) {
       return report({
         originId, speaker: 'hamada', kind: 'catch', species: 'sawara', methodId: 'troll',
         area: hit.school.area, place, spot: roundPt(hit.pose), obsDay: od, obsT: t, count,
-        layer: layerText(hit.school, t, hit.pose), sizeLabel: sizeLabel(hit.school),
-        text: `${place}を曳いてサワラを${count}本。${layerText(hit.school, t, hit.pose)}の層に付いていた。`,
+        layer: layerText(hit.school, t, hit.pose, w), sizeLabel: sizeLabel(hit.school),
+        text: `${place}を曳いてサワラを${count}本。${layerText(hit.school, t, hit.pose, w)}の層に付いていた。`,
         opinion: count >= 3 ? '群れが入ってきている。何日かは楽しめそうだ。' : 'まだぽつぽつだな。',
         opinionKind: '予想',
       });
@@ -193,6 +194,17 @@ function morningPass(seed, d, who, x, y, t, label, idBase) {
   const w = worldFor(seed, d);
   const originId = `O${d}-${who}-${idBase}`;
   const saw = nearest(w, 'sawara', x, y, t, 380);
+  const light = daylightAt({ rise: w.cond.sun.sunrise, set: w.cond.sun.sunset }, t);
+  if (saw && light < 0.3) {
+    // before dawn nothing shows on the surface — but the sounder picks up the school passing under
+    return report({
+      originId, speaker: who, kind: 'echo', species: 'sawara', methodId: 'troll',
+      area: saw.school.area, place: placeLabel(saw.pose.x, saw.pose.y), spot: roundPt(saw.pose), obsDay: d, obsT: t,
+      layer: layerText(saw.school, t, saw.pose, w),
+      text: `暗いうちに${placeLabel(saw.pose.x, saw.pose.y)}を通ったら、魚探の${layerText(saw.school, t, saw.pose, w)}に大きめの魚の反応が点々と出ていた。`,
+      opinion: 'あの層を走る群れなら、サワラが入っているのかもしれない。', opinionKind: '見立て',
+    });
+  }
   if (saw && saw.pose.z < 6.5) {
     return report({
       originId, speaker: who, kind: 'sighting', species: 'sawara', methodId: 'troll',
@@ -206,8 +218,8 @@ function morningPass(seed, d, who, x, y, t, label, idBase) {
     return report({
       originId, speaker: who, kind: 'echo', species: 'aji', methodId: 'handline',
       area: aji.school.area, place: placeLabel(aji.pose.x, aji.pose.y), spot: roundPt(aji.pose), obsDay: d, obsT: t,
-      layer: layerText(aji.school, t, aji.pose),
-      text: `${placeLabel(aji.pose.x, aji.pose.y)}を通ったら、魚探に${layerText(aji.school, t, aji.pose)}の反応があった。竿は出していない。`,
+      layer: layerText(aji.school, t, aji.pose, w),
+      text: `${placeLabel(aji.pose.x, aji.pose.y)}を通ったら、魚探に${layerText(aji.school, t, aji.pose, w)}の反応があった。竿は出していない。`,
       opinion: 'あの付き方ならアジだろう。', opinionKind: '見立て',
     });
   }
@@ -267,9 +279,9 @@ export function briefingReports(seed, d) {
   // this morning: 源さん passes another reef, 浜田さん the slope on the way out
   const reefs = REEF_HABITATS.filter((id) => id !== genSpot(seed, d));
   const pass = habitat(reefs[Math.floor(hashFloat(seed, d, 303) * reefs.length)]);
-  out.push(morningPass(seed, d, 'gen', pass.x, pass.y, round10min(4 * 3600 + hashFloat(seed, d, 304) * 1200), placeLabel(pass.x, pass.y), 'm'));
+  out.push(morningPass(seed, d, 'gen', pass.x, pass.y, round10min(BRIEFING_T - 2400 + hashFloat(seed, d, 304) * 1200), placeLabel(pass.x, pass.y), 'm')); // out in the dark, before the briefing
   const z = SAWARA_ZONES[0];
-  out.push(morningPass(seed, d, 'hamada', z.x, z.y, round10min(4 * 3600 + 600 + hashFloat(seed, d, 305) * 900), '東の駆け上がりの沖', 'm'));
+  out.push(morningPass(seed, d, 'hamada', z.x, z.y, round10min(BRIEFING_T - 1800 + hashFloat(seed, d, 305) * 900), '東の駆け上がりの沖', 'm'));
   const hadSawara = out.some((r) => r.species === 'sawara' && (r.kind === 'catch' || r.kind === 'sighting'));
   out.push(...rules(seed, d, hadSawara));
   // a relay: one peer passes on the other's report (same origin = not independent evidence)

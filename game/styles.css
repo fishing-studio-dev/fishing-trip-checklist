@@ -378,3 +378,12 @@ body.chart-open .toast { top: 38%; bottom: auto; }
 .lg-inline { display: inline-block; width: 64px; height: 6px; margin-right: 8px; vertical-align: middle; background: rgba(255,255,255,.08); border-radius: 3px; overflow: hidden; }
 .lg-inline i { display: block; height: 100%; background: var(--accent); border-radius: 0 3px 3px 0; }
 td.neg { color: var(--warn); }
+
+/* 季節の便り (the season card on the port screen) */
+.card.season { margin-bottom: 12px; border-left: 6px solid var(--accent, #4a90c2); }
+.card.season h2 small { font-weight: normal; font-size: 0.8em; opacity: 0.85; }
+.card.season-spring { border-left-color: #e48fb0; }
+.card.season-summer { border-left-color: #2bb3c7; }
+.card.season-autumn { border-left-color: #d98a3a; }
+.card.season-winter { border-left-color: #8ea3c2; }
+.season-new { font-weight: bold; margin: 4px 0 8px; }

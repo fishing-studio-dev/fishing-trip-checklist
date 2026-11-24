@@ -21,6 +21,18 @@ const SKY = [[4.5, 0x56618a], [5.2, 0xe8b08c], [6.5, 0xb9cfe0], [8, 0x9ccbe8], [
 const SKY_TOP = [[4.5, 0x1e2c52], [5.4, 0x5577a8], [7, 0x3f7fc4], [15, 0x3f7fc4], [16.6, 0x4a5a8a], [17.5, 0x1e2244], [18.5, 0x0a0f22], [19.5, 0x04060e]];
 const SEA_COL = [[4.5, 0x24405c], [5.5, 0x2d5672], [7, 0x1f6385], [15, 0x1d5a7a], [16.6, 0x3b4a5a], [18, 0x1a2633], [19.5, 0x0a121b]];
 
+const SEASON_TINT = { spring: [0x2f6a7a, 0.15], summer: [0x148aa0, 0.35], autumn: [0x2a5a70, 0.15], winter: [0x34505e, 0.35] };
+
+/** Map clock time onto the sky palette so that sunrise and sunset fall where it expects them. */
+export function paletteHour(t, sun) {
+  if (!sun) return t / 3600;
+  const R = 5.25;
+  const S = 16.9;
+  if (t <= sun.sunrise) return R + (t - sun.sunrise) / 3600;
+  if (t >= sun.sunset) return S + (t - sun.sunset) / 3600;
+  return R + ((t - sun.sunrise) / (sun.sunset - sun.sunrise)) * (S - R);
+}
+
 export function createScene(canvas) {
   const renderer = new THREE.WebGLRenderer({ canvas, antialias: true });
   renderer.setPixelRatio(Math.min(window.devicePixelRatio || 1, 2));
@@ -218,7 +230,9 @@ export function createScene(canvas) {
    */
   function render(st) {
     const rt = st.realTime;
-    const hour = st.gameTime / 3600;
+    // the palette below was drawn for sunrise ≈ 5:15 and sunset ≈ 16:55; the
+    // day's real sun (it moves with the season) is mapped onto it
+    const hour = paletteHour(st.gameTime, st.sun);
     const sky = lerpColor(SKY, hour);
     // fog (霧): the visibility from the simulation closes the view in and greys the sky
     const vis = st.visibility != null ? st.visibility : 3000;
@@ -230,6 +244,8 @@ export function createScene(canvas) {
     skyMat.uniforms.horizon.value.copy(sky);
     skyMat.uniforms.top.value.copy(lerpColor(SKY_TOP, hour));
     seaMat.color.copy(lerpColor(SEA_COL, hour));
+    // the season shows in the water: clear blue-green in summer, grey-blue in winter
+    if (st.season && SEASON_TINT[st.season]) seaMat.color.lerp(new THREE.Color(SEASON_TINT[st.season][0]), SEASON_TINT[st.season][1]);
     const dayK = Math.max(0.5, Math.min(1, Math.sin(((hour - 4.8) / 12.5) * Math.PI) * 1.4));
     sun.intensity = 1.7 * dayK;
     hemi.intensity = 0.55 + 0.6 * dayK;

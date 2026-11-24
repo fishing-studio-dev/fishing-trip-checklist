@@ -1,5 +1,6 @@
-// Item 10: weather — 時化 (nobody goes out), やや時化 (strong wind, rough sea),
-// 霧 (morning fog that lifts). A pure function of (seed, day).
+// Item 10 (revised in the second round, R17): weather — やや時化 (strong wind,
+// rough sea; winter monsoon, late-summer typhoon swell) and 霧 (morning fog
+// that lifts). Nobody is kept in port by the weather. A pure function of (seed, day).
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { createProfile, markDeparture, restDay } from '../src/core/profile.js';
@@ -8,6 +9,7 @@ import { weatherOf, makeDayConditions, forecastOf, forecastText, visibilityAt } 
 import { briefingReports, radioReports } from '../src/core/reports.js';
 import { SEASON_SCRIPT } from '../src/core/data.js';
 import { CALM } from './helpers.js';
+import { calendarOf } from '../src/core/calendar.js';
 
 const NOW = '2026-11-23T00:00:00.000Z';
 
@@ -16,39 +18,53 @@ function findDay(seed, kind, from = 7) {
   return null;
 }
 
-test('weather is a pure function of seed and day; the early season is fair; storms, rough days and fog all happen', () => {
+test('weather is a pure function of seed and day; the early season is fair; nothing ever keeps the boats in (R17)', () => {
   for (const d of Object.keys(SEASON_SCRIPT)) assert.equal(weatherOf(77, Number(d)).kind, 'fine');
   const n = { storm: 0, rough: 0, fog: 0 };
   for (let d = 7; d < 307; d++) {
     const w = weatherOf(77, d);
     assert.deepEqual(weatherOf(77, d), w);
+    assert.equal(w.storm, false);
     if (n[w.kind] != null) n[w.kind] += 1;
   }
-  assert.ok(n.storm >= 10 && n.storm <= 40, JSON.stringify(n));
-  assert.ok(n.rough >= 15 && n.rough <= 50, JSON.stringify(n));
-  assert.ok(n.fog >= 20 && n.fog <= 60, JSON.stringify(n));
+  assert.equal(n.storm, 0);
+  assert.ok(n.rough >= 25 && n.rough <= 70, JSON.stringify(n));
+  assert.ok(n.fog >= 15 && n.fog <= 60, JSON.stringify(n));
 });
 
-test('a storm blows ≥ 11 m/s, a rough day 8–10.5 m/s; the forecast says so', () => {
-  const ds = findDay(77, 'storm');
-  const dr = findDay(77, 'rough');
-  assert.ok(makeDayConditions(77, ds).windSpeed >= 11);
-  const wr = makeDayConditions(77, dr).windSpeed;
-  assert.ok(wr >= 8 && wr <= 10.5);
-  assert.ok(forecastText(forecastOf(makeDayConditions(77, ds))).some((l) => /時化/.test(l)));
-});
-
-test('on a storm day the peers stay in: no radio, no catches that day, and they say so the next morning', () => {
-  const ds = findDay(77, 'storm');
-  assert.equal(radioReports(77, ds).length, 0);
-  const today = briefingReports(77, ds);
-  assert.ok(today.some((r) => /時化/.test(r.text)));
-  assert.ok(!today.some((r) => r.kind === 'catch' || r.kind === 'echo' || r.kind === 'sighting'));
-  if (!weatherOf(77, ds + 1).storm) {
-    const next = briefingReports(77, ds + 1);
-    assert.ok(next.some((r) => /昨日は時化/.test(r.text)));
-    assert.ok(!next.some((r) => r.obsDay === ds && r.kind !== 'rule'));
+test('the weather follows the season: winter is rough with the north-west monsoon, spring has the fogs, late summer brings typhoon swell', () => {
+  const by = [0, 0, 0, 0].map(() => ({ rough: 0, fog: 0, days: 0, typhoon: 0 }));
+  for (let d = 61; d <= 61 + 60 * 5 - 1; d++) {
+    const w = weatherOf(3, d);
+    const b = by[calendarOf(d).seasonIndex];
+    b.days += 1;
+    if (w.rough) b.rough += 1;
+    if (w.kind === 'fog') b.fog += 1;
+    if (w.typhoon) b.typhoon += 1;
   }
+  const [spring, summer, , winter] = by;
+  assert.ok(winter.rough / winter.days > 2 * (summer.rough - summer.typhoon) / summer.days, JSON.stringify(by));
+  assert.ok(spring.fog > winter.fog, JSON.stringify(by));
+  assert.ok(summer.typhoon > 0, JSON.stringify(by));
+  // winter's wind mostly blows from the north-west (toward the south-east)
+  let nw = 0;
+  let wd = 0;
+  for (let d = 106; d <= 120; d++) {
+    const c = makeDayConditions(3, d);
+    wd += 1;
+    const toward = ((c.windDir * 180) / Math.PI + 360) % 360;
+    if (toward > 80 && toward < 190) nw += 1;
+  }
+  assert.ok(nw >= wd * 0.5, `${nw}/${wd}`);
+});
+
+test('a rough day blows 8–11.5 m/s; the forecast says so and the peers still go out', () => {
+  const dr = findDay(77, 'rough');
+  const wr = makeDayConditions(77, dr).windSpeed;
+  assert.ok(wr >= 8 && wr <= 11.5, `${wr}`);
+  assert.ok(forecastText(forecastOf(makeDayConditions(77, dr))).some((l) => /時化|うねり/.test(l)));
+  assert.ok(radioReports(77, dr).length > 0);
+  assert.ok(briefingReports(77, dr + 1).some((r) => r.obsDay === dr && r.kind !== 'rule'));
 });
 
 test('resting in port passes the day and changes nothing else; not while at sea', () => {

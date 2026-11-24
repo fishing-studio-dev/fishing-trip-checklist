@@ -10,6 +10,7 @@ import { sideColumn } from './sideview.js';
 import { MARK_KINDS, MARK_LIMITS, cleanText, newVoyageMark, pushVoyageMark, bearingOf } from './marks.js';
 import { surfaceCues, visibleCues, cueDistance } from './surface.js';
 import { recordDepth } from './bathy.js';
+import { dayTimes } from './calendar.js';
 import { createSonar, stepSonar } from './sonar.js';
 import { createOperation, stepOperation, requestStop, inFlightKg } from './fishing.js';
 import { createTrollOperation, stepTrollOperation, trollTargetSpeed, validateRoute, defaultRoute, routeLength, trollInFlightKg } from './troll.js';
@@ -43,9 +44,11 @@ export function createVoyage(profile, opts = {}) {
   const av = profile.activeVoyage;
   if (!av) throw new Error('createVoyage: profile has no active voyage');
   const model = BOATS[profile.boat.model];
-  // an evening trip (イカ釣り) leaves at 16:00 and is home by 23:00
+  // the day's hours follow the sun (R18): out an hour before sunrise, home by
+  // sunset; an evening trip (イカ釣り) leaves an hour before sunset
   const night = !!(opts.night != null ? opts.night : av.night);
-  const world = createWorld(profile.worldSeed, av.day, night ? TIME.NIGHT.DEPART : TIME.DEPART, opts.scenario || null);
+  const hours = dayTimes(av.day);
+  const world = createWorld(profile.worldSeed, av.day, night ? hours.night.depart : hours.depart, opts.scenario || null);
   const start = opts.start || { x: PORT.dock.x, y: PORT.dock.y + 20, heading: 0 };
   const slot = (id) => (profile.boat.slots[id] ? profile.boat.slots[id].itemId : null);
   const sounderId = slot('helm_sounder');
@@ -86,8 +89,8 @@ export function createVoyage(profile, opts = {}) {
     },
     sonar: sonarId ? createSonar(EQUIPMENT[sonarId].sonar) : null,
     night,
-    warnT: night ? TIME.NIGHT.WARN : TIME.WARN,
-    endT: night ? TIME.NIGHT.END : TIME.END,
+    warnT: night ? hours.night.warn : hours.warn,
+    endT: night ? hours.night.end : hours.end,
     levels: Object.fromEntries(Object.keys(METHODS).map((m) => [m, levelFromXp((profile.methods[m] || { xp: 0 }).xp)])),
     method: opts.method || planMethod(av.plan, { troll: trollId, longline: longlineId, lights: lightsId }),
     plan: av.plan || null,

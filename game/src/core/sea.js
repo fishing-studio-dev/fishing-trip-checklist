@@ -2,6 +2,7 @@
 // Coordinates: metres, x = east, y = north. Port is on the south coast.
 import { AREA, PORT, TIDE_CYCLE, TIDE_PERIOD, TIDE_OFFSET, SEASON_SCRIPT } from './data.js';
 import { hashFloat, noise1 } from './rng.js';
+import { YEAR_DAYS, yearPos, yearDay, calendarOf, dayTimes } from './calendar.js';
 
 export const FEATURES = {
   kitaNoSe: { name: '北の瀬', x: 2000, y: 2250, r: 220, h: 34 },
@@ -152,10 +153,40 @@ export const CHART_LABELS = [
 // Sea conditions of one day. Closed-form functions of game time so that any
 // view, replay or fast-forward reads the same values.
 
-/** Water temperature trend: smooth over days so that warming is a multi-day signal. */
+// 玄界灘の水温（本作設定）: monthly means of the surface water, April to March,
+// shaped after the published observations of the 筑前海 (coldest about 14 ℃ in
+// March, warmest about 27 ℃ at the turn of August and September). A game
+// setting, not a reproduction of real data.
+export const WATER_TEMP_MONTHLY = [15.3, 17.6, 20.6, 24.0, 26.8, 26.4, 23.6, 20.8, 18.2, 16.0, 14.6, 14.2];
+
+/** The plain seasonal curve at a year position 0..1 (0 = 1 April), smooth (periodic Catmull-Rom). */
+export function seasonCurve(pos) {
+  const T = WATER_TEMP_MONTHLY;
+  const n = T.length;
+  const x = (((pos * n - 0.5) % n) + n) % n;
+  const i = Math.floor(x);
+  const u = x - i;
+  const p0 = T[(i - 1 + n) % n];
+  const p1 = T[i];
+  const p2 = T[(i + 1) % n];
+  const p3 = T[(i + 2) % n];
+  return 0.5 * (2 * p1 + (-p0 + p2) * u + (2 * p0 - 5 * p1 + 4 * p2 - p3) * u * u + (-p0 + 3 * p1 - 3 * p2 + p3) * u * u * u);
+}
+
+/**
+ * Water temperature of the day before rounding: the seasonal curve, a warm or
+ * cold year (about ±0.8 ℃, changing slowly across the years) and a few days'
+ * wobble (cold or warm water coming in).
+ */
 export function seasonalTemp(worldSeed, day) {
-  // peak around day 7 so it continues from the warm early-season script
-  return 18.6 + 1.1 * Math.sin((2 * Math.PI * day) / 34 + 0.28) + 0.25 * noise1(worldSeed * 3 + 5, day / 2);
+  const year = noise1(worldSeed * 5 + 3, day / YEAR_DAYS) * 0.8;
+  const spell = noise1(worldSeed * 3 + 5, day / 2.5) * 0.35;
+  return seasonCurve(yearPos(day)) + year + spell;
+}
+
+/** How warm or cold this year runs compared with the usual curve (℃). */
+export function yearAnomaly(worldSeed, day) {
+  return Math.round(noise1(worldSeed * 5 + 3, day / YEAR_DAYS) * 0.8 * 10) / 10;
 }
 
 export function tideOfDay(day) {
@@ -169,41 +200,65 @@ function rawTemp(worldSeed, day) {
 }
 
 /**
- * Season of the sea (本作設定), from the water temperature and how it has
- * moved over the last two days — public knowledge in port, like the tide table.
- * 乗っ込み: while the water is warming through 17.9-19.3 ℃, マダイ gather on the
- * flanks of 北の瀬 (game setting, not a biological claim).
+ * Season of the sea (本作設定): the calendar season and what the water is doing
+ * — public knowledge in port, like the tide table. 乗っ込み: while the water
+ * warms through about 15–18 ℃ in spring, マダイ gather on the flanks of 北の瀬
+ * (game setting, not a biological claim).
  */
 export function seasonOf(worldSeed, day) {
   const t = rawTemp(worldSeed, day);
   const trend = Math.round(((t - rawTemp(worldSeed, day - 2)) / 2) * 100) / 100;
   let label;
-  if (trend >= 0.03) label = '水温の上がる時期';
-  else if (trend <= -0.03) label = '水温の下がる時期';
-  else if (t >= 19.2) label = '水温の高い時期';
-  else if (t <= 18.0) label = '水温の低い時期';
+  if (trend >= 0.12) label = '水温の上がる時期';
+  else if (trend <= -0.12) label = '水温の下がる時期';
+  else if (t >= 24) label = '水温の高い時期';
+  else if (t <= 15.5) label = '水温の低い時期';
   else label = '水温の落ち着いた時期';
-  return { label, trend, nokkomi: trend >= 0.03 && t >= 17.9 && t <= 19.3 };
+  const cal = calendarOf(day);
+  return { label, trend, nokkomi: trend >= 0.12 && t >= 14.6 && t <= 18.2, name: cal.seasonName, id: cal.season, dayOfSeason: cal.dayOfSeason, dateLabel: cal.dateLabel, calendar: cal.label };
 }
 
 /**
- * The day's weather (本作設定), a pure function of (seed, day). The early
- * season (scripted days) is fair. 時化 (storm) can last into a second day;
- * nobody goes out. やや時化: a strong wind (the boat drifts fast, the sea is
- * rough). 霧: morning fog that lifts between 7:30 and 10:30.
+ * The day's weather (本作設定), a pure function of (seed, day). Nobody is kept
+ * in port by the weather (R17: a season has only 15 days); a bad day is the
+ * player's own call to rest. やや時化: a strong wind (the boat drifts fast,
+ * the sea is rough) — most often in winter (the north-west monsoon), and for
+ * two days when a typhoon passes far off in late summer. 霧: morning fog that
+ * lifts between 7:30 and 10:30 — most often in spring. The scripted first
+ * days are fair.
  */
+const ROUGH_BY_SEASON = [0.1, 0.08, 0.14, 0.3];
+const FOG_BY_SEASON = [0.24, 0.1, 0.06, 0.05];
+function typhoonOn(worldSeed, day) {
+  // late summer (August–September): a typhoon passing far off makes two rough days
+  const yd = yearDay(day);
+  if (yd < 21 || yd > 29) return false;
+  const year = Math.floor((day - 1) / YEAR_DAYS);
+  for (let k = 0; k < 2; k++) {
+    if (hashFloat(worldSeed, year, k, 709) > 0.6) continue;
+    const start = 21 + Math.floor(hashFloat(worldSeed, year, k, 710) * 8);
+    if (yd === start || yd === start + 1) return true;
+  }
+  return false;
+}
 export function weatherOf(worldSeed, day) {
-  if (SEASON_SCRIPT[day] || day < 1) return { kind: 'fine', label: '晴れ', storm: false, rough: false, fog: null };
-  const stormStart = (d) => hashFloat(worldSeed, d, 701) < 0.06;
-  const storm = stormStart(day) || (stormStart(day - 1) && hashFloat(worldSeed, day, 704) < 0.5 && !SEASON_SCRIPT[day - 1]);
-  if (storm) return { kind: 'storm', label: '時化（出漁中止）', storm: true, rough: true, fog: null };
-  if (hashFloat(worldSeed, day, 703) < 0.12) return { kind: 'rough', label: 'やや時化（風が強い）', storm: false, rough: true, fog: null };
-  if (hashFloat(worldSeed, day, 702) < 0.16) {
+  const fair = { kind: 'fine', label: '晴れ', storm: false, rough: false, fog: null };
+  if (SEASON_SCRIPT[day] || day < 1) return fair;
+  const si = calendarOf(day).seasonIndex;
+  if (typhoonOn(worldSeed, day)) return { kind: 'rough', label: '台風のうねり（風が強い）', storm: false, rough: true, typhoon: true, fog: null };
+  if (hashFloat(worldSeed, day, 703) < ROUGH_BY_SEASON[si]) return { kind: 'rough', label: si === 3 ? 'やや時化（北西の季節風）' : 'やや時化（風が強い）', storm: false, rough: true, fog: null };
+  if (hashFloat(worldSeed, day, 702) < FOG_BY_SEASON[si]) {
     const until = Math.round((7.5 + hashFloat(worldSeed, day, 705) * 3) * 3600);
     const vis = Math.round(150 + hashFloat(worldSeed, day, 706) * 250);
     return { kind: 'fog', label: `朝霧（${Math.floor(until / 3600)}時ごろまで）`, storm: false, rough: false, fog: { until, vis } };
   }
-  return { kind: hashFloat(worldSeed, day, 707) < 0.35 ? 'cloudy' : 'fine', label: hashFloat(worldSeed, day, 707) < 0.35 ? 'くもり' : '晴れ', storm: false, rough: false, fog: null };
+  const cloudy = hashFloat(worldSeed, day, 707) < (si === 3 ? 0.55 : 0.35);
+  return { kind: cloudy ? 'cloudy' : 'fine', label: cloudy ? 'くもり' : '晴れ', storm: false, rough: false, fog: null };
+}
+
+/** Was the day before a rough one (the coastal water is stirred and muddy)? */
+export function afterRough(worldSeed, day) {
+  return day > 1 && weatherOf(worldSeed, day - 1).rough;
 }
 
 /** How far one can see at time t (m): the fog lifts over half an hour; otherwise clear. */
@@ -215,11 +270,17 @@ export function visibilityAt(cond, t) {
   return f.vis + (3000 - f.vis) * (1 - k);
 }
 
+// Prevailing winds by season (本作設定, the direction the wind blows TOWARD):
+// winter's north-westerly blows toward the south-east, summer's south-westerly
+// toward the north-east; spring and autumn are changeable.
+const WIND_TOWARD = [null, (40 * Math.PI) / 180, null, (135 * Math.PI) / 180];
 export function makeDayConditions(worldSeed, day) {
   const [tideName, tideAmp] = tideOfDay(day);
   const highWater = (day * 50 * 60 + Math.floor(hashFloat(worldSeed, day, 11) * 3600)) % TIDE_PERIOD;
+  const si = calendarOf(day).seasonIndex;
   let windDir = hashFloat(worldSeed, day, 21) * Math.PI * 2; // direction wind blows TOWARD
-  let windSpeed = 1 + hashFloat(worldSeed, day, 22) * 6.5;
+  if (WIND_TOWARD[si] != null && hashFloat(worldSeed, day, 23) < 0.7) windDir = WIND_TOWARD[si] + (hashFloat(worldSeed, day, 24) - 0.5) * 1.4;
+  let windSpeed = 1 + hashFloat(worldSeed, day, 22) * (si === 3 ? 7.5 : 6.5);
   let waterTemp = seasonalTemp(worldSeed, day);
   const script = SEASON_SCRIPT[day];
   if (script && script.cond) {
@@ -228,7 +289,7 @@ export function makeDayConditions(worldSeed, day) {
     if (script.cond.waterTemp != null) waterTemp = script.cond.waterTemp;
   }
   const weather = weatherOf(worldSeed, day);
-  if (weather.storm) windSpeed = 11 + hashFloat(worldSeed, day, 708) * 4;
+  if (weather.typhoon) windSpeed = 9 + hashFloat(worldSeed, day, 708) * 2.5;
   else if (weather.rough) windSpeed = 8 + hashFloat(worldSeed, day, 708) * 2.5;
   const axis = (40 * Math.PI) / 180; // flood current flows toward NE
   return {
@@ -243,6 +304,8 @@ export function makeDayConditions(worldSeed, day) {
     axis,
     seed: worldSeed,
     season: seasonOf(worldSeed, day),
+    sun: dayTimes(day),
+    afterRough: afterRough(worldSeed, day),
   };
 }
 
@@ -308,11 +371,12 @@ export function forecastText(cond) {
   const from = compass8(-Math.sin(cond.windDir), -Math.cos(cond.windDir));
   lines.push(`風：${from}の風 ${cond.windSpeed.toFixed(1)}m/s 前後`);
   lines.push(`水温：${cond.waterTemp.toFixed(1)}℃前後`);
-  if (cond.season) lines.push(`季節：${cond.season.label}（ここ2日で水温${cond.season.trend >= 0 ? '+' : ''}${cond.season.trend.toFixed(2)}℃/日）${cond.season.nokkomi ? '・マダイの乗っ込みの頃' : ''}`);
-  // describe the tide between 05:00 and 12:00 by sampling the closed form
+  if (cond.season) lines.push(`季節：${cond.season.calendar || ''}・${cond.season.label}（ここ2日で水温${cond.season.trend >= 0 ? '+' : ''}${cond.season.trend.toFixed(1)}℃/日）${cond.season.nokkomi ? '・マダイの乗っ込みの頃' : ''}`);
+  if (cond.sun) lines.push(`日の出 ${fmtClock(cond.sun.sunrise)}・日の入り ${fmtClock(cond.sun.sunset)}（出港 ${fmtClock(cond.sun.depart)}、${fmtClock(cond.sun.end)}に帰港を始める）`);
+  // describe the tide from departure until noon by sampling the closed form
   const parts = [];
   let prev = null;
-  for (let h = 5; h <= 12; h += 0.5) {
+  for (let h = Math.floor((cond.sun ? cond.sun.depart : 5 * 3600) / 1800) / 2; h <= 12; h += 0.5) {
     const c = currentAt(cond, h * 3600);
     const sp = Math.hypot(c.x, c.y);
     const label = sp < 0.1 ? '潮止まり' : `${compass8(c.x, c.y)}へ流れる`;

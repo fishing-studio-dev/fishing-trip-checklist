@@ -23,8 +23,8 @@ const isPredator = (s) => s.species === 'sawara' || (SPECIES[s.species] && SPECI
 
 /** Every surface sign at time t: [{id, kind, x, y, strength 0..1, ...}]. */
 export function surfaceCues(world, t = world.time) {
-  const h = t / 3600;
-  if (h < 4.8 || h > 18.2) return []; // too dark to see anything
+  const sun = world.cond.sun;
+  if (sun ? t < sun.sunrise - 1500 || t > sun.sunset + 1200 : t < 4.8 * 3600 || t > 18.2 * 3600) return []; // too dark to see anything
   const cues = [];
   const poses = posesAt(world, t);
   const schools = world.schools;

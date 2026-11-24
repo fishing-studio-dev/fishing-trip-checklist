@@ -51,6 +51,7 @@ export function createTrollOperation({ id, voyageId, level, gear, gearId, startT
       };
     }),
     landed: { s: 0, m: 0, l: 0 },
+    landedBy: {}, // per species: {sawara: {s, m, l}, shiira: …}
     landedKg: 0,
     landedCount: 0,
     landings: [],
@@ -148,7 +149,7 @@ export function stepTrollOperation(op, ctx, dt) {
         const lp = lurePosition(boat, op.gear, line);
         const depth = Math.min(line.lureDepth, Math.max(0.5, depthAt(lp.x, lp.y) - 1));
         if (!poses) poses = posesAt(world);
-        const d = densityAt(world, lp.x, lp.y, depth, poses, 'sawara');
+        const d = densityAt(world, lp.x, lp.y, depth, poses, m.targets || 'sawara');
         if (d.total <= 0 || d.best == null) break;
         const act = activityAt(world, world.schools[d.best], t);
         // encounters scale with how fast the lure sweeps through the water
@@ -156,7 +157,7 @@ export function stepTrollOperation(op, ctx, dt) {
         line.acc += m.biteRateMax * act * sweep * (d.total / (d.total + m.densityHalf)) * dt;
         if (line.acc >= 1) {
           const room = ctx.capacityKg - ctx.hold.kg - trollInFlightKg(op) - (ctx.reservedKg || 0);
-          if (room < maxFishKg('sawara')) {
+          if (room < maxFishKg(m.targets || 'sawara')) {
             line.acc = 1;
             op.stats.holdBlocked += 1;
             break;
@@ -194,6 +195,8 @@ export function stepTrollOperation(op, ctx, dt) {
           if (line.fish) {
             const f = line.fish;
             op.landed[f.size] += 1;
+            if (!op.landedBy[f.species]) op.landedBy[f.species] = { s: 0, m: 0, l: 0 };
+            op.landedBy[f.species][f.size] += 1;
             op.landedKg += f.kg;
             op.landedCount += 1;
             op.landings.push({ t, n: 1, kg: f.kg });

@@ -19,6 +19,7 @@ import { trollLineLabel } from '../core/troll.js';
 import { linePhaseLabel, recentPace } from '../core/fishing.js';
 import { fmtClock, compass8, areaNameAt, currentAt, makeDayConditions, forecastOf, visibilityAt } from '../core/sea.js';
 import { levelFromXp } from '../core/progress.js';
+import { calendarOf, dayTimes } from '../core/calendar.js';
 import { schoolCenter } from '../core/world.js';
 import { buildStaticMap, drawChart, drawBriefingChart, chartToWorld, worldToChart, bathyCanvas, CHART_SPANS } from './chart.js';
 import { drawSideView, sideViewHit } from './sideView.js';
@@ -40,6 +41,14 @@ const $ = (id) => document.getElementById(id);
 
 // ---------------------------------------------------------------- storage
 let storageUnavailable = false;
+/** The day the port is getting ready for (the next voyage's day). */
+function portDay() {
+  return app.profile ? app.profile.day + 1 : 1;
+}
+function portHours() {
+  return dayTimes(portDay());
+}
+
 function pickStorage() {
   try {
     const s = window.localStorage;
@@ -1789,7 +1798,9 @@ function frame(now) {
       visibility: atSea ? visibilityAt(v.world.cond, v.world.time) : 3000,
       lightsOn: !!(atSea && v.equip.lights && isOperating(v) && METHODS[v.op.methodId].lights),
       boat: atSea ? v.boat : { x: PORT.dock.x, y: PORT.dock.y + 20, heading: 0, speed: 0, vx: 0, vy: 0 },
-      gameTime: atSea ? v.world.time : app.screen === 'receipt' ? 13 * 3600 : TIME.DEPART + 1800,
+      gameTime: atSea ? v.world.time : app.screen === 'receipt' ? 13 * 3600 : portHours().depart + 1800,
+      sun: atSea ? v.world.cond.sun : portHours(),
+      season: atSea ? v.world.cond.season && v.world.cond.season.id : calendarOf(portDay()).season,
       windSpeed: atSea ? v.world.cond.windSpeed : 3,
       boatModel: atSea ? v.modelId : app.profile ? app.profile.boat.model : 'skiff_1',
       reels,

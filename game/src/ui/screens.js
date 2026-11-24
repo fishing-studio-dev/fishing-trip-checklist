@@ -1,8 +1,10 @@
 // HTML for the menu screens. Pure functions of state -> markup.
-import { EQUIPMENT, BOATS, ECONOMY, METHODS, SPECIES, PEERS, CREW, GUIDES, skillForLevel, trollSkillForLevel, longlineSkillForLevel, TIME, fits, sellValue } from '../core/data.js';
+import { EQUIPMENT, BOATS, ECONOMY, METHODS, SPECIES, PEERS, CREW, GUIDES, skillForLevel, trollSkillForLevel, longlineSkillForLevel, fits, sellValue } from '../core/data.js';
 import { xpProgress, cycleEstimate, trollCycleEstimate, levelFromXp } from '../core/progress.js';
 import { purchasePreview, boatOffers, planBoatPurchase } from '../core/economy.js';
 import { forecastText, fmtClock } from '../core/sea.js';
+import { calendarOf, dayTimes } from '../core/calendar.js';
+import { almanacOf } from '../core/almanac.js';
 import { reportLine, KIND_LABEL } from '../core/reports.js';
 import { similarLogs, todaysReports, timeBandLabel, logTags, opRate, gearOfType, logGearItems, methodGear } from '../core/knowledge.js';
 
@@ -173,7 +175,7 @@ function nightChoice(app) {
   const lamp = Object.values(app.profile.boat.slots).find((x) => x && EQUIPMENT[x.itemId].type === 'lights');
   if (!lamp) return '';
   return `<div class="crew-choice"><label><input type="checkbox" id="nightTrip" ${app.nightTrip ? 'checked' : ''}>
-    今日は夕方から出る（イカ釣り・${fmtClock(TIME.NIGHT.DEPART)}出港、${fmtClock(TIME.NIGHT.END)}までに帰港）</label>
+    今日は夕方から出る（イカ釣り・${fmtClock(dayTimes(app.profile.day + 1).night.depart)}出港、${fmtClock(dayTimes(app.profile.day + 1).night.end)}までに帰港）</label>
     <p class="note">${esc(EQUIPMENT[lamp.itemId].name)}で、暗くなるとイカが船の下に寄ります。イカの候補（D）を選んで出港しても夕方になります。朝の無線は聞けません。</p></div>`;
 }
 
@@ -200,12 +202,28 @@ function boatCard(profile) {
     ${goal}${boatGoal}<div class="actions"><button type="button" class="btn" data-act="equip">装備</button><button type="button" class="btn" data-act="market">船の買い替え</button></div></div>`;
 }
 
+/** The season at a glance (public knowledge: the calendar, the water, what is in season). */
+function seasonCard(app, today) {
+  const a = almanacOf(app.profile.worldSeed, today);
+  const fc = app.forecast;
+  const fresh = a.calendar.firstOfSeason ? `<p class="season-new">${esc(a.calendar.seasonName)}になりました。${esc(a.turnNote)}</p>` : '';
+  return `<div class="card season season-${a.calendar.season}"><h2>${esc(a.calendar.seasonName)}　<small>${esc(a.calendar.dateLabel)}・${a.calendar.year}年目 ${esc(a.calendar.seasonName)}の${a.calendar.dayOfSeason}日目（全15日）</small></h2>
+    ${fresh}
+    <dl class="kv"><dt>水温</dt><dd>${fc ? `${fc.waterTemp.toFixed(1)}℃前後（${esc(fc.season ? fc.season.label : '')}）` : '—'}</dd>
+    <dt>日の出・日の入り</dt><dd>${fmtClock(a.sun.sunrise)}・${fmtClock(a.sun.sunset)}</dd>
+    <dt>旬の魚</dt><dd>${a.inSeason.length ? a.inSeason.map((f) => esc(f.name)).join('・') : '—'}</dd>
+    ${a.arriving.length ? `<dt>これから増える</dt><dd>${a.arriving.map((f) => esc(f.name)).join('・')}</dd>` : ''}
+    ${a.leaving.length ? `<dt>そろそろ終わり</dt><dd>${a.leaving.map((f) => esc(f.name)).join('・')}</dd>` : ''}</dl>
+    <p class="note">旬は一般的な目安です。その年の水温や日によって外れることがあります。</p></div>`;
+}
+
 export function portScreen(app) {
   const p = app.profile;
   const today = p.day + 1;
   const cands = app.candidates || [];
   return `<div class="sheet wide">
-  <h1>港 <span class="tag">${app.nightTrip ? `${today}日目・夕方${fmtClock(TIME.NIGHT.DEPART)} 出港（イカ釣り）` : `${today}日目の朝・${fmtClock(TIME.DEPART)} 出港`}</span></h1>
+  <h1>港 <span class="tag">${esc(calendarOf(today).label)}・${app.nightTrip ? `夕方${fmtClock(dayTimes(today).night.depart)} 出港（イカ釣り）` : `朝${fmtClock(dayTimes(today).depart)} 出港`}</span></h1>
+  ${seasonCard(app, today)}
   <p class="lead">仲間の話・自分の日誌・今日の予報から狙いを決め、海では魚探で確かめて場所を決めます。候補は自分が聞いた・記録した情報だけから作っています。候補以外の場所へ行くのも自由です。</p>
   ${app.notice ? `<div class="card" style="margin-bottom:12px;border-color:var(--warn)"><p>${esc(app.notice)}</p></div>` : ''}
   ${!p.logs.length && !app.guideOff ? firstDayCard() : ''}
@@ -218,7 +236,7 @@ export function portScreen(app) {
     </div>
     ${app.forecast && app.forecast.weather && app.forecast.weather.storm ? `<div class="card storm"><h2>時化のため出漁中止</h2><p>風が強く海が荒れています（${app.forecast.windSpeed.toFixed(0)}m/s前後）。仲間も今日は出ません。港で休んで明日に備えます。</p>
       <div class="actions"><button type="button" class="btn primary" data-act="restDay">今日は休む（翌朝へ）</button><button type="button" class="btn" data-act="help">操作説明</button></div></div>` : `${crewChoice(app)}${nightChoice(app)}
-    <div class="actions"><button type="button" class="btn" data-act="depart">狙いを決めずに出港</button><button type="button" class="btn" data-act="help">操作説明</button></div>`}
+    <div class="actions"><button type="button" class="btn" data-act="depart">狙いを決めずに出港</button><button type="button" class="btn" data-act="restDay">今日は休む（翌朝へ）</button><button type="button" class="btn" data-act="help">操作説明</button></div>`}
   </div>
   <div class="grid">
     ${peersCard(p, today)}

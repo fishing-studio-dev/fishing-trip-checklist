@@ -3,6 +3,7 @@
 // trip runs 16:00–23:00.
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
+import { dayTimes } from '../src/core/calendar.js';
 import { createProfile, markDeparture, validateProfile } from '../src/core/profile.js';
 import { createVoyage, advanceVoyage, startOperation, stopOperation, isOperating, setMethod, summarizeVoyage, returnToPort } from '../src/core/voyage.js';
 import { settleVoyage } from '../src/core/economy.js';
@@ -35,13 +36,17 @@ test('squid lie near the bottom by day and rise at night', () => {
   assert.ok(night.z < day.z - 10, `night ${night.z.toFixed(1)}`);
 });
 
-test('an evening trip leaves at 16:00 and turns for home at 23:00 (no morning radio)', () => {
+test('an evening trip leaves an hour before sunset and turns for home late at night (no morning radio)', () => {
   const { v } = voyage();
-  assert.equal(v.world.time, TIME.NIGHT.DEPART);
+  const hours = dayTimes(v.day);
+  assert.equal(v.world.time, hours.night.depart);
+  assert.ok(v.world.time < hours.sunset && v.world.time >= hours.sunset - 3600 - 600);
   assert.equal(v.radio.length, 0);
-  assert.equal(v.endT, TIME.NIGHT.END);
+  assert.equal(v.endT, hours.night.end);
+  assert.ok(v.endT > hours.sunset + 3 * 3600 && v.endT <= 23.5 * 3600);
   const day = voyage({ night: false }).v;
-  assert.equal(day.world.time, TIME.DEPART);
+  assert.equal(day.world.time, hours.depart);
+  void TIME;
 });
 
 test('イカ釣り needs the lamp; with it, squid are drawn in once it is dark and caught; nothing is created', () => {

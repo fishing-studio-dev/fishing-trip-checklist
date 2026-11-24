@@ -148,20 +148,20 @@ test('A07 with a deckhand: one big advance equals many uneven frames', () => {
   assert.equal(run([900]), run([0.37, 1.9, 0.05]));
 });
 
-test('seasons: a label and a trend every day from the water temperature; 乗っ込み only while warming through 17.9-19.3 ℃', () => {
+test('seasons: a label and a trend every day from the water temperature; 乗っ込み only while warming through 14.6-18.2 ℃', () => {
   let seen = 0;
-  for (let d = 1; d <= 40; d++) {
+  for (let d = 1; d <= 60; d++) {
     const c = makeDayConditions(5, d);
     const s = seasonOf(5, d);
     assert.deepEqual(c.season, s);
     assert.ok(/水温の/.test(s.label));
     if (s.nokkomi) {
       seen += 1;
-      assert.ok(s.trend >= 0.03 && c.waterTemp >= 17.85 && c.waterTemp <= 19.35);
+      assert.ok(s.trend >= 0.12 && c.waterTemp >= 14.55 && c.waterTemp <= 18.25);
     }
     assert.ok(forecastText(forecastOf(c)).some((l) => l.startsWith('季節：')));
   }
-  assert.ok(seen >= 3 && seen <= 20, `${seen} days of 乗っ込み in 40`);
+  assert.ok(seen >= 5 && seen <= 20, `${seen} days of 乗っ込み in a year`);
 });
 
 test('乗っ込み: マダイ gather on the flank of 北の瀬 (more, and bigger) only in that season', () => {
