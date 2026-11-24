@@ -979,6 +979,12 @@ document.addEventListener('click', (e) => {
   const b = e.target.closest('[data-act]');
   if (!b || b.disabled) return;
   const act = b.dataset.act;
+  // 横持ちの「その他」: a button that changes the view or opens something folds it away
+  // (it would cover the deck bar); the ones pressed again and again (speed, sound) keep it open
+  if (app.moreOpen && b.closest('#sysGroup') && act !== 'speed' && act !== 'sound') {
+    app.moreOpen = false;
+    $('hud').classList.remove('more-open'); // at once, not on the next frame
+  }
   switch (act) {
     case 'newGame':
       // 難易度（R05）: chosen once, at the start
@@ -1141,6 +1147,9 @@ document.addEventListener('click', (e) => {
     case 'sound':
       cycleSound();
       break;
+    case 'fullscreen':
+      toggleFullscreen();
+      break;
     case 'guideOk': {
       // this note is understood: do not show it again
       const n = app.guideNote;
@@ -1224,6 +1233,51 @@ function readKey(key) {
     return null;
   }
 }
+
+// ---------------------------------------------------------------- 全画面（ユーザー要望）
+// The browser's own bars (address bar, tabs) hidden while playing. Where a page
+// may not do this (iPhone Safari, an app's built-in browser, a frame without
+// the permission), say what works instead. The layout follows the new size by
+// itself (layoutHud reads the window size every frame).
+const fullscreenElement = () => document.fullscreenElement || document.webkitFullscreenElement || null;
+const fullscreenEnabled = () => !!(document.fullscreenEnabled || document.webkitFullscreenEnabled);
+
+async function toggleFullscreen() {
+  try {
+    if (fullscreenElement()) {
+      await (document.exitFullscreen || document.webkitExitFullscreen).call(document);
+      return;
+    }
+    const el = document.documentElement;
+    const request = el.requestFullscreen || el.webkitRequestFullscreen;
+    if (!fullscreenEnabled() || !request) {
+      fullscreenHelp();
+      return;
+    }
+    await request.call(el, { navigationUI: 'hide' });
+  } catch {
+    fullscreenHelp();
+  }
+}
+
+function fullscreenHelp() {
+  modal(`<div class="card"><h2>全画面にできません</h2>
+  <p>このブラウザ（または開いている場所）では、ページから全画面にすることができません。</p>
+  <ul><li>iPhone・iPad の Safari：共有ボタン →「ホーム画面に追加」。ホーム画面のアイコンから開くと、アドレスバーなしで広く使えます（このページを直接開いている場合）。</li>
+  <li>ほかのアプリの中で開いているとき：Safari や Chrome で開き直すと、全画面にできることがあります。</li>
+  <li>横持ちにすると、海図・魚探・ソナーが横に並びます。</li></ul>
+  <div class="actions"><button type="button" class="btn" data-act="closeModal">閉じる</button></div></div>`);
+}
+
+function updateFullscreenButtons() {
+  const on = !!fullscreenElement();
+  for (const b of document.querySelectorAll('[data-act=fullscreen]')) {
+    b.textContent = on ? (b.id === 'btnFull' ? '全画面終了' : '全画面を終える') : '全画面';
+    b.setAttribute('aria-pressed', on ? 'true' : 'false');
+  }
+}
+document.addEventListener('fullscreenchange', updateFullscreenButtons);
+document.addEventListener('webkitfullscreenchange', updateFullscreenButtons);
 
 // ---------------------------------------------------------------- playtest save
 function playtestLoad() {
@@ -2208,6 +2262,7 @@ function devApi() {
         candidates: (app.candidates || []).map((c) => ({ key: c.key, letter: c.letter, labels: c.labels, feasible: c.feasible.ok })),
         revision: app.revision,
         saveStatus: app.saveStatus,
+        fullscreen: !!fullscreenElement(),
         voyage: v && {
           id: v.id,
           time: v.world.time,

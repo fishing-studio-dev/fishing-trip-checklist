@@ -4,6 +4,10 @@
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
   <meta name="theme-color" content="#0b2236">
+  <meta name="mobile-web-app-capable" content="yes">
+  <meta name="apple-mobile-web-app-capable" content="yes">
+  <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+  <meta name="apple-mobile-web-app-title" content="漁師ゲーム">
   <title>漁師ゲーム（試作）</title>
   <link rel="stylesheet" href="./styles.css">
   <script type="importmap">{ "imports": { "three": "./vendor/three/three.module.js" } }</script>
@@ -84,6 +88,7 @@
         <button type="button" class="ctl small" id="btnSeaView" data-act="seaView" title="計器と海の見え方を切り替え（横持ち）" hidden>海を見る</button>
         <button type="button" class="ctl small" id="btnPause" data-act="pause" title="一時停止（P）">停止</button>
         <button type="button" class="ctl small" id="btnSound" data-act="sound" title="音の大きさ（N）">音<small>中</small></button>
+        <button type="button" class="ctl small" id="btnFull" data-act="fullscreen" title="全画面（ブラウザのアドレスバーなどを隠す）">全画面</button>
         <button type="button" class="ctl small" data-act="help" title="手引き（いつでも見られる説明）">？</button>
       </div>
     </div>

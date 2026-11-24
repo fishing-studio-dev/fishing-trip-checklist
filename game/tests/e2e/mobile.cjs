@@ -99,7 +99,7 @@ async function layout(page) {
       await page.tap('[data-act=startDiff][data-diff=normal]');
       await page.waitForSelector('#portChart');
       const lp = await layout(page);
-      check(`${name}: port screen fits the width`, lp.scrollW <= lp.vw, `${lp.scrollW}/${lp.vw}`);
+      check(`${name}: port screen fits the width; 全画面 is offered at the port`, lp.scrollW <= lp.vw && (await page.locator('#screen [data-act=fullscreen]').count()) === 1, `${lp.scrollW}/${lp.vw}`);
       await page.screenshot({ path: path.join(outDir, `${slug}-1-port.png`) });
       await page.tap('[data-act=departPlan][data-key="handline:北の瀬"]');
       await page.waitForFunction(() => window.__ryoshi.state().screen === 'sea');
@@ -161,6 +161,16 @@ async function layout(page) {
       check(`${name}: 甲板を歩く by touch: walk pad and work-position bar on screen, not covering the controls`, wbox.view === 'walk' && wbox.bar && wbox.pad && wbox.bar.left >= 0 && wbox.bar.right <= wbox.vw + 1 && wbox.bar.top >= 0 && !overlap(wbox.bar, wbox.controls), JSON.stringify(wbox));
       await page.screenshot({ path: path.join(outDir, `${slug}-2b-walk.png`) });
       await tapSys(page, '#btnView');
+      // 全画面 (user request): the button goes full screen and back, or says what works where a page can't
+      await tapSys(page, '#btnFull');
+      await sleep(400);
+      const fs1 = await page.evaluate(() => ({ on: window.__ryoshi.state().fullscreen, help: !document.getElementById('modal').hidden && /全画面にできません/.test(document.getElementById('modal').textContent), label: document.getElementById('btnFull').textContent }));
+      if (fs1.help) await page.tap('#modal [data-act=closeModal]');
+      else if (fs1.on) await tapSys(page, '#btnFull');
+      await sleep(400);
+      const fs2 = await page.evaluate(() => ({ on: window.__ryoshi.state().fullscreen, label: document.getElementById('btnFull').textContent, modal: !document.getElementById('modal').hidden }));
+      check(`${name}: 全画面: one tap goes full screen (or explains how) and comes back`, ((fs1.on && fs1.label === '全画面終了') || fs1.help) && !fs2.on && fs2.label === '全画面' && !fs2.modal, JSON.stringify({ fs1, fs2 }));
+      if (await page.isVisible('#btnMore') && (await page.evaluate(() => document.getElementById('hud').classList.contains('more-open')))) await page.tap('#btnMore');
       // run on out of the harbour (fishing is refused within 300 m of the dock), then stop with taps
       // (clearing the route in chart mode stopped the boat: speed up again first)
       await page.tap('[data-act=throttleSet][data-step="4"]');

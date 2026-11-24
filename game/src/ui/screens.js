@@ -40,6 +40,12 @@ const LABEL_CLASS = {
 };
 const labelHtml = (l) => `<span class="tag ${LABEL_CLASS[l] || ''}">${esc(l)}</span>`;
 
+/** 全画面（ユーザー要望）: the label follows the state (main.js keeps it current). */
+export function fullscreenButton() {
+  const on = typeof document !== 'undefined' && !!(document.fullscreenElement || document.webkitFullscreenElement);
+  return `<button type="button" class="btn" data-act="fullscreen">${on ? '全画面を終える' : '全画面'}</button>`;
+}
+
 export function titleScreen({ storageNote }) {
   return `<div class="sheet">
   <h1>漁師ゲーム <span class="tag">試作</span></h1>
@@ -62,7 +68,7 @@ export function titleScreen({ storageNote }) {
   ${storageNote ? `<p class="save-bad">${esc(storageNote)}</p>` : ''}
   <p class="note">進行はこのブラウザに保存されます（端末・ブラウザごとに別の進行）。スマホでは画面下のボタンで操作します。横持ちにも対応しています。</p>
   <div class="actions"><button type="button" class="btn primary" data-act="newGame">新しく始める</button>
-  <button type="button" class="btn" data-act="openSave">セーブを読み込む</button></div>
+  <button type="button" class="btn" data-act="openSave">セーブを読み込む</button>${fullscreenButton()}</div>
   ${playtestCard(null)}
 </div>`;
 }
@@ -320,7 +326,7 @@ export function portScreen(app) {
     </div>
     ${app.forecast && app.forecast.weather && app.forecast.weather.storm ? `<div class="card storm"><h2>時化のため出漁中止</h2><p>風が強く海が荒れています（${app.forecast.windSpeed.toFixed(0)}m/s前後）。仲間も今日は出ません。港で休んで明日に備えます。</p>
       <div class="actions"><button type="button" class="btn primary" data-act="restDay">今日は休む（翌朝へ）</button><button type="button" class="btn" data-act="help">手引き</button></div></div>` : `${crewChoice(app)}${nightChoice(app)}
-    <div class="actions"><button type="button" class="btn" data-act="depart">狙いを決めずに出港</button><button type="button" class="btn" data-act="restDay">今日は休む（翌朝へ）</button><button type="button" class="btn" data-act="help">手引き</button></div>`}
+    <div class="actions"><button type="button" class="btn" data-act="depart">狙いを決めずに出港</button><button type="button" class="btn" data-act="restDay">今日は休む（翌朝へ）</button><button type="button" class="btn" data-act="help">手引き</button>${fullscreenButton()}</div>`}
   </div>
   <div class="grid">
     ${peersCard(p, today)}
