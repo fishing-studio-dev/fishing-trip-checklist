@@ -1,9 +1,12 @@
 // HTML for the menu screens. Pure functions of state -> markup.
-import { EQUIPMENT, BOATS, ECONOMY, METHODS, SPECIES, PEERS, CREW, GUIDES, skillForLevel, trollSkillForLevel, longlineSkillForLevel, fits, sellValue, LONGLINE_LINES } from '../core/data.js';
+import { EQUIPMENT, BOATS, ECONOMY, METHODS, SPECIES, PEERS, CREW, GUIDES, DIFFICULTY, SEASONALITY, ECHO, ORDERS, skillForLevel, trollSkillForLevel, longlineSkillForLevel, fits, LONGLINE_LINES } from '../core/data.js';
 import { xpProgress, cycleEstimate, trollCycleEstimate, levelFromXp } from '../core/progress.js';
 import { purchasePreview, boatOffers, planBoatPurchase } from '../core/economy.js';
+import { itemPrice, boatPrice, tradeInOf, extraLinePrice, sellPrice, marketBoard, difficultyOf } from '../core/market.js';
 import { forecastText, fmtClock } from '../core/sea.js';
 import { calendarOf, dayTimes } from '../core/calendar.js';
+import { ordersOffered, activeOrders } from '../core/orders.js';
+import { yearSummary } from '../core/review.js';
 import { almanacOf } from '../core/almanac.js';
 import { reportLine, KIND_LABEL } from '../core/reports.js';
 import { similarLogs, todaysReports, timeBandLabel, logTags, opRate, gearOfType, logGearItems, methodGear } from '../core/knowledge.js';
@@ -194,8 +197,8 @@ function boatCard(profile) {
   if (!gearOfType(profile, 'troll').length) next.push(EQUIPMENT.troll_tr1);
   if (!gearOfType(profile, 'longline').length) next.push(EQUIPMENT.longline_ll1);
   else if (!gearOfType(profile, 'hauler').length) next.push(EQUIPMENT.hauler_lh1);
-  const goal = next.map((it) => `<p class="note">次の設備：${esc(it.name)}（${money(it.price)}）${profile.funds >= it.price ? '<span class="tag good">購入可能</span>' : ` まであと${money(it.price - profile.funds)}`}</p>`).join('');
-  const cheapest = boatOffers(profile).map((o) => o.price - model.tradeIn).sort((a, b) => a - b)[0];
+  const goal = next.map((it) => `<p class="note">次の設備：${esc(it.name)}（${money(itemPrice(profile, it))}）${profile.funds >= itemPrice(profile, it) ? '<span class="tag good">購入可能</span>' : ` まであと${money(itemPrice(profile, it) - profile.funds)}`}</p>`).join('');
+  const cheapest = boatOffers(profile).map((o) => boatPrice(profile, o) - tradeInOf(profile, model.id)).sort((a, b) => a - b)[0];
   const boatGoal = cheapest != null ? `<p class="note">船の買い替え：下取り後 ${money(cheapest)} から${profile.funds >= cheapest ? '<span class="tag good">検討できる</span>' : ''}</p>` : '';
   return `<div class="card"><h2>船・装備</h2>
     <dl class="kv"><dt>船名</dt><dd>${esc(profile.boat.name)}</dd><dt>船体</dt><dd>${esc(model.name)}（${model.length}m）</dd><dt>魚倉</dt><dd>${model.holdKg}kg</dd><dt>全速</dt><dd>${(model.speeds[model.steps.full] * 1.944).toFixed(0)}ノット</dd><dt>行ける範囲</dt><dd>${esc(model.range ? model.range.label : '')}</dd>${slots}</dl>
@@ -215,6 +218,84 @@ function seasonCard(app, today) {
     ${a.arriving.length ? `<dt>これから増える</dt><dd>${a.arriving.map((f) => esc(f.name)).join('・')}</dd>` : ''}
     ${a.leaving.length ? `<dt>そろそろ終わり</dt><dd>${a.leaving.map((f) => esc(f.name)).join('・')}</dd>` : ''}</dl>
     <p class="note">旬は一般的な目安です。その年の水温や日によって外れることがあります。</p></div>`;
+}
+
+/** 相場と注文（R19・R02）: yesterday's prices on the board, today's orders, the ones taken. */
+function marketCard(app, today) {
+  const p = app.profile;
+  const diff = difficultyOf(p);
+  const board = marketBoard(p, Math.max(1, today - 1));
+  const rows = board
+    .slice()
+    .sort((a, b) => b.vsUsual - a.vsUsual)
+    .map((r) => `<tr><td>${esc(r.name)}</td><td class="num">${money(r.price)}/kg</td><td class="num ${r.vsUsual >= 8 ? 'up' : r.vsUsual <= -8 ? 'down' : ''}">${r.vsUsual > 0 ? '+' : ''}${r.vsUsual}%</td></tr>`)
+    .join('');
+  const taken = activeOrders(p, today);
+  const takenHtml = taken.length
+    ? `<ul class="orders">${taken.map((o) => `<li><b>${esc(SPECIES[o.species].name)} ${o.kg}kg</b>（済 ${o.filledKg}kg）・${esc(o.from)}・上乗せ${Math.round(o.bonus * 100)}%・${o.lastDay === today ? '今日まで' : `${calendarOf(o.lastDay).dateLabel}（${o.lastDay - today + 1}日）まで`} <button type="button" class="mini" data-act="orderDrop" data-id="${esc(o.id)}">取り消す</button></li>`).join('')}</ul>`
+    : '<p class="note">受けている注文はありません。</p>';
+  const offers = ordersOffered(p.worldSeed, today).filter((o) => !taken.some((t) => t.id === o.id));
+  const full = taken.length >= ORDERS.maxActive;
+  const offerHtml = offers.length
+    ? `<ul class="orders">${offers.map((o) => `<li>${esc(o.from)}：<b>${esc(SPECIES[o.species].name)} ${o.kg}kg</b>・上乗せ${Math.round(o.bonus * 100)}%・${o.lastDay === today ? '今日の水揚げまで' : `${o.lastDay - today + 1}日以内`} <button type="button" class="mini" data-act="orderTake" data-id="${esc(o.id)}" ${full ? 'disabled' : ''}>受ける</button></li>`).join('')}</ul>`
+    : '<p class="note">今日の注文はありません。</p>';
+  return `<div class="card"><h2>相場と注文 <small class="tag">難易度：${esc(diff.name)}</small></h2>
+    <h3>注文（今朝の掲示板）</h3>${offerHtml}<h3>受けている注文</h3>${takenHtml}
+    <p class="note">注文の魚は、水揚げのとき注文の量まで上乗せの値段で買い取られます（ほかの分は相場どおり）。間に合わなくても罰はありません。同時に${ORDERS.maxActive}件まで。</p>
+    <details><summary>昨日の相場（中くらいの大きさ・1kg）</summary><div class="table-wrap"><table class="data market"><tr><th>魚</th><th class="num">値段</th><th class="num">いつもと比べて</th></tr>${rows}</table></div>
+    <p class="note">旬で量の多い魚は安く、少ない魚や時化の翌日は高め。日ごとに少しずつ動きます（今日の値段は水揚げのときに決まる）。同じ魚を一度にたくさん揚げると、1kgあたりの値が下がります。</p></details></div>`;
+}
+
+/** 図鑑と大物記録（R02）: every fish, caught or not, with what is known of it. */
+export function zukanScreen(app) {
+  const p = app.profile;
+  const rec = p.records || {};
+  const fish = Object.keys(SPECIES).filter((sp) => !SPECIES[sp].bait);
+  const months = ['4', '5', '6', '7', '8', '9', '10', '11', '12', '1', '2', '3'];
+  const seasonText = (sp) => {
+    const m = (SEASONALITY[sp] || { months: [] }).months;
+    const top = m.map((v, i) => [v, months[i]]).filter(([v]) => v >= 0.85).map(([, mo]) => `${mo}月`);
+    return top.length ? top.join('・') : '—';
+  };
+  const methodsOf = (sp) => Object.values(METHODS).filter((m) => (m.targets || [m.target]).includes(sp)).map((m) => m.name).join('・');
+  const echoText = { school: '群れの雲・帯', single: '1尾ずつの「へ」の字', none: '魚探に映らない' };
+  const cards = fish
+    .map((sp) => {
+      const r = rec[sp];
+      const e = ECHO[sp];
+      if (!r) {
+        return `<div class="card zukan unknown"><h2>？？？</h2><dl class="kv"><dt>旬</dt><dd>${esc(seasonText(sp))}</dd><dt>漁法</dt><dd>${esc(methodsOf(sp))}</dd></dl><p class="note">まだ獲ったことがない魚。</p></div>`;
+      }
+      const max = r.max ? `${r.max.w.toFixed(2)}kg（${calendarOf(r.max.day).dateLabel}・${esc(r.max.area || '')}）` : '—';
+      return `<div class="card zukan"><h2>${esc(SPECIES[sp].name)}</h2><dl class="kv">
+        <dt>はじめて</dt><dd>${r.firstDay ? `${r.firstDay}日目` : '—'}${r.firstArea ? `・${esc(r.firstArea)}` : ''}</dd>
+        <dt>獲った数</dt><dd>${r.count}${esc(SPECIES[sp].unit)}・${r.kg.toFixed(1)}kg</dd>
+        <dt>いちばん大きい</dt><dd>${max}</dd>
+        <dt>旬</dt><dd>${esc(seasonText(sp))}</dd><dt>漁法</dt><dd>${esc(methodsOf(sp))}</dd><dt>魚探</dt><dd>${esc(echoText[e ? e.kind : 'school'])}</dd></dl></div>`;
+    })
+    .join('');
+  const got = fish.filter((sp) => rec[sp]).length;
+  return `<div class="sheet wide"><h1>図鑑と大物記録 <span class="tag">${got}/${fish.length}種</span></h1>
+    <p class="lead">獲った魚と、それぞれのいちばん大きい1尾。まだの魚も、旬と漁法だけは分かっています。</p>
+    <div class="actions"><button type="button" class="btn" data-act="toPort">港へ戻る</button></div>
+    <div class="zukan-grid">${cards}</div></div>`;
+}
+
+/** 1年の振り返り（R02）: the year in numbers, next to the year before. */
+export function yearReviewHtml(profile, year) {
+  const y = yearSummary(profile, year);
+  const prev = year > 1 ? yearSummary(profile, year - 1) : null;
+  const cmp = (a, b) => (b == null ? '' : `<span class="note">（前の年 ${money(b)}・${a >= b ? '+' : ''}${money(a - b)}）</span>`);
+  const seasons = y.seasons.map((s) => `<tr><td>${esc(s.name)}</td><td class="num">${s.voyages}日</td><td class="num">${money(s.sales)}</td><td class="num">${money(s.net)}</td><td>${s.top ? esc(s.top.name) : '—'}</td></tr>`).join('');
+  const top = y.topSpecies.map((t) => `<li>${esc(t.name)}：${t.n}${esc(SPECIES[t.species].unit)}・${t.kg}kg・${money(t.sales)}</li>`).join('');
+  return `<div class="card quote"><h2>${year}年目の振り返り</h2>
+    <dl class="kv"><dt>出漁</dt><dd>${y.voyages}日</dd><dt>売上</dt><dd>${money(y.sales)} ${cmp(y.sales, prev && prev.sales)}</dd><dt>経費</dt><dd>${money(y.costs)}</dd><dt>純益</dt><dd><b>${money(y.net)}</b> ${cmp(y.net, prev && prev.net)}</dd><dt>水揚げ</dt><dd>${y.kg}kg・${y.kinds}種</dd>
+    ${y.bestDay ? `<dt>いちばん良かった日</dt><dd>${y.bestDay.day}日目（${esc(y.bestDay.label)}）純益 ${money(y.bestDay.net)}</dd>` : ''}
+    ${y.biggest ? `<dt>この年の大物</dt><dd>${esc(y.biggest.name)} ${y.biggest.w.toFixed(2)}kg（${y.biggest.day}日目）</dd>` : ''}</dl>
+    <h3>季節ごと</h3><div class="table-wrap"><table class="data"><tr><th>季節</th><th class="num">出漁</th><th class="num">売上</th><th class="num">純益</th><th>いちばん稼いだ魚</th></tr>${seasons}</table></div>
+    ${top ? `<h3>よく獲れた魚</h3><ul>${top}</ul>` : ''}
+    <p class="note">ゲームに終わりはありません。${year + 1}年目の春が始まります。</p>
+    <div class="actions"><button type="button" class="btn primary" data-act="closeModal">閉じる</button></div></div>`;
 }
 
 export function portScreen(app) {
@@ -242,11 +323,12 @@ export function portScreen(app) {
     ${peersCard(p, today)}
     <div class="card"><h2>今日の海況（予報）</h2><ul>${forecastText(app.forecast).map((l) => `<li>${esc(l)}</li>`).join('')}</ul>
       <p class="note">予報には誤差があります（潮汐表の時刻と潮回りは正確）。海の上の実際の風・流れは、出港してから船の流れ方で確かめてください。船は潮と風で流されるので、一本釣りは群れの潮上から流します。</p></div>
+    ${marketCard(app, today)}
     ${skillCard(p)}
     ${boatCard(p)}
     <div class="card"><h2>資金・記録</h2>
       <dl class="kv"><dt>資金</dt><dd class="big-num">${money(p.funds)}</dd><dt>出漁回数</dt><dd>${p.stats.voyages}回</dd><dt>累計漁獲</dt><dd>${p.stats.fish}尾・${p.stats.kg.toFixed(1)}kg</dd><dt>操業記録</dt><dd>${p.logs.length}件</dd></dl>
-      <div class="actions"><button type="button" class="btn" data-act="log">操業日誌</button><button type="button" class="btn" data-act="ledger">収支</button><button type="button" class="btn" data-act="openSave">セーブ管理</button></div>
+      <div class="actions"><button type="button" class="btn" data-act="log">操業日誌</button><button type="button" class="btn" data-act="ledger">収支</button><button type="button" class="btn" data-act="zukan">図鑑</button><button type="button" class="btn" data-act="openSave">セーブ管理</button></div>
       <p class="note">${saveLine(app.saveStatus)}</p></div>
   </div>
   <p class="note">保存は「帰港して水揚げしたとき」「装備を買ったとき」「港で仲間の話を聞いたとき」に自動で行います。海上では数秒ごとに途中経過も保存するので、海上でページを閉じても、次に開いたときに海上から続けられます（別の端末やブラウザでは続けられず、その航海は中断扱いになります）。</p>
@@ -261,7 +343,9 @@ function baitNote(used) {
 
 export function receiptScreen(app) {
   const r = app.receipt;
-  const rows = r.lines.map((l) => `<tr><td>${esc(SPECIES[l.species].name)}／${esc(l.label)}</td><td class="num">${l.count}${SPECIES[l.species].unit}</td><td class="num">${l.kg.toFixed(2)}kg</td><td class="num">${l.unitPrice}${ECONOMY.currency}/kg</td><td class="num">${money(l.amount)}</td></tr>`).join('') || '<tr><td colspan="5" class="note">水揚げなし</td></tr>';
+  const rows = (r.lines.map((l) => `<tr><td>${esc(SPECIES[l.species].name)}／${esc(l.label)}${l.depth ? `<span class="note">（量が多く${Math.round((1 - l.depth) * 100)}%安く）</span>` : ''}</td><td class="num">${l.count}${SPECIES[l.species].unit}</td><td class="num">${l.kg.toFixed(2)}kg</td><td class="num">${l.unitPrice}${ECONOMY.currency}/kg</td><td class="num">${money(l.amount)}</td></tr>`).join('') || '<tr><td colspan="5" class="note">水揚げなし</td></tr>')
+    + (r.orders || []).map((o) => `<tr><td>注文：${esc(o.from)}（${esc(SPECIES[o.species].name)} ${o.kg}kg・上乗せ${Math.round(o.bonus * 100)}%）${o.done ? '<span class="tag good">納め終えた</span>' : ''}</td><td></td><td class="num">${o.kg}kg</td><td></td><td class="num">+${money(o.bonusAmount)}</td></tr>`).join('');
+  const recs = (r.newRecords || []).map((x) => (x.kind === 'first' ? `<li>はじめての${esc(SPECIES[x.species].name)}！（図鑑に載った）</li>` : `<li>${esc(SPECIES[x.species].name)}の大物記録 ${x.w.toFixed(2)}kg（これまで ${x.before.toFixed(2)}kg）</li>`)).join('');
   const xpBlocks = Object.entries(r.xp)
     .map(([mId, x]) => {
       const lvUp = x.levelAfter > x.levelBefore;
@@ -311,6 +395,7 @@ export function receiptScreen(app) {
     ${planHtml}
     <div class="card full"><h2>売上</h2><div class="table-wrap"><table class="data"><tr><th>区分</th><th class="num">数</th><th class="num">重量</th><th class="num">単価</th><th class="num">金額</th></tr>${rows}
       <tr><th colspan="4">売上合計</th><th class="num">${money(r.sales)}</th></tr></table></div>${baitNote(r.baitUsed)}
+      <p class="note">値段はその日の相場（旬で多い魚は安く、少ない魚・時化の翌日は高め）。</p>${recs ? `<h3>記録</h3><ul>${recs}</ul>` : ''}
       <dl class="kv" style="margin-top:8px"><dt>氷・餌（定額）</dt><dd>−${money(r.costs.base)}</dd><dt>燃料（${(r.distanceM / 1000).toFixed(1)}km）</dt><dd>−${money(r.costs.fuel)}</dd>${r.costs.crew ? `<dt>${esc(CREW.label)}の日当</dt><dd>−${money(r.costs.crew)}</dd>` : ''}${r.costs.jigs ? `<dt>失くしたジグ（${r.costs.jigsLost}個）</dt><dd>−${money(r.costs.jigs)}</dd>` : ''}
       ${r.costs.waived ? `<dt>経費の免除</dt><dd>+${money(r.costs.waived)}</dd>` : ''}
       <dt>差引</dt><dd><b>${r.net >= 0 ? '+' : '−'}${money(Math.abs(r.net))}</b></dd><dt>資金</dt><dd>${money(r.fundsBefore)} → <b>${money(r.fundsAfter)}</b></dd></dl>
@@ -398,10 +483,11 @@ function sounderEffect(cur, item) {
 function extraLineCard(p) {
   const have = 1 + (p.extraLines || 0);
   const full = have >= LONGLINE_LINES.max;
-  const can = !full && p.funds >= LONGLINE_LINES.extraPrice;
+  const linePrice = extraLinePrice(p);
+  const can = !full && p.funds >= linePrice;
   return `<div class="card offer"><h2>縄 ${have}本 <span class="tag">${have}/${LONGLINE_LINES.max}</span></h2>
     <p class="note">縄は1本ずつ別の場所に張れます。張り終えたら次の縄を別の場所に張り、浸けている間に他の漁もできます。揚げるときは近い縄から（または番号を選んで）揚げます。</p>
-    ${full ? '<p class="note">これ以上は持てません。</p>' : `<div class="actions"><button type="button" class="btn primary" data-act="buyLine" ${can ? '' : 'disabled'}>縄を1本買い足す（${money(LONGLINE_LINES.extraPrice)}）</button>${can ? '' : `<span class="note">資金が足りません</span>`}</div>`}</div>`;
+    ${full ? '<p class="note">これ以上は持てません。</p>' : `<div class="actions"><button type="button" class="btn primary" data-act="buyLine" ${can ? '' : 'disabled'}>縄を1本買い足す（${money(linePrice)}）</button>${can ? '' : `<span class="note">資金が足りません</span>`}</div>`}</div>`;
 }
 
 /** Which boat model has a slot this item fits (for "not on this boat" notes). */
@@ -425,8 +511,8 @@ export function equipScreen(app) {
           const pv = purchasePreview(p, it.id, slot.id);
           const cmp = it.type === 'reel' ? reelCompare(level, cur ? cur.id : 'reel_hand', it.id) : it.type === 'troll' ? trollEffect(it) : it.type === 'longline' ? longlineEffect(it) : it.type === 'hauler' ? haulerEffect(p, it) : it.type === 'sounder' && cur ? sounderEffect(cur, it) : '';
           const demo = it.type === 'sounder' && cur ? sounderDemo(cur, it) : '';
-          return `<div class="card offer"><h2>${esc(it.name)} <span class="tag">${money(it.price)}</span></h2><p class="note">${esc(it.desc)}</p>${cmp}${demo}${guideHtml(it.id)}
-          <dl class="kv" style="margin-top:8px"><dt>支払総額</dt><dd>${money(it.price)}</dd><dt>購入後の資金</dt><dd>${money(Math.max(0, pv.fundsAfter))}</dd><dt>外す装備</dt><dd>${cur ? `${esc(cur.name)} → 倉庫` : 'なし（空きの取付位置）'}</dd></dl>
+          return `<div class="card offer"><h2>${esc(it.name)} <span class="tag">${money(pv.price)}</span></h2><p class="note">${esc(it.desc)}</p>${cmp}${demo}${guideHtml(it.id)}
+          <dl class="kv" style="margin-top:8px"><dt>支払総額</dt><dd>${money(pv.price)}</dd><dt>購入後の資金</dt><dd>${money(Math.max(0, pv.fundsAfter))}</dd><dt>外す装備</dt><dd>${cur ? `${esc(cur.name)} → 倉庫` : 'なし（空きの取付位置）'}</dd></dl>
           <div class="actions"><button type="button" class="btn primary" data-act="buy" data-item="${esc(it.id)}" data-slot="${esc(slot.id)}" ${pv.ok ? '' : 'disabled'}>購入して取り付ける</button>${pv.ok ? '' : `<span class="note">${esc(pv.reason)}</span>`}</div></div>`;
         })
         .join('');
@@ -444,13 +530,13 @@ export function equipScreen(app) {
         .map((x) => {
           const it = EQUIPMENT[x.itemId];
           const where = model.slots.filter((sl) => fits(it, sl)).map((sl) => sl.label);
-          return `<tr><td>${esc(it.name)}</td><td>${where.length ? esc(where.join('・')) : `<span class="tag warn">この船には付けられる位置がない</span> <span class="note">${esc(whereItFits(it).join('・'))}なら可</span>`}</td><td class="num">${money(sellValue(it))}</td><td><button type="button" class="mini" data-act="sell" data-uid="${esc(x.uid)}">売る</button></td></tr>`;
+          return `<tr><td>${esc(it.name)}</td><td>${where.length ? esc(where.join('・')) : `<span class="tag warn">この船には付けられる位置がない</span> <span class="note">${esc(whereItFits(it).join('・'))}なら可</span>`}</td><td class="num">${money(sellPrice(p, it))}</td><td><button type="button" class="mini" data-act="sell" data-uid="${esc(x.uid)}">売る</button></td></tr>`;
         })
         .join('')}</table></div><p class="note">倉庫の装備はなくなりません。売ると記載の金額が資金に入り、倉庫から消えます。</p></div>`
     : '';
   const others = Object.values(EQUIPMENT).filter((it) => it.price > 0 && !fitsHere(it));
   const otherHtml = others.length
-    ? `<div class="card full"><h2>この船には付けられない装備</h2><ul>${others.map((it) => `<li><b>${esc(it.name)}</b>（${money(it.price)}）：${esc(whereItFits(it).join('・'))}に付けられる。${esc(it.desc)}</li>`).join('')}</ul>
+    ? `<div class="card full"><h2>この船には付けられない装備</h2><ul>${others.map((it) => `<li><b>${esc(it.name)}</b>（${money(itemPrice(p, it))}）：${esc(whereItFits(it).join('・'))}に付けられる。${esc(it.desc)}</li>`).join('')}</ul>
       <div class="actions"><button type="button" class="btn" data-act="market">船の買い替えを見る</button></div></div>`
     : '';
   return `<div class="sheet"><h1>装備</h1>
@@ -489,7 +575,7 @@ export function marketScreen(app) {
         <p class="note">${esc(o.note)}</p>
         ${boatSpecRows(cur, m)}
         <p class="note">付属の装備：${inc.length ? esc(inc.join('、')) : 'なし（今の装備を移す）'}</p>
-        <dl class="kv"><dt>本体価格</dt><dd>${money(o.price)}</dd><dt>下取り（今の${esc(cur.name)}）</dt><dd>−${money(cur.tradeIn)}</dd><dt>差引の支払い</dt><dd><b>${money(plan.payable)}</b></dd></dl>
+        <dl class="kv"><dt>本体価格</dt><dd>${money(plan.price)}</dd><dt>下取り（今の${esc(cur.name)}）</dt><dd>−${money(plan.tradeIn)}</dd><dt>差引の支払い</dt><dd><b>${money(plan.payable)}</b></dd></dl>
         <div class="actions"><button type="button" class="btn ${plan.ok ? 'primary' : ''}" data-act="boatQuote" data-offer="${esc(o.id)}">見積もりと装備の行き先を見る</button>${plan.ok ? '' : `<span class="note">${esc(plan.reason)}</span>`}</div></div>`;
     })
     .join('');
@@ -592,6 +678,17 @@ export function saveScreen(app) {
     <p id="importResult" class="note"></p></div>
   ${p ? playtestCard(app) : ''}</div>
   <div class="actions"><button type="button" class="btn primary" data-act="${p ? 'toPort' : 'toTitle'}">戻る</button></div></div>`;
+}
+
+/** 難易度（R05）: chosen once when a new game starts; only the money differs. */
+export function difficultyModal(force = false) {
+  const opts = Object.values(DIFFICULTY)
+    .map((d) => `<div class="card offer diff-${d.id}"><h2>${esc(d.name)}</h2><p class="note">${esc(d.desc)}</p>
+      <dl class="kv"><dt>始めの資金</dt><dd>${money(d.startFunds)}</dd><dt>魚の値段</dt><dd>${Math.round(d.price * 100)}%</dd><dt>経費</dt><dd>${Math.round(d.cost * 100)}%</dd><dt>装備・船</dt><dd>${Math.round(d.gear * 100)}%</dd></dl>
+      <div class="actions"><button type="button" class="btn ${d.id === 'normal' ? 'primary' : ''}" data-act="startDiff" data-diff="${d.id}"${force ? ' data-force="1"' : ''}>「${esc(d.name)}」で始める</button></div></div>`)
+    .join('');
+  return `<div class="card quote"><h2>難易度を選ぶ</h2><p>海・魚・天気はどれも同じで、違うのはお金（魚の値段・経費・装備の値段・始めの資金）だけです。あとから変えることはできません。</p>
+    <div class="diff-grid">${opts}</div><div class="actions"><button type="button" class="btn" data-act="closeModal">やめる</button></div></div>`;
 }
 
 /** Port, before the very first voyage: what the day looks like, in three lines. */
@@ -736,7 +833,10 @@ export function ledgerScreen(app) {
     .slice(0, 30)
     .map((l) => `<tr><td>${l.day}日目${l.night ? '<span class="tag">夕方</span>' : ''}</td><td>${esc(Object.keys(l.byMethod || {}).map((m) => (METHODS[m] ? METHODS[m].name : m)).join('・') || '—')}</td><td class="num">${money(l.sales)}</td><td class="num">${money(l.costs.fuel)}</td><td class="num">${money(l.costs.base + l.costs.crew)}</td><td class="num ${l.net < 0 ? 'neg' : ''}">${money(l.net)}</td></tr>`)
     .join('');
-  return `<div class="sheet wide"><h1>収支</h1>
+  const lastYear = Math.floor((p.day - 1) / 60) + 1;
+  const years = Array.from({ length: lastYear }, (_, i) => i + 1).filter((y) => lines.some((l) => Math.floor((l.day - 1) / 60) + 1 === y));
+  const yearBtns = years.length ? `<div class="actions">${years.map((y) => `<button type="button" class="btn small" data-act="yearReview" data-year="${y}">${y}年目の振り返り${y === lastYear ? '（途中まで）' : ''}</button>`).join('')}</div>` : '';
+  return `<div class="sheet wide"><h1>収支</h1>${yearBtns}
   <div class="lg-tiles">${tiles.map(([k, v, sub]) => `<div class="card lg-tile"><div class="lg-k">${esc(k)}</div><div class="lg-v">${v}</div><div class="note">${esc(sub)}</div></div>`).join('')}</div>
   <div class="card full"><h2>航海ごとの純益（直近${last.length}航海）</h2>${netBars(last)}<p class="note">棒にさわる（マウスを載せる）とその日の内訳。線より下は赤字（経費が売上を上回った日）。</p></div>
   <div class="card full"><h2>漁法ごとの稼ぎ（記録した全航海）</h2><div class="table-wrap"><table class="data"><tr><th>漁法</th><th class="num">使った日</th><th class="num">売上</th><th class="num">1日あたり</th><th class="num">操業1時間あたり</th></tr>${mrows}</table></div>

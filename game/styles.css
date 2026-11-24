@@ -477,3 +477,15 @@ td.neg { color: var(--warn); }
   .toc-item { flex: 0 0 auto; }
   .modal .card.manual { padding: 10px; }
 }
+
+/* 相場と注文・図鑑・難易度 */
+.orders { margin: 4px 0 8px; padding-left: 18px; font-size: 13px; }
+.orders li { margin: 3px 0; }
+table.market td.up { color: #ffb36b; }
+table.market td.down { color: #7fd3ff; }
+.zukan-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(230px, 1fr)); gap: 10px; margin-top: 10px; }
+.card.zukan h2 { margin: 0 0 6px; font-size: 16px; }
+.card.zukan.unknown { opacity: .65; }
+.card.zukan dl { font-size: 12px; }
+.diff-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(190px, 1fr)); gap: 8px; margin: 8px 0; }
+.diff-grid .card { margin: 0; }

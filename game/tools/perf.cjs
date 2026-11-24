@@ -12,6 +12,7 @@ const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
     const page = await ctx.newPage();
     await page.goto('http://localhost:8104/?dev=1&seed=77');
     await page.click('[data-act=newGame]');
+    await page.click('[data-act=startDiff][data-diff=normal]');
     await page.waitForSelector('#portChart');
     await page.click('[data-act=depart]');
     await page.waitForFunction(() => window.__ryoshi.state().screen === 'sea');

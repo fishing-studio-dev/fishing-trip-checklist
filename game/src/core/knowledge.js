@@ -3,6 +3,7 @@
 // Nothing here may read the live world (fish positions) — candidates must not
 // reveal unobserved fish (handover §7.4, A10).
 import { METHODS, SPECIES, EQUIPMENT, BOATS, TIME_BANDS, BRIEFING_T, fits } from './data.js';
+import { itemPrice } from './market.js';
 import { tideClass, windBand, CHART_LABELS } from './sea.js';
 import { briefingReports, dayWord, peerName, KIND_LABEL } from './reports.js';
 import { levelFromXp } from './progress.js';
@@ -267,7 +268,7 @@ export function buildCandidates({ knowledge, logs, today, forecast, profile }) {
       const item = Object.values(EQUIPMENT)
         .filter((it) => it.type === type && model.slots.some((sl) => fits(it, sl)))
         .sort((a, b) => a.price - b.price)[0];
-      feasible = { ok: false, reason: item ? `${item.name}が必要（未搭載・${item.price.toLocaleString('ja-JP')}G）` : 'この船ではできない漁法です' };
+      feasible = { ok: false, reason: item ? `${item.name}が必要（未搭載・${itemPrice(profile, item).toLocaleString('ja-JP')}G）` : 'この船ではできない漁法です' };
     }
     // can the boat reach the ground? (small boats keep to the coastal zone)
     const a = anchor(c.area);

@@ -1,5 +1,5 @@
 // App controller: boot, screens, input, main loop.
-import { TIME, BOATS, PORT, EQUIPMENT, METHODS, SIM, SPECIES, CREW, GUIDES, sellValue } from '../core/data.js';
+import { TIME, BOATS, PORT, EQUIPMENT, METHODS, SIM, SPECIES, CREW, GUIDES } from '../core/data.js';
 import { createProfile, markDeparture, resolveInterruptedVoyage, restDay } from '../core/profile.js';
 import { settleVoyage, purchaseEquipment, purchasePreview, equipFromStorage, unmountToStorage, sellStored, buyBoat, planBoatPurchase, purchaseExtraLine } from '../core/economy.js';
 import { loadSave, writeSave, exportSave, checkImport, memoryStorage, KEYS } from '../core/save.js';
@@ -30,6 +30,9 @@ import { cellsFromBathy } from '../core/bathy.js';
 import { createSounderView } from './sounderView.js';
 import { demoObservation } from './sounderDemo.js';
 import { manualHtml, chapterFor } from './manual.js';
+import { sellPrice } from '../core/market.js';
+import { ordersOffered, acceptOrder, dropOrder } from '../core/orders.js';
+import { reviewDue, markReviewed } from '../core/review.js';
 import { ECHO_EXAMPLES, exampleObservation } from './echoExamples.js';
 import * as S from './screens.js';
 import { PLAYTEST_SAVE } from './playtestSave.js';
@@ -157,6 +160,9 @@ function show(screen) {
     case 'ledger':
       html = S.ledgerScreen(app);
       break;
+    case 'zukan':
+      html = S.zukanScreen(app);
+      break;
     case 'save':
       html = S.saveScreen(app);
       break;
@@ -170,6 +176,14 @@ function show(screen) {
     if (c) drawBriefingChart(c, staticMap, { candidates: app.candidates, reports: chartReports(app.profile.knowledge.reports, app.profile.day + 1), boatModel: app.profile.boat.model, bathy: bathyCanvas(ownCells(), null), marks: app.profile.marks, selected: app.markSel });
   }
   if (screen === 'equip') drawSounderDemos(el);
+  // 1年の振り返り: on the first morning of a new year, once
+  if (screen === 'port' && app.profile && !app.profile.activeVoyage) {
+    const due = reviewDue(app.profile, app.profile.day + 1);
+    if (due) {
+      commit(markReviewed(app.profile, due), '1年の振り返りを見た');
+      modal(S.yearReviewHtml(app.profile, due));
+    }
+  }
   if (screen === 'save') {
     const f = $('importFile');
     if (f) f.addEventListener('change', onImportFile);
@@ -228,9 +242,9 @@ function chartReports(reports, today) {
 }
 
 // ---------------------------------------------------------------- actions
-function newGame() {
+function newGame(difficulty = 'normal') {
   const seed = DEV && params.get('seed') ? Number(params.get('seed')) : undefined;
-  const p = createProfile({ worldSeed: seed });
+  const p = createProfile({ worldSeed: seed, difficulty });
   app.revision = 0;
   commit(p, '新規作成');
   app.notice = '';
@@ -377,7 +391,7 @@ function sell(uid) {
   const inst = app.profile.storage.find((x) => x.uid === uid);
   if (!inst) return;
   const it = EQUIPMENT[inst.itemId];
-  const value = sellValue(it);
+  const value = sellPrice(app.profile, it);
   modal(`<div class="card"><h2>倉庫の装備を売る</h2><p><b>${S.esc(it.name)}</b> を売ります。売ると倉庫から消えます。</p>
   <dl class="kv"><dt>受け取る金額</dt><dd>${value.toLocaleString()}G</dd><dt>売った後の資金</dt><dd>${(app.profile.funds + value).toLocaleString()}G</dd></dl>
   <div class="actions"><button type="button" class="btn warn" data-act="sellConfirm" data-uid="${S.esc(uid)}">売る</button><button type="button" class="btn" data-act="closeModal">やめる</button></div></div>`);
@@ -967,15 +981,20 @@ document.addEventListener('click', (e) => {
   const act = b.dataset.act;
   switch (act) {
     case 'newGame':
-      newGame();
+      // 難易度（R05）: chosen once, at the start
+      modal(S.difficultyModal());
+      break;
+    case 'startDiff':
+      modal(null);
+      if (b.dataset.force) preserveRawMain();
+      newGame(b.dataset.diff);
       break;
     case 'newGameConfirm':
       modal(`<div class="card"><h2>新しく始める</h2><p>新しい進行で始めます。読めなかった元のデータは削除せず残します。</p><div class="actions"><button type="button" class="btn warn" data-act="newGameForce">新しく始める</button><button type="button" class="btn" data-act="closeModal">やめる</button></div></div>`);
       break;
     case 'newGameForce':
-      modal(null);
-      preserveRawMain();
-      newGame();
+      // over an unreadable save: the raw data is kept aside first (never deleted)
+      modal(S.difficultyModal(true));
       break;
     case 'depart':
       depart();
@@ -1008,6 +1027,33 @@ document.addEventListener('click', (e) => {
     case 'ledger':
       show('ledger');
       break;
+    case 'zukan':
+      show('zukan');
+      break;
+    case 'yearReview':
+      modal(S.yearReviewHtml(app.profile, Number(b.dataset.year)));
+      break;
+    case 'orderTake': {
+      const today = app.profile.day + 1;
+      const offer = ordersOffered(app.profile.worldSeed, today).find((o) => o.id === b.dataset.id);
+      const r = offer ? acceptOrder(app.profile, offer, today) : { ok: false, reason: '注文が見つかりません。' };
+      if (!r.ok) toast(r.reason);
+      else {
+        commit(r.profile, '注文を受けた');
+        toast(`注文を受けました：${SPECIES[offer.species].name} ${offer.kg}kg`);
+        show('port');
+      }
+      break;
+    }
+    case 'orderDrop': {
+      const r = dropOrder(app.profile, b.dataset.id);
+      if (!r.ok) toast(r.reason);
+      else {
+        commit(r.profile, '注文を取り消した');
+        show('port');
+      }
+      break;
+    }
     case 'openSave':
       show('save');
       break;

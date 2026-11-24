@@ -89,6 +89,7 @@ async function layout(page) {
       await page.goto(url);
       await page.waitForSelector('[data-act=newGame]', { timeout: 20000 });
       await page.tap('[data-act=newGame]');
+      await page.tap('[data-act=startDiff][data-diff=normal]');
       await page.waitForSelector('#portChart');
       const lp = await layout(page);
       check(`${name}: port screen fits the width`, lp.scrollW <= lp.vw, `${lp.scrollW}/${lp.vw}`);
