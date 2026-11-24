@@ -846,6 +846,24 @@ const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
     const pg = page;
     await pg.goto(`http://localhost:${port}/?dev=1&seed=77`);
     await pg.waitForSelector('#portChart');
+    // (test convenience: bait is seasonal and some mornings have no 鳥山 at all — move the own
+    // progress forward to the next morning that has one; worked out from the same sea functions)
+    await pg.evaluate(async () => {
+      const W = await import('/src/core/world.js');
+      const S = await import('/src/core/surface.js');
+      const C = await import('/src/core/calendar.js');
+      const p = window.__ryoshi.app.profile;
+      for (let d = p.day + 1; d < p.day + 15; d++) {
+        const w = W.createWorld(p.worldSeed, d, C.dayTimes(d).sunrise + 900);
+        if (S.surfaceCues(w).some((c) => c.kind === 'birds' && c.y < 2900)) {
+          window.__ryoshi.app.profile = { ...p, day: d - 1 };
+          break;
+        }
+      }
+    });
+    await pg.click('[data-act=log]');
+    await pg.click('[data-act=toPort]');
+    await pg.waitForSelector('#portChart');
     await pg.click('[data-act=depart]');
     await waitFor((x) => x.screen === 'sea', 'at sea (泳がせ)');
     // item 8: at dawn the lookout calls out birds over bait pushed up by fish (dev: the sign's place read only to head there)
