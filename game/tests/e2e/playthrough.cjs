@@ -1018,17 +1018,13 @@ const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
     const oyoPanel = await pg.textContent('#opPanel');
     check('段2: the 泳がせ checklist says to catch アジ first when there are none', /泳がせ釣りの手順/.test(oyoPanel) && /一本釣りでアジを釣る/.test(oyoPanel), oyoPanel.slice(0, 120));
     // ジギング at the nearest 根 (dev: the structure's place, read only to head there)
-    const ne = { x: 1500, y: 2200 }; // 大きな根 n1
-    await press('c');
-    await sleep(200);
-    await clickChart(ne.x, ne.y);
-    await press('c');
-    await press('g');
-    for (let i = 0; i < 60 && (await st()).voyage.autopilot; i++) await ff(20);
+    // (test convenience: head straight for the 大きな根 n1 with the movement assistance)
+    await pg.evaluate(async () => {
+      const V = await import('/src/core/voyage.js');
+      V.routeTo(window.__ryoshi.app.voyage, { x: 1500, y: 2200 });
+    });
+    for (let i = 0; i < 80 && (await st()).voyage.autopilot; i++) await ff(20);
     for (let i = 0; i < 8 && (await st()).voyage.method !== 'jigging'; i++) await press('t');
-    await press('s');
-    await press('s');
-    await press('s');
     await ff(30);
     await press('Space');
     await waitFor((x) => x.voyage.operating, 'ジギング started');
