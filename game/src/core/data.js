@@ -917,6 +917,10 @@ export const PEERS = {
   gen: { id: 'gen', name: '源さん', method: 'handline', areas: ['北の瀬', '西の根'], desc: '一本釣り一筋。瀬と根のアジに詳しい。' },
   hamada: { id: 'hamada', name: '浜田さん', method: 'troll', areas: ['東の駆け上がり', '沖の平場'], desc: '曳縄でサワラを追う。沖と駆け上がりをよく走る。' },
   matsu: { id: 'matsu', name: '松じい', method: 'longline', areas: ['沖の平場', '東の駆け上がり', '西の根'], desc: '延縄でマダイを獲る古株。序盤の数日は遠くの漁場に出ていて、7日目の朝から港で話が聞ける。', fromDay: 7 },
+  // 第2期（R20）: a peer for every method
+  kuroki: { id: 'kuroki', name: '黒木さん', method: 'negyo', areas: ['西の根', '北の瀬', '南の浅場'], desc: '根魚釣りひと筋。根と漁礁を細かく回る。潮の緩む時間を大事にする。', fromDay: 2 },
+  oda: { id: 'oda', name: '小田さん', method: 'oyogase', areas: ['北の瀬', '東の駆け上がり', '沖の平場'], desc: '活きアジの泳がせで青物を狙う。ベイトの反応を追いかけて走り回る。', fromDay: 3 },
+  yoshimura: { id: 'yoshimura', name: '吉村さん', method: 'ika', areas: ['沖の深み', '北の瀬'], desc: '夕方から集魚灯を点けてイカを釣る。朝の港では前の晩の話をしてくれる。', fromDay: 4 },
 };
 
 // Time bands used to tag logs and compare similar conditions.

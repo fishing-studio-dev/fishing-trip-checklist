@@ -11,7 +11,8 @@ import { dayPlan, moodOf } from '../src/core/season.js';
 import { createWorld, densityAt, activityAt, schoolPose, tidePhase, normalizeSchool } from '../src/core/world.js';
 import { createProfile, markDeparture } from '../src/core/profile.js';
 import { createVoyage, advanceVoyage, startOperation, stopOperation, isOperating, setMethod } from '../src/core/voyage.js';
-import { MOODS, SPECIES, METHODS, TIDE_PERIOD } from '../src/core/data.js';
+import { MOODS, SPECIES, METHODS, TIDE_PERIOD, PEERS, BRIEFING_T, PROGRESSION } from '../src/core/data.js';
+import { briefingReports } from '../src/core/reports.js';
 import { CALM } from './helpers.js';
 
 const NOW = '2026-11-24T00:00:00.000Z';
@@ -216,4 +217,46 @@ test('アジ press to the bottom in a hard-running stream and rise as a loose cl
   const run = schoolPose(s, tRun, w);
   assert.ok(slack.off > run.off + 1, `${slack.off} ${run.off}`);
   assert.ok(slack.zs > run.zs);
+});
+
+test('a peer for every method (R20), and what they say comes from that day\'s sea', () => {
+  const methods = new Set(Object.values(PEERS).map((p) => p.method));
+  for (const m of ['handline', 'troll', 'longline', 'negyo', 'oyogase', 'ika']) assert.ok(methods.has(m), m);
+  let kuroki = 0;
+  let oda = 0;
+  let yoshimura = 0;
+  let remark = 0;
+  for (let d = 4; d <= 64; d++) {
+    for (const r of briefingReports(77, d)) {
+      if (r.speaker === 'kuroki' && r.kind !== 'rule') kuroki += 1;
+      if (r.speaker === 'oda' && r.kind !== 'rule') oda += 1;
+      if (r.speaker === 'yoshimura') yoshimura += 1;
+      if (/潮が動き出したら|食いが渋かった|緩んできたら|なぜか食いがよかった/.test(r.text)) remark += 1;
+      if (r.kind !== 'rule') assert.ok(r.obsDay < d || r.obsT <= BRIEFING_T, r.id);
+    }
+  }
+  assert.ok(kuroki >= 55 && oda >= 55 && yoshimura >= 55, JSON.stringify({ kuroki, oda, yoshimura }));
+  assert.ok(remark >= 5, `bite remarks ${remark}`);
+});
+
+function hunchRun(level, act) {
+  const p = createProfile({ worldSeed: 9, now: NOW });
+  p.day = 12;
+  p.methods.handline.xp = PROGRESSION.xpTable[level - 1];
+  const dep = markDeparture(p, NOW);
+  const aji = { id: 'A', species: 'aji', a: { x: 1500, y: 1500 }, counts: { s: 100, m: 300, l: 100 }, sigmaH: 30, sigmaZ: 3, fixedOffBottom: 3, activityOverride: act, orbitR: 0 };
+  const v = createVoyage(dep, { scenario: { conditions: CALM, schools: [aji] }, start: { x: 1500, y: 1500, heading: 0 }, radio: [] });
+  v.world.time = 9 * 3600;
+  advanceVoyage(v, 20);
+  assert.ok(startOperation(v).ok);
+  advanceVoyage(v, 25 * 60);
+  return v.messages.filter((m) => /（勘）/.test(m.text)).map((m) => m.text);
+}
+
+test('漁師の勘 (Lv5+): a strong echo that hardly bites is called out; a beginner gets no such hint', () => {
+  const pro = hunchRun(6, 0.01);
+  assert.ok(pro.some((t) => /反応はあるのに当たりが遠い/.test(t)), pro.join('/'));
+  assert.equal(hunchRun(1, 0.01).length, 0);
+  // biting well: no "dull" call
+  assert.ok(!hunchRun(6, 1).some((t) => /当たりが遠い/.test(t)));
 });

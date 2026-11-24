@@ -5,7 +5,7 @@
 // because of an arbitrary lie. Predictions and rules of thumb are kept apart
 // from observations (handover §7.2).
 import { PEERS, SPECIES, BRIEFING_T, METHODS } from './data.js';
-import { createWorld, schoolPose, schoolTotal, activityAt, offBottomAt } from './world.js';
+import { createWorld, schoolPose, schoolTotal, activityAt, offBottomAt, tidePhase } from './world.js';
 import { HABITATS, SAWARA_ZONES, MADAI_GROUNDS } from './season.js';
 import { dayTimes, daylightAt } from './calendar.js';
 import { areaNameAt, fmtClock, makeDayConditions, forecastOf, tideClass, compass8, CHART_LABELS, weatherOf } from './sea.js';
@@ -48,6 +48,30 @@ function layerText(school, t, pose, world = null) {
   if (school.species === 'sawara') return `表層から${Math.max(1, Math.round(pose.z))}mくらい`;
   if (school.species === 'madai') return '底べったり';
   return `底から${Math.max(1, Math.round(offBottomAt(school, t, world)))}mくらい`;
+}
+
+/**
+ * What a peer noticed about the bite over the last couple of hours (from that
+ * day's world at the time — never a hidden label): e.g. the echo was there
+ * all morning but nothing bit until the stream started. Null when unremarkable.
+ */
+function biteRemark(w, school, t) {
+  const now = activityAt(w, school, t);
+  const before = activityAt(w, school, t - 5400);
+  const tpNow = tidePhase(w.cond, t);
+  const tpBefore = tidePhase(w.cond, t - 5400);
+  if (before < 0.4 && now > before * 2.2) {
+    if (tpBefore.slack > 0.5 && tpNow.slack < 0.5) return '潮が止まっている間は反応ばかりで全然食わなかった。潮が動き出したら急に食い始めた';
+    if (tpBefore.running > 0.5 && tpNow.running < 0.5) return '潮が速いうちは食わなかったが、緩んできたら食い出した';
+    return '朝のうちは反応があっても食わなかったが、途中から食いが立った';
+  }
+  if (now < 0.35) {
+    if (tpNow.slack > 0.5) return '潮が止まっていて、反応はあるのに食いが渋かった';
+    if (tpNow.running > 0.5 && tpNow.speed > 0.28) return '潮が速すぎて、仕掛けが落ち着かなかった';
+    return '反応はあるのに、どうにも食いが渋かった';
+  }
+  if (now > 1.3 && tpNow.slack > 0.5) return '潮止まりなのに、なぜか食いがよかった';
+  return null;
 }
 
 function nearest(world, species, x, y, t, radius) {
@@ -115,7 +139,7 @@ function genFishing(seed, od, spotId, t, idBase) {
     originId, speaker: 'gen', kind: 'catch', species: 'aji', methodId: 'handline',
     area: hit.school.area, place, spot: roundPt(hit.pose), obsDay: od, obsT: t, count,
     layer: layerText(hit.school, t, hit.pose, w), sizeLabel: sizeLabel(hit.school),
-    text: `${place}で${sizeLabel(hit.school)}に約${count}尾${slow ? '。食いが落ちていた' : ''}。${layerText(hit.school, t, hit.pose, w)}で食った。`,
+    text: `${place}で${sizeLabel(hit.school)}に約${count}尾${slow ? '。食いが落ちていた' : ''}。${layerText(hit.school, t, hit.pose, w)}で食った。${remarkText(biteRemark(w, hit.school, t))}`,
     opinion: slow ? `群れが抜け始めたかもしれん。${placeLabel(other.x, other.y)}あたりも見てみる。` : 'しばらくは同じあたりに付いていると思う。',
     opinionKind: '予想',
   });
@@ -183,9 +207,110 @@ function matsuLongline(seed, od, t, idBase) {
     originId, speaker: 'matsu', kind: 'catch', species: 'madai', methodId: 'longline',
     area: hit.school.area, place, spot: roundPt(hit.pose), obsDay: od, obsT: t, count,
     layer: '底べったり', sizeLabel: sizeLabel(hit.school),
-    text: `${place}に縄を入れて、マダイを${count}枚（${sizeLabel(hit.school)}）。`,
+    text: `${place}に縄を入れて、マダイを${count}枚（${sizeLabel(hit.school)}）。${remarkText(biteRemark(w, hit.school, t))}`,
     opinion: count >= 6 ? 'あの辺りの底にはしばらく居着いている。' : '数は薄い。広く散っているようだ。',
     opinionKind: '予想',
+  });
+}
+
+const remarkText = (r) => (r ? `${r}。` : '');
+
+/** Where 黒木さん fishes on day od: one of the rocky grounds or a 漁礁 he knows (his habit, not a fish lookup). */
+const KUROKI_SPOTS = [
+  { id: 'nishi_rock', x: 650, y: 1350 },
+  { id: 'kita_rock', x: 2000, y: 2250 },
+  { id: 'g1', x: 1300, y: 1050 },
+  { id: 'g4', x: 900, y: 850 },
+  { id: 'k3', x: 480, y: 1150 },
+];
+const NEGYO = ['kasago', 'kijihata', 'ara', 'oomonhata', 'akahata'];
+
+/** 黒木さん's 根魚釣り on day od around time t: what came up, and how the bite went with the tide. */
+function kurokiNegyo(seed, od, t, idBase) {
+  const w = worldFor(seed, od);
+  const spot = KUROKI_SPOTS[Math.floor(hashFloat(seed, od, 521) * KUROKI_SPOTS.length)];
+  const originId = `O${od}-kuroki-${idBase}`;
+  const here = w.schools.filter((s) => NEGYO.includes(s.species) && schoolTotal(s) > 0 && Math.hypot(s.a.x - spot.x, s.a.y - spot.y) < 80);
+  const place = placeLabel(spot.x, spot.y);
+  if (!here.length) {
+    return report({
+      originId, speaker: 'kuroki', kind: 'none', species: 'kasago', methodId: 'negyo',
+      area: areaNameAt(spot.x, spot.y), place, spot: roundPt(spot), obsDay: od, obsT: t,
+      text: `${place}の根を回ったが、根魚の当たりはなかった。`,
+    });
+  }
+  const by = {};
+  let total = 0;
+  let main = here[0];
+  for (const s of here) {
+    const n = Math.round((schoolTotal(s) * activityAt(w, s, t)) / 5);
+    if (n > 0) by[s.species] = (by[s.species] || 0) + n;
+    total += n;
+    if (schoolTotal(s) > schoolTotal(main)) main = s;
+  }
+  const list = Object.entries(by).map(([sp, n]) => `${SPECIES[sp].name}${n}`).join('・');
+  return report({
+    originId, speaker: 'kuroki', kind: total > 0 ? 'catch' : 'none', species: main.species, methodId: 'negyo',
+    area: areaNameAt(spot.x, spot.y), place, spot: roundPt(spot), obsDay: od, obsT: t, count: total,
+    text: total > 0 ? `${place}の根で${list}尾。${remarkText(biteRemark(w, main, t))}` : `${place}の根で粘ったが、食わなかった。${remarkText(biteRemark(w, main, t))}`,
+    opinion: total > 0 ? '根魚は居着きだから、根さえ外さなければまた食う。' : '潮の具合が合わんかったな。', opinionKind: '予想',
+  });
+}
+
+/** 小田さん's 泳がせ on day od around time t: around the reefs and under the bait. */
+function odaOyogase(seed, od, t, idBase) {
+  const w = worldFor(seed, od);
+  const originId = `O${od}-oda-${idBase}`;
+  const isBlue = (s) => SPECIES[s.species].habit === 'roam' && schoolTotal(s) > 0;
+  const inReach = (s) => s.a.y < 3000; // his boat stays inside the coastal zone
+  const blue = w.schools.filter((s) => isBlue(s) && inReach(s));
+  const pick = blue.length ? blue[Math.floor(hashFloat(seed, od, 531) * blue.length)] : null;
+  if (!pick) {
+    const bait = w.schools.find((s) => SPECIES[s.species].bait && schoolTotal(s) > 0 && inReach(s));
+    const at = bait ? schoolPose(bait, t, w) : { x: 1350, y: 1700 };
+    return report({
+      originId, speaker: 'oda', kind: 'none', species: 'buri', methodId: 'oyogase',
+      area: areaNameAt(at.x, at.y), place: placeLabel(at.x, at.y), spot: roundPt(at), obsDay: od, obsT: t,
+      text: bait ? `${placeLabel(at.x, at.y)}でベイトの反応は見たが、下に青物は付いていなかった。` : '根の周りもベイトも探したが、青物の反応はなかった。',
+    });
+  }
+  const pose = schoolPose(pick, t, w);
+  const act = activityAt(w, pick, t);
+  const count = Math.max(0, Math.min(6, Math.round((schoolTotal(pick) * act) / 7)));
+  const place = placeLabel(pose.x, pose.y);
+  const under = pick.baitDepth ? 'ベイトの下で' : '根の周りで';
+  return report({
+    originId, speaker: 'oda', kind: count > 0 ? 'catch' : 'echo', species: pick.species, methodId: 'oyogase',
+    area: pick.area || areaNameAt(pose.x, pose.y), place, spot: roundPt(pose), obsDay: od, obsT: t, count,
+    layer: `表層から${Math.round(pose.z)}mくらい`,
+    text: count > 0
+      ? `${place}の${under}、活きアジで${SPECIES[pick.species].name}を${count}本。${remarkText(biteRemark(w, pick, t))}`
+      : `${place}の${under}青物の反応は出ていたが、活きアジに食わなかった。${remarkText(biteRemark(w, pick, t))}`,
+    opinion: pick.baitDepth ? '曳縄で食わん日でも、ベイトの下に活きエサを落とすと食うことがある。' : '根に付いた青物はしばらく居る。', opinionKind: '見立て',
+  });
+}
+
+/** 吉村さん's night under the lamps (day od, about 21:00): told in port the next morning. */
+function yoshimuraIka(seed, od, idBase) {
+  const w = worldFor(seed, od);
+  const t = 21 * 3600;
+  const originId = `O${od}-yoshimura-${idBase}`;
+  const squid = w.schools.filter((s) => SPECIES[s.species].habit === 'squid' && schoolTotal(s) > 0 && s.a.y < 3000);
+  if (!squid.length) {
+    return report({
+      originId, speaker: 'yoshimura', kind: 'none', species: 'kensaki', methodId: 'ika',
+      area: '沖の深み', place: '沖の深み', spot: roundPt({ x: 650, y: 2600 }), obsDay: od, obsT: t,
+      text: '昨夜は沖の深みで灯を点けたが、イカは寄ってこなかった。',
+    });
+  }
+  const s = squid[Math.floor(hashFloat(seed, od, 541) * squid.length)];
+  const pose = schoolPose(s, t, w);
+  const count = Math.max(0, Math.min(90, Math.round((schoolTotal(s) * activityAt(w, s, t)) / 18)));
+  return report({
+    originId, speaker: 'yoshimura', kind: count > 0 ? 'catch' : 'none', species: s.species, methodId: 'ika',
+    area: areaNameAt(pose.x, pose.y), place: placeLabel(pose.x, pose.y), spot: roundPt(pose), obsDay: od, obsT: t, count,
+    text: count > 0 ? `昨夜、${placeLabel(pose.x, pose.y)}で灯を点けて、${SPECIES[s.species].name}を${count}杯。暗くなって1〜2時間で寄ってきた。` : `昨夜、${placeLabel(pose.x, pose.y)}で灯を点けたが、ほとんど乗らなかった。`,
+    opinion: count >= 30 ? 'しばらくはあの辺りに付いていると思う。' : null, opinionKind: count >= 30 ? '予想' : null,
   });
 }
 
@@ -249,8 +374,17 @@ function rules(seed, d, hadSawara) {
       out.push(report({ originId: `O${d}-matsu-rule-soak`, speaker: 'matsu', kind: 'rule', species: 'madai', methodId: 'longline', obsDay: d, obsT: BRIEFING_T, text: '延縄は餌が持つうちに揚げるもんだ。浸けて1時間前後が目安だな。' }));
     }
   }
-  if (!hadSawara && fc.waterTemp >= SPECIES.sawara.arriveTemp - 0.3) {
-    out.push(report({ originId: `O${d}-hamada-rule-temp`, speaker: 'hamada', kind: 'rule', species: 'sawara', methodId: 'troll', obsDay: d, obsT: BRIEFING_T, text: `水温が${SPECIES.sawara.arriveTemp.toFixed(0)}℃近くまで上がってくると、サワラが沖に入ってくる。` }));
+  if (d >= PEERS.kuroki.fromDay && tideClass(fc.tideName) === '大潮' && hashFloat(seed, d, 524) < 0.6) {
+    out.push(report({ originId: `O${d}-kuroki-rule-tide`, speaker: 'kuroki', kind: 'rule', methodId: 'negyo', obsDay: d, obsT: BRIEFING_T, text: '大潮は潮が速くて底が取りにくい。根魚は潮の緩む時間に勝負だ。潮止まりの前後を狙え。' }));
+  }
+  if (d >= PEERS.oda.fromDay && hashFloat(seed, d, 534) < 0.5) {
+    out.push(report({ originId: `O${d}-oda-rule-bait`, speaker: 'oda', kind: 'rule', methodId: 'oyogase', obsDay: d, obsT: BRIEFING_T, text: '表層にベイトがいて曳縄に食わん日は、まず一本釣りでアジを釣って生け簀に入れとく。ベイトの下に太い山形の反応が出たら、そこで止めて泳がせだ。' }));
+  }
+  if (tideClass(fc.tideName) === '小潮系' && hashFloat(seed, d, 308) < 0.6) {
+    out.push(report({ originId: `O${d}-gen-rule-slack`, speaker: 'gen', kind: 'rule', methodId: 'handline', obsDay: d, obsT: BRIEFING_T, text: 'アジは潮が止まると、反応があっても食わん。潮が動き出す時間を潮汐表で見ておけ。' }));
+  }
+  if (!hadSawara && fc.season && fc.season.id === 'spring' && fc.waterTemp >= SPECIES.sawara.arriveTemp - 0.3 && fc.waterTemp < SPECIES.sawara.arriveTemp + 1.5) {
+    out.push(report({ originId: `O${d}-hamada-rule-temp`, speaker: 'hamada', kind: 'rule', species: 'sawara', methodId: 'troll', obsDay: d, obsT: BRIEFING_T, text: `春は水温が${SPECIES.sawara.arriveTemp.toFixed(0)}℃を超えてくると、サワラが沖に入ってくる。秋から冬はまた別の群れが来る。` }));
   }
   return out;
 }
@@ -276,6 +410,9 @@ export function briefingReports(seed, d) {
     const tMat = round10min((9 + hashFloat(seed, d, 503) * 1.5) * 3600);
     out.push(matsuLongline(seed, d - 1, tMat, 'y'));
   }
+  if (d >= PEERS.kuroki.fromDay && d - 1 >= 1) out.push(kurokiNegyo(seed, d - 1, round10min((8 + hashFloat(seed, d, 522) * 4) * 3600), 'y'));
+  if (d >= PEERS.oda.fromDay && d - 1 >= 1) out.push(odaOyogase(seed, d - 1, round10min((6 + hashFloat(seed, d, 532) * 3) * 3600), 'y'));
+  if (d >= PEERS.yoshimura.fromDay && d - 1 >= 1) out.push(yoshimuraIka(seed, d - 1, 'y'));
   // this morning: 源さん passes another reef, 浜田さん the slope on the way out
   const reefs = REEF_HABITATS.filter((id) => id !== genSpot(seed, d));
   const pass = habitat(reefs[Math.floor(hashFloat(seed, d, 303) * reefs.length)]);
@@ -309,6 +446,8 @@ export function radioReports(seed, d) {
     const tM = round10min((7.6 + hashFloat(seed, d, 504) * 1.0) * 3600);
     out.push(matsuLongline(seed, d, tM, 'r'));
   }
+  if (d >= PEERS.kuroki.fromDay) out.push(kurokiNegyo(seed, d, round10min((8.5 + hashFloat(seed, d, 523) * 2) * 3600), 'r'));
+  if (d >= PEERS.oda.fromDay) out.push(odaOyogase(seed, d, round10min((7 + hashFloat(seed, d, 533) * 2) * 3600), 'r'));
   return out.map((r, i) => ({ ...r, via: 'radio', id: `W${d}-${i}-${r.speaker}`, deliverAt: r.obsT + 600 }));
 }
 

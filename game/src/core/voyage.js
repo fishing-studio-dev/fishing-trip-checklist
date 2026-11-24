@@ -3,7 +3,7 @@
 // player decides where, which method, which route, when to move or stop; the
 // repetitive work is automatic.
 import { SIM, TIME, PORT, BOATS, EQUIPMENT, METHODS, SPECIES, CREW } from './data.js';
-import { createWorld, normalizeSchool, schoolCenter, schoolTotal, takeFish } from './world.js';
+import { createWorld, normalizeSchool, schoolCenter, schoolTotal, takeFish, tidePhase } from './world.js';
 import { createBoatRuntime, stepBoat, autopilotCommand, routeToPort, clearPath } from './boat.js';
 import { createObservation, pingColumn, pushColumn } from './sounder.js';
 import { sideColumn } from './sideview.js';
@@ -278,6 +278,9 @@ export function stepVoyage(v) {
     if (v.op.state === 'ended') finishOperation(v);
   }
 
+  // 漁師の勘 (Lv5+): the echo is there but nothing bites — or the bite has come on
+  if (w.step % 300 === 0 && v.op && v.op.state === 'running') hunch(v);
+
   // the lookout: signs on the surface (鳥山・ナブラ・潮目) are called out when they come into sight
   if (w.step % 100 === 0) lookout(v);
 
@@ -371,6 +374,53 @@ function lookout(v) {
 }
 
 /** How many fish of a species are in the hold (live bait for 泳がせ). */
+export const HUNCH_LEVEL = 5;
+const HUNCH_METHODS = ['handline', 'negyo', 'oyogase', 'ika'];
+
+/**
+ * 漁師の勘（R09）: a seasoned fisher reads the bite from what the boat itself
+ * sees — the sounder's echo under the boat and the bites on the hooks over the
+ * last minutes — and, from Lv8, names the likely cause from the tide table
+ * (public). Never from the school's hidden state. Said only when it changes.
+ */
+export function hunchNow(v) {
+  const op = v.op;
+  if (!op || !HUNCH_METHODS.includes(op.methodId)) return null;
+  const level = v.levels[op.methodId] || 1;
+  if (level < HUNCH_LEVEL) return null;
+  const t = v.world.time;
+  if (t - op.startT < 600) return null; // too early to tell
+  const bites = op.biteTimes || [];
+  const recent = bites.filter((b) => b > t - 600).length;
+  const before = bites.filter((b) => b > t - 1800 && b <= t - 600).length;
+  const cols = v.obs.cols.slice(-40); // the last 20 s under the boat (what a restored voyage also keeps)
+  const echo = cols.length ? cols.filter((c) => c.maxFish >= 0.35).length / cols.length : 0;
+  let state = null;
+  if (echo >= 0.5 && recent <= 1 && before <= 3) state = 'dull';
+  else if (recent >= 4 && recent >= before * 1.4 + 2) state = 'on';
+  if (!state) return null;
+  let cause = '';
+  if (level >= 8) {
+    const p = tidePhase(v.world.cond, t);
+    if (state === 'dull' && p.slack > 0.5) cause = '潮が止まっているせいか。動き出しを待つか、潮の緩い時間に強い根魚に切り替えるのも手だ';
+    else if (state === 'dull' && p.running > 0.5 && p.speed > 0.28) cause = '潮が速すぎるのかもしれない';
+    else if (state === 'on' && p.starting > 0.5) cause = '潮が動き出した';
+    else if (state === 'dull') cause = '今日はこういう日なのかもしれない';
+  }
+  const text = state === 'dull' ? `（勘）反応はあるのに当たりが遠い。食い渋っている${cause ? `——${cause}` : ''}。` : `（勘）食いが立ってきた${cause ? `——${cause}` : ''}。`;
+  return { state, text };
+}
+
+function hunch(v) {
+  const h = hunchNow(v);
+  if (!h) return;
+  const last = v.hunch || { state: null, t: -1e9 };
+  if (last.state === h.state && v.world.time - last.t < 1800) return;
+  if (v.world.time - last.t < 600) return;
+  v.hunch = { state: h.state, t: v.world.time };
+  say(v, h.text);
+}
+
 export function baitInHold(v, species) {
   const c = v.hold.counts[species];
   return c ? c.s + c.m + c.l : 0;

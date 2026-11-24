@@ -316,6 +316,8 @@ export function stepOperation(op, ctx, dt) {
             h.acc -= 1;
             anyFish = true;
             op.stats.bites += 1;
+            (op.biteTimes || (op.biteTimes = [])).push(t);
+            if (op.biteTimes.length > 400) op.biteTimes.shift();
             if (line.firstBiteT == null) line.firstBiteT = t;
           }
         }
